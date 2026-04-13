@@ -1,50 +1,43 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+
+import { Shell } from "./components/layout/Shell";
+import { ClientList } from "./pages/ClientList";
+import { Placeholder } from "./pages/Placeholder";
+import { ServiceList } from "./pages/ServiceList";
+import { Settings } from "./pages/Settings";
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
-
+  const { t } = useTranslation();
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
+    <Routes>
+      <Route element={<Shell />}>
+        <Route index element={<Navigate to="/clients" replace />} />
+        <Route
+          path="dashboard"
+          element={<Placeholder title={t("nav.dashboard")} />}
         />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+        <Route
+          path="invoices"
+          element={<Placeholder title={t("nav.invoices")} />}
+        />
+        <Route
+          path="payments"
+          element={<Placeholder title={t("nav.payments")} />}
+        />
+        <Route path="clients" element={<ClientList />} />
+        <Route path="services" element={<ServiceList />} />
+        <Route
+          path="accounting"
+          element={<Placeholder title={t("nav.accounting")} />}
+        />
+        <Route
+          path="templates"
+          element={<Placeholder title={t("nav.templates")} />}
+        />
+        <Route path="settings" element={<Settings />} />
+      </Route>
+    </Routes>
   );
 }
 

@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    terative_scaffold_lib::run()
+    terative_lib::run()
 }

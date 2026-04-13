@@ -1,0 +1,72 @@
+{
+  "app": {
+    "title": "Terative"
+  },
+  "nav": {
+    "dashboard": "Tableau de bord",
+    "invoices": "Factures",
+    "payments": "Paiements",
+    "clients": "Clients",
+    "services": "Prestations",
+    "accounting": "Comptabilité",
+    "templates": "Modèles",
+    "settings": "Paramètres"
+  },
+  "common": {
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "create": "Créer",
+    "new": "Nouveau",
+    "search": "Rechercher",
+    "loading": "Chargement…",
+    "empty": "Aucun résultat",
+    "confirm_delete": "Confirmer la suppression ?",
+    "name": "Nom",
+    "email": "E-mail",
+    "phone": "Téléphone",
+    "address": "Adresse",
+    "notes": "Notes",
+    "price": "Prix",
+    "active": "Actif",
+    "include_inactive": "Inclure les inactifs"
+  },
+  "clients": {
+    "title": "Clients",
+    "new": "Nouveau client",
+    "edit": "Modifier le client",
+    "none": "Aucun client pour l’instant.",
+    "deleted_soft": "Le client a été archivé (des factures existent)."
+  },
+  "services": {
+    "title": "Prestations",
+    "new": "Nouvelle prestation",
+    "edit": "Modifier la prestation",
+    "default_price": "Prix par défaut",
+    "none": "Aucune prestation pour l’instant."
+  },
+  "settings": {
+    "title": "Paramètres",
+    "seller": "Profil vendeur",
+    "seller_name": "Nom / raison sociale",
+    "seller_title": "Titre",
+    "seller_registration_id": "Numéro d’enregistrement",
+    "currency": "Devise",
+    "currency_code": "Code",
+    "currency_symbol": "Symbole",
+    "symbol_before": "Symbole avant le montant",
+    "main_unit": "Unité principale",
+    "sub_unit": "Sous-unité",
+    "preferences": "Préférences",
+    "theme": "Thème",
+    "light": "Clair",
+    "dark": "Sombre",
+    "language": "Langue",
+    "pdf_output_dir": "Dossier de sortie des PDF",
+    "saved": "Enregistré"
+  },
+  "placeholder": {
+    "coming_soon": "Disponible dans une phase ultérieure."
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "app": {
+    "title": "Terative"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "invoices": "Invoices",
+    "payments": "Payments",
+    "clients": "Clients",
+    "services": "Services",
+    "accounting": "Accounting",
+    "templates": "Templates",
+    "settings": "Settings"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "new": "New",
+    "search": "Search",
+    "loading": "Loading…",
+    "empty": "No results",
+    "confirm_delete": "Confirm deletion?",
+    "name": "Name",
+    "email": "Email",
+    "phone": "Phone",
+    "address": "Address",
+    "notes": "Notes",
+    "price": "Price",
+    "active": "Active",
+    "include_inactive": "Include inactive"
+  },
+  "clients": {
+    "title": "Clients",
+    "new": "New client",
+    "edit": "Edit client",
+    "none": "No clients yet.",
+    "deleted_soft": "Client archived (existing invoices)."
+  },
+  "services": {
+    "title": "Services",
+    "new": "New service",
+    "edit": "Edit service",
+    "default_price": "Default price",
+    "none": "No services yet."
+  },
+  "settings": {
+    "title": "Settings",
+    "seller": "Seller profile",
+    "seller_name": "Name / business name",
+    "seller_title": "Title",
+    "seller_registration_id": "Registration ID",
+    "currency": "Currency",
+    "currency_code": "Code",
+    "currency_symbol": "Symbol",
+    "symbol_before": "Symbol before amount",
+    "main_unit": "Main unit",
+    "sub_unit": "Sub unit",
+    "preferences": "Preferences",
+    "theme": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "language": "Language",
+    "pdf_output_dir": "PDF output folder",
+    "saved": "Saved"
+  },
+  "placeholder": {
+    "coming_soon": "Available in a later phase."
+  }
+}

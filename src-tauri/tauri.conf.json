@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "terative-scaffold",
+  "productName": "Terative",
   "version": "0.1.0",
   "identifier": "com.terative.app",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "terative-scaffold",
+        "title": "Terative",
         "width": 800,
         "height": 600
       }
