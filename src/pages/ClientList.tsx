@@ -1,15 +1,13 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
 import { useClientStore } from "../stores/clientStore";
-import type { Client, NewClient, UpdateClientInput } from "../types/client";
+import type { NewClient } from "../types/client";
 
-type EditorState =
-  | { mode: "closed" }
-  | { mode: "create" }
-  | { mode: "edit"; client: Client };
+type EditorState = { mode: "closed" } | { mode: "create" };
 
 const emptyForm: NewClient = {
   name: "",
@@ -21,6 +19,7 @@ const emptyForm: NewClient = {
 
 export function ClientList() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const {
     clients,
     loading,
@@ -29,7 +28,6 @@ export function ClientList() {
     setQuery,
     refresh,
     create,
-    update,
     remove,
   } = useClientStore();
   const [editor, setEditor] = useState<EditorState>({ mode: "closed" });
@@ -41,7 +39,7 @@ export function ClientList() {
   return (
     <div className="max-w-5xl">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-zinc-900">{t("clients.title")}</h1>
+        <h1 className="text-2xl font-bold text-fg">{t("clients.title")}</h1>
         <Button onClick={() => setEditor({ mode: "create" })}>
           {t("clients.new")}
         </Button>
@@ -53,7 +51,7 @@ export function ClientList() {
           value={query.search ?? ""}
           onChange={(e) => setQuery({ ...query, search: e.target.value })}
         />
-        <label className="flex items-center gap-2 text-sm text-zinc-700">
+        <label className="flex items-center gap-2 text-sm text-fg-muted">
           <input
             type="checkbox"
             checked={query.include_inactive ?? false}
@@ -65,15 +63,15 @@ export function ClientList() {
         </label>
       </div>
 
-      {error ? <p className="mb-4 text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="mb-4 text-sm text-danger">{error}</p> : null}
       {loading ? (
-        <p className="text-sm text-zinc-600">{t("common.loading")}</p>
+        <p className="text-sm text-fg-muted">{t("common.loading")}</p>
       ) : clients.length === 0 ? (
-        <p className="text-sm text-zinc-600">{t("clients.none")}</p>
+        <p className="text-sm text-fg-muted">{t("clients.none")}</p>
       ) : (
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="border-b border-zinc-200 text-left text-zinc-600">
+            <tr className="border-b border-border text-left text-fg-muted">
               <th className="py-2 pr-3 font-medium">{t("common.name")}</th>
               <th className="py-2 pr-3 font-medium">{t("common.email")}</th>
               <th className="py-2 pr-3 font-medium">{t("common.phone")}</th>
@@ -83,19 +81,26 @@ export function ClientList() {
           </thead>
           <tbody>
             {clients.map((c) => (
-              <tr key={c.id} className="border-b border-zinc-100">
-                <td className="py-2 pr-3 font-medium text-zinc-900">{c.name}</td>
-                <td className="py-2 pr-3 text-zinc-700">{c.email ?? "—"}</td>
-                <td className="py-2 pr-3 text-zinc-700">{c.phone ?? "—"}</td>
-                <td className="py-2 pr-3 text-zinc-700">
+              <tr
+                key={c.id}
+                className="cursor-pointer border-b border-border transition-colors hover:bg-surface-muted"
+                onClick={() => navigate(`/clients/${c.id}`)}
+              >
+                <td className="py-2 pr-3 font-medium text-fg">{c.name}</td>
+                <td className="py-2 pr-3 text-fg-muted">{c.email ?? "—"}</td>
+                <td className="py-2 pr-3 text-fg-muted">{c.phone ?? "—"}</td>
+                <td className="py-2 pr-3 text-fg-muted">
                   {c.active ? "✓" : "—"}
                 </td>
-                <td className="flex justify-end gap-2 py-2 pr-3">
+                <td
+                  className="flex justify-end gap-2 py-2 pr-3"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <Button
                     variant="secondary"
-                    onClick={() => setEditor({ mode: "edit", client: c })}
+                    onClick={() => navigate(`/clients/${c.id}`)}
                   >
-                    {t("common.edit")}
+                    {t("common.view")}
                   </Button>
                   <Button
                     variant="danger"
@@ -114,34 +119,12 @@ export function ClientList() {
         </table>
       )}
 
-      {editor.mode !== "closed" ? (
+      {editor.mode === "create" ? (
         <ClientEditor
-          initial={
-            editor.mode === "edit"
-              ? {
-                  name: editor.client.name,
-                  email: editor.client.email ?? "",
-                  address: editor.client.address ?? "",
-                  phone: editor.client.phone ?? "",
-                  notes: editor.client.notes ?? "",
-                }
-              : emptyForm
-          }
+          initial={emptyForm}
           onCancel={() => setEditor({ mode: "closed" })}
           onSubmit={async (form) => {
-            if (editor.mode === "edit") {
-              const payload: UpdateClientInput = {
-                id: editor.client.id,
-                name: form.name,
-                email: form.email || null,
-                address: form.address || null,
-                phone: form.phone || null,
-                notes: form.notes || null,
-              };
-              await update(payload);
-            } else {
-              await create(form);
-            }
+            await create(form);
             setEditor({ mode: "closed" });
           }}
         />
@@ -166,9 +149,9 @@ function ClientEditor({ initial, onCancel, onSubmit }: EditorProps) {
     setForm((f) => ({ ...f, [key]: value }));
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-10 flex items-center justify-center bg-overlay p-4">
       <form
-        className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl"
+        className="w-full max-w-lg rounded-card bg-surface p-6 shadow-card"
         onSubmit={async (e) => {
           e.preventDefault();
           setErr(null);
@@ -182,9 +165,7 @@ function ClientEditor({ initial, onCancel, onSubmit }: EditorProps) {
           }
         }}
       >
-        <h2 className="mb-4 text-lg font-bold text-zinc-900">
-          {t("clients.edit")}
-        </h2>
+        <h2 className="mb-4 text-lg font-bold text-fg">{t("clients.new")}</h2>
         <div className="flex flex-col gap-3">
           <Input
             label={t("common.name") ?? ""}
@@ -214,7 +195,7 @@ function ClientEditor({ initial, onCancel, onSubmit }: EditorProps) {
             onChange={(e) => update("notes", e.target.value)}
           />
         </div>
-        {err ? <p className="mt-3 text-sm text-red-600">{err}</p> : null}
+        {err ? <p className="mt-3 text-sm text-danger">{err}</p> : null}
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="secondary" type="button" onClick={onCancel}>
             {t("common.cancel")}

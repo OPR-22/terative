@@ -1,0 +1,131 @@
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TaxId(pub Uuid);
+
+impl TaxId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
+impl Default for TaxId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for TaxId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaxDefinition {
+    pub id: TaxId,
+    pub name: String,
+    pub percentage: Decimal,
+    pub tax_id_number: Option<String>,
+    pub active: bool,
+}
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum TaxError {
+    #[error("tax name cannot be empty")]
+    EmptyName,
+    #[error("tax percentage cannot be negative")]
+    NegativePercentage,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewTaxDefinition {
+    pub name: String,
+    pub percentage: Decimal,
+    pub tax_id_number: Option<String>,
+}
+
+impl TaxDefinition {
+    pub fn create(input: NewTaxDefinition) -> Result<Self, TaxError> {
+        let name = input.name.trim().to_string();
+        if name.is_empty() {
+            return Err(TaxError::EmptyName);
+        }
+        if input.percentage.is_sign_negative() {
+            return Err(TaxError::NegativePercentage);
+        }
+        Ok(Self {
+            id: TaxId::new(),
+            name,
+            percentage: input.percentage,
+            tax_id_number: input
+                .tax_id_number
+                .and_then(|s| {
+                    let t = s.trim().to_string();
+                    if t.is_empty() {
+                        None
+                    } else {
+                        Some(t)
+                    }
+                }),
+            active: true,
+        })
+    }
+
+    pub fn deactivate(&mut self) {
+        self.active = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn create_tax_valid() {
+        let t = TaxDefinition::create(NewTaxDefinition {
+            name: "TVA".into(),
+            percentage: dec!(21.0),
+            tax_id_number: Some("BE0123".into()),
+        })
+        .unwrap();
+        assert_eq!(t.name, "TVA");
+        assert!(t.active);
+    }
+
+    #[test]
+    fn create_tax_rejects_empty_name() {
+        let err = TaxDefinition::create(NewTaxDefinition {
+            name: "  ".into(),
+            percentage: dec!(21),
+            tax_id_number: None,
+        })
+        .unwrap_err();
+        assert_eq!(err, TaxError::EmptyName);
+    }
+
+    #[test]
+    fn create_tax_rejects_negative_percentage() {
+        let err = TaxDefinition::create(NewTaxDefinition {
+            name: "X".into(),
+            percentage: dec!(-1),
+            tax_id_number: None,
+        })
+        .unwrap_err();
+        assert_eq!(err, TaxError::NegativePercentage);
+    }
+
+    #[test]
+    fn create_tax_allows_zero_percentage() {
+        let t = TaxDefinition::create(NewTaxDefinition {
+            name: "Exempt".into(),
+            percentage: dec!(0),
+            tax_id_number: None,
+        })
+        .unwrap();
+        assert_eq!(t.percentage, dec!(0));
+    }
+}

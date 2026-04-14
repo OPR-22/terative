@@ -37,7 +37,7 @@ export function MoneyInput({
         onChange={handleChange}
         disabled={disabled}
       />
-      <span className="pb-2 text-sm text-zinc-600">{currencySymbol}</span>
+      <span className="pb-2 text-sm text-fg-muted">{currencySymbol}</span>
     </div>
   );
 }

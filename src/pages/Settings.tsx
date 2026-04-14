@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { open, save } from "@tauri-apps/plugin-dialog";
+
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
+import { dataApi } from "../api/data";
+import { notebookApi } from "../api/notebook";
+import { useNotebookSectionStore } from "../stores/notebookSectionStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import type {
   AppPreferences,
   CurrencyConfig,
+  EmailConfig,
   Language,
   SellerProfile,
   Theme,
@@ -14,26 +20,44 @@ import type {
 
 export function Settings() {
   const { t, i18n } = useTranslation();
-  const { snapshot, load, loading, error, saveSeller, saveCurrency, savePreferences } =
-    useSettingsStore();
+  const {
+    snapshot,
+    load,
+    loading,
+    error,
+    saveSeller,
+    saveCurrency,
+    savePreferences,
+    saveEmailConfig,
+    saveEmailPassword,
+    testEmailConnection,
+  } = useSettingsStore();
 
   useEffect(() => {
     void load();
   }, [load]);
 
   if (loading && !snapshot) {
-    return <p className="text-sm text-zinc-600">{t("common.loading")}</p>;
+    return <p className="text-sm text-fg-muted">{t("common.loading")}</p>;
   }
   if (!snapshot) {
-    return error ? <p className="text-sm text-red-600">{error}</p> : null;
+    return error ? <p className="text-sm text-danger">{error}</p> : null;
   }
 
   return (
     <div className="max-w-3xl space-y-10">
-      <h1 className="text-2xl font-bold text-zinc-900">{t("settings.title")}</h1>
+      <h1 className="text-2xl font-bold text-fg">{t("settings.title")}</h1>
 
       <SellerSection seller={snapshot.seller} onSave={saveSeller} />
       <CurrencySection currency={snapshot.currency} onSave={saveCurrency} />
+      <EmailSection
+        config={snapshot.email}
+        hasPassword={snapshot.has_email_password}
+        onSaveConfig={saveEmailConfig}
+        onSavePassword={saveEmailPassword}
+        onTest={testEmailConnection}
+      />
+      <NotebookSectionsSection />
       <PreferencesSection
         prefs={snapshot.preferences}
         onSave={async (p) => {
@@ -41,7 +65,111 @@ export function Settings() {
           await i18n.changeLanguage(p.language);
         }}
       />
+      <DataSection />
     </div>
+  );
+}
+
+function DataSection() {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<
+    | { kind: "idle" }
+    | { kind: "ok"; message: string }
+    | { kind: "err"; message: string }
+  >({ kind: "idle" });
+  const [busy, setBusy] = useState<"export" | "backup" | "restore" | null>(null);
+
+  const flash = (kind: "ok" | "err", message: string) => {
+    setStatus({ kind, message });
+    if (kind === "ok") {
+      setTimeout(() => setStatus({ kind: "idle" }), 4000);
+    }
+  };
+
+  const runExport = async () => {
+    setBusy("export");
+    try {
+      const stamp = new Date().toISOString().slice(0, 10);
+      const destination = await save({
+        title: t("settings.data_export"),
+        defaultPath: `terative-${stamp}.sqlite`,
+        filters: [{ name: "SQLite", extensions: ["sqlite"] }],
+      });
+      if (!destination) {
+        setBusy(null);
+        return;
+      }
+      const written = await dataApi.export(destination);
+      flash("ok", t("settings.data_exported_to", { path: written }));
+    } catch (e) {
+      flash("err", String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runBackup = async () => {
+    setBusy("backup");
+    try {
+      const path = await dataApi.backup();
+      flash("ok", t("settings.data_backed_up_to", { path }));
+    } catch (e) {
+      flash("err", String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runRestore = async () => {
+    setBusy("restore");
+    try {
+      const source = await open({
+        title: t("settings.data_restore"),
+        multiple: false,
+        directory: false,
+        filters: [{ name: "SQLite", extensions: ["sqlite"] }],
+      });
+      if (!source || Array.isArray(source)) {
+        setBusy(null);
+        return;
+      }
+      if (!confirm(t("settings.data_restore_warning"))) {
+        setBusy(null);
+        return;
+      }
+      await dataApi.restore(source);
+      flash("ok", t("settings.data_restored"));
+    } catch (e) {
+      flash("err", String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-semibold text-fg">
+        {t("settings.data")}
+      </h2>
+      <p className="mb-3 text-sm text-fg-muted">{t("settings.data_help")}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={runExport} disabled={busy !== null}>
+          {t("settings.data_export")}
+        </Button>
+        <Button variant="secondary" onClick={runBackup} disabled={busy !== null}>
+          {t("settings.data_backup")}
+        </Button>
+        <Button variant="secondary" onClick={runRestore} disabled={busy !== null}>
+          {t("settings.data_restore")}
+        </Button>
+      </div>
+      {status.kind === "ok" ? (
+        <p className="mt-3 text-sm text-success break-all">{status.message}</p>
+      ) : null}
+      {status.kind === "err" ? (
+        <p className="mt-3 text-sm text-danger break-all">{status.message}</p>
+      ) : null}
+    </section>
   );
 }
 
@@ -64,7 +192,7 @@ function SellerSection({ seller, onSave }: SellerProps) {
 
   return (
     <section>
-      <h2 className="mb-3 text-lg font-semibold text-zinc-900">
+      <h2 className="mb-3 text-lg font-semibold text-fg">
         {t("settings.seller")}
       </h2>
       <form
@@ -111,7 +239,7 @@ function SellerSection({ seller, onSave }: SellerProps) {
         <div className="sm:col-span-2 flex items-center gap-3">
           <Button type="submit">{t("common.save")}</Button>
           {saved ? (
-            <span className="text-sm text-green-600">{t("settings.saved")}</span>
+            <span className="text-sm text-success">{t("settings.saved")}</span>
           ) : null}
         </div>
       </form>
@@ -139,7 +267,7 @@ function CurrencySection({ currency, onSave }: CurrencyProps) {
 
   return (
     <section>
-      <h2 className="mb-3 text-lg font-semibold text-zinc-900">
+      <h2 className="mb-3 text-lg font-semibold text-fg">
         {t("settings.currency")}
       </h2>
       <form
@@ -178,7 +306,7 @@ function CurrencySection({ currency, onSave }: CurrencyProps) {
           value={form.sub_unit_name}
           onChange={(e) => update("sub_unit_name", e.target.value)}
         />
-        <label className="flex items-center gap-2 text-sm text-zinc-700">
+        <label className="flex items-center gap-2 text-sm text-fg-muted">
           <input
             type="checkbox"
             checked={form.symbol_before}
@@ -189,9 +317,9 @@ function CurrencySection({ currency, onSave }: CurrencyProps) {
         <div className="sm:col-span-2 flex items-center gap-3">
           <Button type="submit">{t("common.save")}</Button>
           {saved ? (
-            <span className="text-sm text-green-600">{t("settings.saved")}</span>
+            <span className="text-sm text-success">{t("settings.saved")}</span>
           ) : null}
-          {err ? <span className="text-sm text-red-600">{err}</span> : null}
+          {err ? <span className="text-sm text-danger">{err}</span> : null}
         </div>
       </form>
     </section>
@@ -214,7 +342,7 @@ function PreferencesSection({ prefs, onSave }: PreferencesProps) {
 
   return (
     <section>
-      <h2 className="mb-3 text-lg font-semibold text-zinc-900">
+      <h2 className="mb-3 text-lg font-semibold text-fg">
         {t("settings.preferences")}
       </h2>
       <form
@@ -226,10 +354,10 @@ function PreferencesSection({ prefs, onSave }: PreferencesProps) {
           setTimeout(() => setSaved(false), 1500);
         }}
       >
-        <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
+        <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
           {t("settings.theme")}
           <select
-            className="block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm"
+            className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
             value={form.theme}
             onChange={(e) =>
               setForm({ ...form, theme: e.target.value as Theme })
@@ -239,10 +367,10 @@ function PreferencesSection({ prefs, onSave }: PreferencesProps) {
             <option value="Dark">{t("settings.dark")}</option>
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-zinc-700">
+        <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
           {t("settings.language")}
           <select
-            className="block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm"
+            className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
             value={form.language}
             onChange={(e) =>
               setForm({ ...form, language: e.target.value as Language })
@@ -261,10 +389,409 @@ function PreferencesSection({ prefs, onSave }: PreferencesProps) {
         <div className="sm:col-span-2 flex items-center gap-3">
           <Button type="submit">{t("common.save")}</Button>
           {saved ? (
-            <span className="text-sm text-green-600">{t("settings.saved")}</span>
+            <span className="text-sm text-success">{t("settings.saved")}</span>
           ) : null}
         </div>
       </form>
+    </section>
+  );
+}
+
+interface EmailProps {
+  config: EmailConfig;
+  hasPassword: boolean;
+  onSaveConfig: (c: EmailConfig) => Promise<void>;
+  onSavePassword: (p: string) => Promise<void>;
+  onTest: () => Promise<void>;
+}
+
+const PLACEHOLDER_KEYS = [
+  "number",
+  "client_name",
+  "date",
+  "due_date",
+  "total",
+  "subtotal",
+  "seller_name",
+  "currency_code",
+];
+
+function EmailSection({
+  config,
+  hasPassword,
+  onSaveConfig,
+  onSavePassword,
+  onTest,
+}: EmailProps) {
+  const { t } = useTranslation();
+  const [form, setForm] = useState<EmailConfig>(config);
+  const [password, setPassword] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [pwSaved, setPwSaved] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [testState, setTestState] = useState<"idle" | "running" | "ok" | "err">(
+    "idle",
+  );
+
+  useEffect(() => {
+    setForm(config);
+  }, [config]);
+
+  const update = <K extends keyof EmailConfig>(key: K, value: EmailConfig[K]) =>
+    setForm((f) => ({ ...f, [key]: value }));
+
+  const saveConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErr(null);
+    try {
+      await onSaveConfig(form);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (e) {
+      setErr(String(e));
+    }
+  };
+
+  const savePassword = async () => {
+    setErr(null);
+    try {
+      await onSavePassword(password);
+      setPassword("");
+      setPwSaved(true);
+      setTimeout(() => setPwSaved(false), 1500);
+    } catch (e) {
+      setErr(String(e));
+    }
+  };
+
+  const runTest = async () => {
+    setTestState("running");
+    setErr(null);
+    try {
+      await onTest();
+      setTestState("ok");
+      setTimeout(() => setTestState("idle"), 2500);
+    } catch (e) {
+      setTestState("err");
+      setErr(String(e));
+    }
+  };
+
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-semibold text-fg">
+        {t("settings.email")}
+      </h2>
+      <form
+        className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+        onSubmit={saveConfig}
+      >
+        <Input
+          label={t("settings.smtp_host") ?? ""}
+          value={form.smtp_host}
+          onChange={(e) => update("smtp_host", e.target.value)}
+          placeholder="smtp.example.com"
+        />
+        <Input
+          label={t("settings.smtp_port") ?? ""}
+          type="number"
+          min="1"
+          max="65535"
+          value={form.smtp_port}
+          onChange={(e) => update("smtp_port", parseInt(e.target.value) || 0)}
+        />
+        <Input
+          label={t("settings.sender_address") ?? ""}
+          type="email"
+          value={form.sender_address}
+          onChange={(e) => update("sender_address", e.target.value)}
+          className="sm:col-span-2"
+          placeholder="you@example.com"
+        />
+        <label className="sm:col-span-2 flex flex-col gap-1 text-sm font-medium text-fg-muted">
+          {t("settings.subject_template")}
+          <input
+            className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
+            value={form.subject_template}
+            onChange={(e) => update("subject_template", e.target.value)}
+            placeholder="Invoice {{number}} from {{seller_name}}"
+          />
+        </label>
+        <label className="sm:col-span-2 flex flex-col gap-1 text-sm font-medium text-fg-muted">
+          {t("settings.body_template")}
+          <textarea
+            className="block min-h-32 w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
+            value={form.body_template}
+            onChange={(e) => update("body_template", e.target.value)}
+            placeholder={`Hi {{client_name}},\n\nPlease find invoice {{number}} attached. Total: {{total}}.\n\n— {{seller_name}}`}
+          />
+        </label>
+
+        <p className="sm:col-span-2 text-xs text-fg-subtle">
+          {t("settings.placeholders_help")}{" "}
+          {PLACEHOLDER_KEYS.map((k) => (
+            <code
+              key={k}
+              className="mx-0.5 rounded-field bg-surface-muted px-1 py-0.5 text-fg-muted"
+            >{`{{${k}}}`}</code>
+          ))}
+        </p>
+
+        <div className="sm:col-span-2 flex items-center gap-3">
+          <Button type="submit">{t("common.save")}</Button>
+          {saved ? (
+            <span className="text-sm text-success">{t("settings.saved")}</span>
+          ) : null}
+        </div>
+      </form>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 border-t border-border pt-4 sm:grid-cols-2">
+        <Input
+          label={t("settings.smtp_password") ?? ""}
+          type="password"
+          value={password}
+          placeholder={
+            hasPassword
+              ? (t("settings.password_stored") ?? "••••••••")
+              : (t("settings.password_unset") ?? "")
+          }
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <div className="flex items-end gap-2">
+          <Button
+            type="button"
+            onClick={savePassword}
+            disabled={password.length === 0}
+          >
+            {hasPassword
+              ? t("settings.update_password")
+              : t("settings.save_password")}
+          </Button>
+          {hasPassword ? (
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => {
+                void onSavePassword("");
+              }}
+            >
+              {t("common.delete")}
+            </Button>
+          ) : null}
+          {pwSaved ? (
+            <span className="text-sm text-success">{t("settings.saved")}</span>
+          ) : null}
+        </div>
+        <div className="sm:col-span-2 flex items-center gap-3">
+          <Button
+            variant="secondary"
+            type="button"
+            onClick={runTest}
+            disabled={testState === "running"}
+          >
+            {testState === "running"
+              ? t("common.loading")
+              : t("settings.test_connection")}
+          </Button>
+          {testState === "ok" ? (
+            <span className="text-sm text-success">
+              {t("settings.test_ok")}
+            </span>
+          ) : null}
+        </div>
+        {err ? <p className="sm:col-span-2 text-sm text-danger">{err}</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function NotebookSectionsSection() {
+  const { t } = useTranslation();
+  const { sections, loading, error, refresh, create, rename, remove, reorder } =
+    useNotebookSectionStore();
+  const [newName, setNewName] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [localErr, setLocalErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const onCreate = async () => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    setBusy(true);
+    setLocalErr(null);
+    try {
+      await create(trimmed);
+      setNewName("");
+    } catch (e) {
+      setLocalErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onStartEdit = (id: string, name: string) => {
+    setEditingId(id);
+    setEditingName(name);
+  };
+
+  const onCommitEdit = async () => {
+    if (!editingId) return;
+    const trimmed = editingName.trim();
+    if (!trimmed) {
+      setEditingId(null);
+      return;
+    }
+    setBusy(true);
+    setLocalErr(null);
+    try {
+      await rename(editingId, trimmed);
+      setEditingId(null);
+    } catch (e) {
+      setLocalErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onDelete = async (id: string, name: string) => {
+    let count = 0;
+    try {
+      count = await notebookApi.countSectionEntries(id);
+    } catch {
+      // Fall back to a generic warning if the count fails.
+    }
+    const msg =
+      count > 0
+        ? t("settings.notebook_delete_warning_with_count", {
+            name,
+            count,
+          })
+        : t("settings.notebook_delete_warning", { name });
+    if (!confirm(msg)) return;
+    setBusy(true);
+    setLocalErr(null);
+    try {
+      await remove(id);
+    } catch (e) {
+      setLocalErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const move = async (index: number, delta: -1 | 1) => {
+    const target = index + delta;
+    if (target < 0 || target >= sections.length) return;
+    const ordered = sections.map((s) => s.id);
+    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+    setBusy(true);
+    setLocalErr(null);
+    try {
+      await reorder(ordered);
+    } catch (e) {
+      setLocalErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-semibold text-fg">
+        {t("settings.notebook_sections")}
+      </h2>
+      <p className="mb-3 text-sm text-fg-muted">
+        {t("settings.notebook_sections_help")}
+      </p>
+
+      {error ? (
+        <p className="mb-3 text-sm text-danger">{error}</p>
+      ) : null}
+      {localErr ? (
+        <p className="mb-3 text-sm text-danger">{localErr}</p>
+      ) : null}
+
+      {loading && sections.length === 0 ? (
+        <p className="text-sm text-fg-muted">{t("common.loading")}</p>
+      ) : (
+        <ul className="mb-3 flex flex-col gap-2">
+          {sections.map((s, i) => (
+            <li
+              key={s.id}
+              className="flex items-center gap-2 rounded-field border border-border bg-surface p-2"
+            >
+              <div className="flex flex-col">
+                <button
+                  type="button"
+                  onClick={() => move(i, -1)}
+                  disabled={busy || i === 0}
+                  className="text-xs text-fg-muted hover:text-fg disabled:opacity-30"
+                  aria-label={t("settings.move_up") ?? ""}
+                >
+                  ▲
+                </button>
+                <button
+                  type="button"
+                  onClick={() => move(i, 1)}
+                  disabled={busy || i === sections.length - 1}
+                  className="text-xs text-fg-muted hover:text-fg disabled:opacity-30"
+                  aria-label={t("settings.move_down") ?? ""}
+                >
+                  ▼
+                </button>
+              </div>
+              {editingId === s.id ? (
+                <input
+                  className="flex-1 rounded-field border border-border bg-surface px-2 py-1 text-sm text-fg"
+                  value={editingName}
+                  onChange={(e) => setEditingName(e.target.value)}
+                  onBlur={onCommitEdit}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void onCommitEdit();
+                    if (e.key === "Escape") setEditingId(null);
+                  }}
+                  autoFocus
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onStartEdit(s.id, s.name)}
+                  className="flex-1 text-left text-sm font-medium text-fg"
+                >
+                  {s.name}
+                </button>
+              )}
+              <Button
+                variant="danger"
+                onClick={() => void onDelete(s.id, s.name)}
+                disabled={busy}
+              >
+                {t("common.delete")}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="flex items-end gap-2">
+        <Input
+          label={t("settings.new_section") ?? ""}
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void onCreate();
+          }}
+          placeholder={t("settings.new_section_placeholder") ?? ""}
+        />
+        <Button onClick={onCreate} disabled={busy || newName.trim() === ""}>
+          {t("common.create")}
+        </Button>
+      </div>
     </section>
   );
 }

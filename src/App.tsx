@@ -1,40 +1,31 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import { useTranslation } from "react-i18next";
 
 import { Shell } from "./components/layout/Shell";
+import { Accounting } from "./pages/Accounting";
+import { ClientDetail } from "./pages/ClientDetail";
 import { ClientList } from "./pages/ClientList";
-import { Placeholder } from "./pages/Placeholder";
+import { Dashboard } from "./pages/Dashboard";
+import { InvoiceList } from "./pages/InvoiceList";
+import { PaymentList } from "./pages/PaymentList";
 import { ServiceList } from "./pages/ServiceList";
 import { Settings } from "./pages/Settings";
+import { TaxList } from "./pages/TaxList";
+import { TemplateList } from "./pages/TemplateList";
 
 function App() {
-  const { t } = useTranslation();
   return (
     <Routes>
       <Route element={<Shell />}>
-        <Route index element={<Navigate to="/clients" replace />} />
-        <Route
-          path="dashboard"
-          element={<Placeholder title={t("nav.dashboard")} />}
-        />
-        <Route
-          path="invoices"
-          element={<Placeholder title={t("nav.invoices")} />}
-        />
-        <Route
-          path="payments"
-          element={<Placeholder title={t("nav.payments")} />}
-        />
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="dashboard" element={<Dashboard />} />
+        <Route path="invoices" element={<InvoiceList />} />
+        <Route path="payments" element={<PaymentList />} />
         <Route path="clients" element={<ClientList />} />
+        <Route path="clients/:id" element={<ClientDetail />} />
         <Route path="services" element={<ServiceList />} />
-        <Route
-          path="accounting"
-          element={<Placeholder title={t("nav.accounting")} />}
-        />
-        <Route
-          path="templates"
-          element={<Placeholder title={t("nav.templates")} />}
-        />
+        <Route path="taxes" element={<TaxList />} />
+        <Route path="accounting" element={<Accounting />} />
+        <Route path="templates" element={<TemplateList />} />
         <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>

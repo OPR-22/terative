@@ -749,7 +749,9 @@ Lettre SMTP adapter. Credential storage via Stronghold. Email template editor wi
 Payment recording with allocation UI. Invoice payment status derivation. Outstanding / overdue views. Revenue by period + by client charts. Aging report. Client balance view.
 
 ### Phase 5 — Reports & Migration
-Year-end report PDF generation. Legacy JSON importer. Database export / backup / restore. Invoice cancellation (PDF watermark).
+Database export / backup / restore. Invoice cancellation (PDF watermark).
 
 ### Phase 6 — Polish
-Design system pass (typography, color, motion). Dark / light theme. i18n (FR/EN). Onboarding flow for first-time setup. Duplicate invoice. Keyboard shortcuts.
+Design system pass (typography, color, motion). Typst templates finish other layouts. Dark / light theme for UI. i18n (FR/EN). Duplicate invoice. Keyboard shortcuts.- file picker (Logo, signature, output path, etc.)
+- Modern / Minimal Typst layouts are stubs delegating to Classic.
+-Adding recharts or similar is a polish graphs for dashboard

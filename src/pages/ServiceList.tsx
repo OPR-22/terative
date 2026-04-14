@@ -50,7 +50,7 @@ export function ServiceList() {
   return (
     <div className="max-w-4xl">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-zinc-900">
+        <h1 className="text-2xl font-bold text-fg">
           {t("services.title")}
         </h1>
         <Button onClick={() => setEditor({ mode: "create" })}>
@@ -58,7 +58,7 @@ export function ServiceList() {
         </Button>
       </div>
 
-      <label className="mb-4 flex items-center gap-2 text-sm text-zinc-700">
+      <label className="mb-4 flex items-center gap-2 text-sm text-fg-muted">
         <input
           type="checkbox"
           checked={includeInactive}
@@ -67,15 +67,15 @@ export function ServiceList() {
         {t("common.include_inactive")}
       </label>
 
-      {error ? <p className="mb-4 text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="mb-4 text-sm text-danger">{error}</p> : null}
       {loading ? (
-        <p className="text-sm text-zinc-600">{t("common.loading")}</p>
+        <p className="text-sm text-fg-muted">{t("common.loading")}</p>
       ) : services.length === 0 ? (
-        <p className="text-sm text-zinc-600">{t("services.none")}</p>
+        <p className="text-sm text-fg-muted">{t("services.none")}</p>
       ) : (
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="border-b border-zinc-200 text-left text-zinc-600">
+            <tr className="border-b border-border text-left text-fg-muted">
               <th className="py-2 pr-3 font-medium">{t("common.name")}</th>
               <th className="py-2 pr-3 font-medium">
                 {t("services.default_price")}
@@ -86,14 +86,14 @@ export function ServiceList() {
           </thead>
           <tbody>
             {services.map((s) => (
-              <tr key={s.id} className="border-b border-zinc-100">
-                <td className="py-2 pr-3 font-medium text-zinc-900">
+              <tr key={s.id} className="border-b border-border">
+                <td className="py-2 pr-3 font-medium text-fg">
                   {s.name}
                 </td>
-                <td className="py-2 pr-3 text-zinc-700">
+                <td className="py-2 pr-3 text-fg-muted">
                   {formatMoney(s.default_price)}
                 </td>
-                <td className="py-2 pr-3 text-zinc-700">
+                <td className="py-2 pr-3 text-fg-muted">
                   {s.active ? "✓" : "—"}
                 </td>
                 <td className="flex justify-end gap-2 py-2 pr-3">
@@ -172,9 +172,9 @@ function ServiceEditor({
   const [err, setErr] = useState<string | null>(null);
 
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-10 flex items-center justify-center bg-overlay p-4">
       <form
-        className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl"
+        className="w-full max-w-lg rounded-card bg-surface p-6 shadow-card"
         onSubmit={async (e) => {
           e.preventDefault();
           setErr(null);
@@ -188,7 +188,7 @@ function ServiceEditor({
           }
         }}
       >
-        <h2 className="mb-4 text-lg font-bold text-zinc-900">
+        <h2 className="mb-4 text-lg font-bold text-fg">
           {t("services.edit")}
         </h2>
         <div className="flex flex-col gap-3">
@@ -210,7 +210,7 @@ function ServiceEditor({
             }
           />
         </div>
-        {err ? <p className="mt-3 text-sm text-red-600">{err}</p> : null}
+        {err ? <p className="mt-3 text-sm text-danger">{err}</p> : null}
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="secondary" type="button" onClick={onCancel}>
             {t("common.cancel")}

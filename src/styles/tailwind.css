@@ -1,7 +1,119 @@
 @import "tailwindcss";
 
+/*
+  Centralized design tokens. Edit here, everything inherits.
+  Tailwind v4 auto-generates utility classes from every token below:
+    --color-brand       → bg-brand, text-brand, border-brand, ring-brand
+    --color-surface     → bg-surface, text-surface
+    --radius-card       → rounded-card
+    --font-sans         → font-sans
+    --ease-out          → ease-out (via arbitrary variant fallback)
+  Components must consume these semantic tokens, never raw palette colors.
+
+  Dark mode: override the values under [data-theme="dark"] below. The
+  generated utility classes reference the CSS variables, so swapping
+  the variable remaps every consumer.
+*/
+
 @theme {
-  --color-accent: #2563eb;
+  /* Brand — primary actions, focus rings, active nav state. */
+  --color-brand: #2563eb;
+  --color-brand-hover: #1d4ed8;
+  --color-brand-fg: #ffffff;
+
+  /* Surfaces — page background, cards, modals. */
+  --color-surface: #ffffff;
+  --color-surface-muted: #f4f4f5;
+  --color-surface-sunken: #fafafa;
+  --color-overlay: rgba(0, 0, 0, 0.4);
+
+  /* Borders and subtle dividers. */
+  --color-border: #e4e4e7;
+  --color-border-strong: #d4d4d8;
+
+  /* Text — primary, secondary (labels), tertiary (placeholders, captions). */
+  --color-fg: #18181b;
+  --color-fg-muted: #52525b;
+  --color-fg-subtle: #71717a;
+  --color-fg-inverse: #ffffff;
+
+  /* Semantic accents. */
+  --color-danger: #dc2626;
+  --color-danger-hover: #b91c1c;
+  --color-danger-fg: #ffffff;
+  --color-success: #16a34a;
+  --color-warning: #ca8a04;
+
+  /* Status badges for invoices. */
+  --color-status-draft-bg: #f4f4f5;
+  --color-status-draft-fg: #52525b;
+  --color-status-finalized-bg: #dbeafe;
+  --color-status-finalized-fg: #1e40af;
+  --color-status-sent-bg: #dcfce7;
+  --color-status-sent-fg: #166534;
+  --color-status-cancelled-bg: #fee2e2;
+  --color-status-cancelled-fg: #991b1b;
+
+  /* Radii. */
+  --radius-field: 0.375rem;   /* inputs, buttons */
+  --radius-card: 0.5rem;      /* modals, panels */
+  --radius-pill: 9999px;      /* badges */
+
+  /* Shadows. */
+  --shadow-card: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+
+  /* Typography — the sans scale is the app default; serif/mono are available
+     for emphasis. Keep the font stack grounded in system fonts so the UI
+     inherits platform defaults. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-serif: ui-serif, Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Motion — unified transition durations + easing for hover, focus, theme
+     swap. Consumers should use `transition-colors`, `duration-fast`, etc. */
+  --duration-instant: 80ms;
+  --duration-fast: 150ms;
+  --duration-medium: 250ms;
+  --duration-slow: 400ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
+}
+
+/* Dark theme — same variable names, different values. */
+[data-theme="dark"] {
+  --color-brand: #3b82f6;
+  --color-brand-hover: #60a5fa;
+  --color-brand-fg: #0b1220;
+
+  --color-surface: #0b0b0f;
+  --color-surface-muted: #17171c;
+  --color-surface-sunken: #111116;
+  --color-overlay: rgba(0, 0, 0, 0.6);
+
+  --color-border: #27272a;
+  --color-border-strong: #3f3f46;
+
+  --color-fg: #f4f4f5;
+  --color-fg-muted: #a1a1aa;
+  --color-fg-subtle: #71717a;
+  --color-fg-inverse: #0b0b0f;
+
+  --color-danger: #ef4444;
+  --color-danger-hover: #f87171;
+  --color-danger-fg: #ffffff;
+  --color-success: #22c55e;
+  --color-warning: #eab308;
+
+  --color-status-draft-bg: #27272a;
+  --color-status-draft-fg: #a1a1aa;
+  --color-status-finalized-bg: #1e3a8a;
+  --color-status-finalized-fg: #bfdbfe;
+  --color-status-sent-bg: #14532d;
+  --color-status-sent-fg: #bbf7d0;
+  --color-status-cancelled-bg: #7f1d1d;
+  --color-status-cancelled-fg: #fecaca;
+
+  --shadow-card: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.6);
 }
 
 html,
@@ -11,9 +123,24 @@ body,
 }
 
 body {
-  @apply bg-white text-zinc-900 antialiased;
+  background-color: var(--color-surface);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition:
+    background-color var(--duration-medium) var(--ease-standard),
+    color var(--duration-medium) var(--ease-standard);
 }
 
-.dark body {
-  @apply bg-zinc-950 text-zinc-100;
+/* Respect reduced-motion: collapse all transitions to near-zero so
+   animations don't make users sick. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -1,12 +1,28 @@
+pub mod accounting_usecases;
 pub mod client_usecases;
+pub mod email_usecases;
+pub mod invoice_usecases;
+pub mod notebook_usecases;
+pub mod payment_usecases;
 pub mod ports;
 pub mod service_usecases;
 pub mod settings_usecases;
+pub mod tax_usecases;
+pub mod template_usecases;
 
 use crate::domain::client::ClientError;
+use crate::domain::invoice::InvoiceError;
+use crate::domain::line_item::LineItemError;
 use crate::domain::money::MoneyError;
+use crate::domain::notebook::{
+    JournalEntryError, NotebookError, NotebookSectionError,
+};
+use crate::domain::payment::PaymentError;
 use crate::domain::service::ServiceError;
-use crate::domain::settings::CurrencyConfigError;
+use crate::domain::settings::{CurrencyConfigError, EmailConfigError};
+use crate::domain::tax::TaxError;
+use crate::domain::template::TemplateError;
+use crate::application::ports::{EmailError, PdfError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RepoError {
@@ -25,13 +41,41 @@ pub enum AppError {
     #[error(transparent)]
     Service(#[from] ServiceError),
     #[error(transparent)]
+    Tax(#[from] TaxError),
+    #[error(transparent)]
+    Template(#[from] TemplateError),
+    #[error(transparent)]
+    Invoice(#[from] InvoiceError),
+    #[error(transparent)]
+    Payment(#[from] PaymentError),
+    #[error(transparent)]
+    NotebookSection(#[from] NotebookSectionError),
+    #[error(transparent)]
+    Notebook(#[from] NotebookError),
+    #[error(transparent)]
+    JournalEntry(#[from] JournalEntryError),
+    #[error(transparent)]
+    LineItem(#[from] LineItemError),
+    #[error(transparent)]
     Money(#[from] MoneyError),
     #[error(transparent)]
     Currency(#[from] CurrencyConfigError),
     #[error(transparent)]
+    EmailConfig(#[from] EmailConfigError),
+    #[error(transparent)]
+    Email(#[from] EmailError),
+    #[error(transparent)]
     Repo(#[from] RepoError),
+    #[error(transparent)]
+    Pdf(#[from] PdfError),
     #[error("cannot delete client with existing invoices")]
     ClientHasInvoices,
+    #[error("template is in use by one or more invoices")]
+    TemplateInUse,
+    #[error("smtp password not configured")]
+    MissingSmtpPassword,
+    #[error("invoice has no pdf to send; finalize it first")]
+    MissingInvoicePdf,
     #[error("entity not found")]
     NotFound,
 }

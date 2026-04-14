@@ -1,9 +1,27 @@
+pub mod accounting_repo;
+pub mod client_journal_repo;
+pub mod client_notebook_repo;
 pub mod client_repo;
 pub mod connection;
+pub mod invoice_repo;
+pub mod notebook_section_repo;
+pub mod number_generator;
+pub mod payment_repo;
 pub mod service_repo;
 pub mod settings_repo;
+pub mod tax_repo;
+pub mod template_repo;
 
+pub use accounting_repo::SqliteAccountingRepository;
+pub use client_journal_repo::SqliteClientJournalRepository;
+pub use client_notebook_repo::SqliteClientNotebookRepository;
 pub use client_repo::SqliteClientRepository;
 pub use connection::{open, Db};
+pub use invoice_repo::SqliteInvoiceRepository;
+pub use notebook_section_repo::SqliteNotebookSectionRepository;
+pub use number_generator::SqliteInvoiceNumberGenerator;
+pub use payment_repo::SqlitePaymentRepository;
 pub use service_repo::SqliteServiceRepository;
 pub use settings_repo::SqliteSettingsRepository;
+pub use tax_repo::SqliteTaxRepository;
+pub use template_repo::SqliteTemplateRepository;

@@ -1,5 +1,5 @@
 use crate::application::RepoError;
-use crate::domain::settings::{AppPreferences, CurrencyConfig, SellerProfile};
+use crate::domain::settings::{AppPreferences, CurrencyConfig, EmailConfig, SellerProfile};
 
 pub trait SettingsRepository: Send + Sync {
     fn get_seller_profile(&self) -> Result<SellerProfile, RepoError>;
@@ -10,4 +10,7 @@ pub trait SettingsRepository: Send + Sync {
 
     fn get_app_preferences(&self) -> Result<AppPreferences, RepoError>;
     fn set_app_preferences(&self, prefs: &AppPreferences) -> Result<(), RepoError>;
+
+    fn get_email_config(&self) -> Result<EmailConfig, RepoError>;
+    fn set_email_config(&self, config: &EmailConfig) -> Result<(), RepoError>;
 }

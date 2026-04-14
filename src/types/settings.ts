@@ -25,8 +25,18 @@ export interface AppPreferences {
   pdf_output_dir: string;
 }
 
+export interface EmailConfig {
+  smtp_host: string;
+  smtp_port: number;
+  sender_address: string;
+  subject_template: string;
+  body_template: string;
+}
+
 export interface SettingsSnapshot {
   seller: SellerProfile;
   currency: CurrencyConfig;
   preferences: AppPreferences;
+  email: EmailConfig;
+  has_email_password: boolean;
 }

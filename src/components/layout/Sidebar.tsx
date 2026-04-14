@@ -3,10 +3,10 @@ import { useTranslation } from "react-i18next";
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   [
-    "block rounded-md px-3 py-2 text-sm font-medium transition-colors",
+    "block rounded-field px-3 py-2 text-sm font-medium transition-colors",
     isActive
-      ? "bg-blue-600 text-white"
-      : "text-zinc-700 hover:bg-zinc-100",
+      ? "bg-brand text-brand-fg"
+      : "text-fg-muted hover:bg-surface-muted",
   ].join(" ");
 
 export function Sidebar() {
@@ -17,14 +17,15 @@ export function Sidebar() {
     { to: "/payments", label: t("nav.payments") },
     { to: "/clients", label: t("nav.clients") },
     { to: "/services", label: t("nav.services") },
+    { to: "/taxes", label: t("nav.taxes") },
     { to: "/accounting", label: t("nav.accounting") },
     { to: "/templates", label: t("nav.templates") },
     { to: "/settings", label: t("nav.settings") },
   ];
   return (
-    <aside className="flex h-full w-56 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50 p-3">
+    <aside className="flex h-full w-56 shrink-0 flex-col border-r border-border bg-surface-sunken p-3">
       <div className="mb-6 px-3 py-2">
-        <span className="text-xl font-bold tracking-tight text-zinc-900">
+        <span className="text-xl font-bold tracking-tight text-fg">
           {t("app.title")}
         </span>
       </div>

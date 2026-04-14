@@ -7,12 +7,12 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const base =
-  "inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex items-center justify-center rounded-field px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-1";
 
 const variantClasses: Record<Variant, string> = {
-  primary: "bg-blue-600 text-white hover:bg-blue-700",
-  secondary: "bg-zinc-100 text-zinc-900 hover:bg-zinc-200",
-  danger: "bg-red-600 text-white hover:bg-red-700",
+  primary: "bg-brand text-brand-fg hover:bg-brand-hover",
+  secondary: "bg-surface-muted text-fg hover:bg-border",
+  danger: "bg-danger text-danger-fg hover:bg-danger-hover",
 };
 
 export function Button({

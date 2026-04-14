@@ -12,6 +12,29 @@ pub trait ClientRepository: Send + Sync {
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ListClientsQuery {
+    #[serde(default)]
     pub search: Option<String>,
+    #[serde(default)]
     pub include_inactive: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deserialize_empty_object_uses_defaults() {
+        let q: ListClientsQuery =
+            serde_json::from_str("{}").expect("empty object must deserialize");
+        assert_eq!(q.search, None);
+        assert!(!q.include_inactive);
+    }
+
+    #[test]
+    fn deserialize_partial_object_fills_missing_fields() {
+        let q: ListClientsQuery = serde_json::from_str(r#"{"search": "acme"}"#)
+            .expect("partial object must deserialize");
+        assert_eq!(q.search.as_deref(), Some("acme"));
+        assert!(!q.include_inactive);
+    }
 }
