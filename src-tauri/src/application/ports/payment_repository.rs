@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::application::RepoError;
 use crate::domain::client::ClientId;
 use crate::domain::invoice::InvoiceId;
@@ -12,6 +14,13 @@ pub trait PaymentRepository: Send + Sync {
     fn delete(&self, id: PaymentId) -> Result<(), RepoError>;
     /// Sum of allocations targeting a given invoice, across all payments.
     fn allocated_for_invoice(&self, id: InvoiceId) -> Result<Money, RepoError>;
+    /// Batch version of [`allocated_for_invoice`]: returns the allocated total
+    /// for every id in `ids` that has at least one allocation. Invoices with
+    /// no allocations are absent from the map (caller should default to zero).
+    fn allocated_for_invoices(
+        &self,
+        ids: &[InvoiceId],
+    ) -> Result<HashMap<InvoiceId, Money>, RepoError>;
 }
 
 #[derive(Debug, Clone, Default)]

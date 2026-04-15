@@ -2,24 +2,36 @@ use std::sync::Arc;
 
 use chrono::{NaiveDate, Utc};
 
-use crate::application::ports::{ListPaymentsQuery, PaymentRepository};
+use crate::application::ports::{InvoiceRepository, ListPaymentsQuery, PaymentRepository};
 use crate::application::AppError;
+use crate::domain::invoice::InvoiceId;
 use crate::domain::money::Money;
 use crate::domain::payment::{
     NewPayment, NewPaymentAllocation, Payment, PaymentId, PaymentMethod,
 };
 
 pub struct RecordPayment {
-    repo: Arc<dyn PaymentRepository>,
+    payments: Arc<dyn PaymentRepository>,
+    invoices: Arc<dyn InvoiceRepository>,
 }
 
 impl RecordPayment {
-    pub fn new(repo: Arc<dyn PaymentRepository>) -> Self {
-        Self { repo }
+    pub fn new(
+        payments: Arc<dyn PaymentRepository>,
+        invoices: Arc<dyn InvoiceRepository>,
+    ) -> Self {
+        Self { payments, invoices }
     }
+
     pub fn execute(&self, input: NewPayment) -> Result<Payment, AppError> {
+        validate_cross_aggregate_allocations(
+            self.payments.as_ref(),
+            self.invoices.as_ref(),
+            &input.allocations,
+            None,
+        )?;
         let payment = Payment::create(input, Utc::now())?;
-        self.repo.insert(&payment)?;
+        self.payments.insert(&payment)?;
         Ok(payment)
     }
 }
@@ -36,15 +48,29 @@ pub struct UpdatePaymentInput {
 }
 
 pub struct UpdatePayment {
-    repo: Arc<dyn PaymentRepository>,
+    payments: Arc<dyn PaymentRepository>,
+    invoices: Arc<dyn InvoiceRepository>,
 }
 
 impl UpdatePayment {
-    pub fn new(repo: Arc<dyn PaymentRepository>) -> Self {
-        Self { repo }
+    pub fn new(
+        payments: Arc<dyn PaymentRepository>,
+        invoices: Arc<dyn InvoiceRepository>,
+    ) -> Self {
+        Self { payments, invoices }
     }
+
     pub fn execute(&self, input: UpdatePaymentInput) -> Result<Payment, AppError> {
-        let mut payment = self.repo.get(input.id)?.ok_or(AppError::NotFound)?;
+        let mut payment = self.payments.get(input.id)?.ok_or(AppError::NotFound)?;
+        // Subtract this payment's current allocations from the "already
+        // allocated" totals so a re-save of the same invoice doesn't
+        // double-count itself.
+        validate_cross_aggregate_allocations(
+            self.payments.as_ref(),
+            self.invoices.as_ref(),
+            &input.allocations,
+            Some(&payment),
+        )?;
         payment.replace_fields(
             input.date,
             input.amount,
@@ -53,9 +79,55 @@ impl UpdatePayment {
             input.allocations,
             input.notes,
         )?;
-        self.repo.update(&payment)?;
+        self.payments.update(&payment)?;
         Ok(payment)
     }
+}
+
+/// Enforces the cross-aggregate rule that `Payment::create` can't see:
+/// `sum(allocations on an invoice across all payments) <= invoice.total`.
+///
+/// `previous` is the payment being updated (or `None` for create). When
+/// present, its own prior allocation on each invoice is subtracted from the
+/// "already allocated" total so re-saving doesn't reject itself.
+fn validate_cross_aggregate_allocations(
+    payments: &dyn PaymentRepository,
+    invoices: &dyn InvoiceRepository,
+    new_allocations: &[NewPaymentAllocation],
+    previous: Option<&Payment>,
+) -> Result<(), AppError> {
+    for alloc in new_allocations {
+        let invoice = invoices
+            .get(alloc.invoice_id)?
+            .ok_or(AppError::NotFound)?;
+        let total_allocated = payments.allocated_for_invoice(alloc.invoice_id)?;
+        let previous_self = previous
+            .map(|p| sum_allocations_to(p, alloc.invoice_id, invoice.currency))
+            .unwrap_or_else(|| Money::new(0, invoice.currency));
+        // total_allocated already includes previous_self (since the existing
+        // payment is still in the DB when validating the update), so subtract
+        // it to get the allocations from *other* payments.
+        let others_cents = total_allocated
+            .amount_cents
+            .saturating_sub(previous_self.amount_cents);
+        let others = Money::new(others_cents, invoice.currency);
+        invoice.can_accept_allocation(others, alloc.amount)?;
+    }
+    Ok(())
+}
+
+fn sum_allocations_to(
+    payment: &Payment,
+    invoice_id: InvoiceId,
+    currency: crate::domain::money::Currency,
+) -> Money {
+    let cents: i64 = payment
+        .allocations
+        .iter()
+        .filter(|a| a.invoice_id == invoice_id)
+        .map(|a| a.amount.amount_cents)
+        .sum();
+    Money::new(cents, currency)
 }
 
 pub struct DeletePayment {
@@ -104,11 +176,14 @@ impl GetPayment {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::ports::ListInvoicesQuery;
     use crate::application::RepoError;
     use crate::domain::client::ClientId;
-    use crate::domain::invoice::InvoiceId;
+    use crate::domain::invoice::{Invoice, InvoiceId, InvoiceNumber, NewInvoice};
+    use crate::domain::line_item::NewLineItem;
     use crate::domain::money::Currency;
     use parking_lot::Mutex;
+    use rust_decimal::Decimal;
     use std::collections::HashMap;
 
     #[derive(Default)]
@@ -156,10 +231,93 @@ mod tests {
                 .sum();
             Ok(Money::new(sum, Currency::new("EUR").unwrap()))
         }
+        fn allocated_for_invoices(
+            &self,
+            ids: &[InvoiceId],
+        ) -> Result<std::collections::HashMap<InvoiceId, Money>, RepoError> {
+            let g = self.inner.lock();
+            let mut out = std::collections::HashMap::new();
+            for id in ids {
+                let sum: i64 = g
+                    .values()
+                    .flat_map(|p| p.allocations.iter())
+                    .filter(|a| a.invoice_id == *id)
+                    .map(|a| a.amount.amount_cents)
+                    .sum();
+                if sum > 0 {
+                    out.insert(*id, Money::new(sum, Currency::new("EUR").unwrap()));
+                }
+            }
+            Ok(out)
+        }
+    }
+
+    /// In-memory stub for `InvoiceRepository`. Tests that don't care about
+    /// allocation validation (e.g. use `allocations: vec![]`) can skip seeding
+    /// entirely; tests that pass allocations must seed the invoice first or
+    /// the use case will return `NotFound`.
+    #[derive(Default)]
+    struct StubInvoiceRepo {
+        invoices: Mutex<HashMap<InvoiceId, Invoice>>,
+    }
+
+    impl StubInvoiceRepo {
+        fn seed(&self, invoice: Invoice) {
+            self.invoices.lock().insert(invoice.id, invoice);
+        }
+    }
+
+    impl InvoiceRepository for StubInvoiceRepo {
+        fn insert(&self, _: &Invoice) -> Result<(), RepoError> {
+            Ok(())
+        }
+        fn update(&self, _: &Invoice) -> Result<(), RepoError> {
+            Ok(())
+        }
+        fn get(&self, id: InvoiceId) -> Result<Option<Invoice>, RepoError> {
+            Ok(self.invoices.lock().get(&id).cloned())
+        }
+        fn list(&self, _: ListInvoicesQuery) -> Result<Vec<Invoice>, RepoError> {
+            Ok(self.invoices.lock().values().cloned().collect())
+        }
+        fn delete(&self, _: InvoiceId) -> Result<(), RepoError> {
+            Ok(())
+        }
     }
 
     fn eur() -> Currency {
         Currency::new("EUR").unwrap()
+    }
+
+    fn make_finalized_invoice(total_cents: i64) -> Invoice {
+        let mut inv = Invoice::create_draft(
+            NewInvoice {
+                client_id: ClientId::new(),
+                template_id: None,
+                date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
+                due_date: None,
+                line_items: vec![NewLineItem {
+                    description: "line".into(),
+                    quantity: Decimal::from(1),
+                    unit_price: Money::new(total_cents, eur()),
+                }],
+                tax_ids: vec![],
+                notes: None,
+                currency: eur(),
+            },
+            &[],
+            Utc::now(),
+        )
+        .unwrap();
+        inv.finalize(InvoiceNumber(1), Utc::now()).unwrap();
+        inv
+    }
+
+    fn repos() -> (Arc<InMemoryPaymentRepo>, Arc<StubInvoiceRepo>) {
+        (
+            Arc::new(InMemoryPaymentRepo::default()),
+            Arc::new(StubInvoiceRepo::default()),
+        )
     }
 
     fn new_input(amount: i64, allocations: Vec<NewPaymentAllocation>) -> NewPayment {
@@ -176,18 +334,18 @@ mod tests {
 
     #[test]
     fn record_payment_persists_entity() {
-        let repo = Arc::new(InMemoryPaymentRepo::default());
-        let payment = RecordPayment::new(repo.clone())
+        let (payments, invoices) = repos();
+        let payment = RecordPayment::new(payments.clone(), invoices)
             .execute(new_input(1000, vec![]))
             .unwrap();
         assert_eq!(payment.amount.amount_cents, 1000);
-        assert_eq!(repo.inner.lock().len(), 1);
+        assert_eq!(payments.inner.lock().len(), 1);
     }
 
     #[test]
     fn record_payment_rejects_negative_amount() {
-        let repo = Arc::new(InMemoryPaymentRepo::default());
-        let err = RecordPayment::new(repo)
+        let (payments, invoices) = repos();
+        let err = RecordPayment::new(payments, invoices)
             .execute(new_input(-1, vec![]))
             .unwrap_err();
         assert!(matches!(err, AppError::Payment(_)));
@@ -195,8 +353,8 @@ mod tests {
 
     #[test]
     fn update_payment_rejects_missing_id() {
-        let repo = Arc::new(InMemoryPaymentRepo::default());
-        let err = UpdatePayment::new(repo)
+        let (payments, invoices) = repos();
+        let err = UpdatePayment::new(payments, invoices)
             .execute(UpdatePaymentInput {
                 id: PaymentId::new(),
                 date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
@@ -212,11 +370,11 @@ mod tests {
 
     #[test]
     fn update_payment_replaces_fields() {
-        let repo = Arc::new(InMemoryPaymentRepo::default());
-        let payment = RecordPayment::new(repo.clone())
+        let (payments, invoices) = repos();
+        let payment = RecordPayment::new(payments.clone(), invoices.clone())
             .execute(new_input(1000, vec![]))
             .unwrap();
-        let updated = UpdatePayment::new(repo)
+        let updated = UpdatePayment::new(payments, invoices)
             .execute(UpdatePaymentInput {
                 id: payment.id,
                 date: payment.date,
@@ -234,18 +392,20 @@ mod tests {
 
     #[test]
     fn delete_payment_removes_entity() {
-        let repo = Arc::new(InMemoryPaymentRepo::default());
-        let payment = RecordPayment::new(repo.clone())
+        let (payments, invoices) = repos();
+        let payment = RecordPayment::new(payments.clone(), invoices)
             .execute(new_input(1000, vec![]))
             .unwrap();
-        DeletePayment::new(repo.clone()).execute(payment.id).unwrap();
-        assert!(repo.inner.lock().is_empty());
+        DeletePayment::new(payments.clone())
+            .execute(payment.id)
+            .unwrap();
+        assert!(payments.inner.lock().is_empty());
     }
 
     #[test]
     fn delete_payment_rejects_missing_id() {
-        let repo = Arc::new(InMemoryPaymentRepo::default());
-        let err = DeletePayment::new(repo)
+        let (payments, _invoices) = repos();
+        let err = DeletePayment::new(payments)
             .execute(PaymentId::new())
             .unwrap_err();
         assert!(matches!(err, AppError::NotFound));
@@ -253,19 +413,194 @@ mod tests {
 
     #[test]
     fn list_payments_filters_by_client() {
-        let repo = Arc::new(InMemoryPaymentRepo::default());
-        let record = RecordPayment::new(repo.clone());
-        let mut a = new_input(1000, vec![]);
+        let (payments, invoices) = repos();
+        let record = RecordPayment::new(payments.clone(), invoices);
+        let a = new_input(1000, vec![]);
         let client_a = a.client_id;
         record.execute(a.clone()).unwrap();
-        a = new_input(500, vec![]);
-        record.execute(a).unwrap();
-        let filtered = ListPayments::new(repo)
+        let b = new_input(500, vec![]);
+        record.execute(b).unwrap();
+        let filtered = ListPayments::new(payments)
             .execute(ListPaymentsQuery {
                 client_id: Some(client_a),
                 search: None,
             })
             .unwrap();
         assert_eq!(filtered.len(), 1);
+    }
+
+    // --- Cross-aggregate over-allocation safeguard ---
+
+    fn alloc(id: InvoiceId, cents: i64) -> NewPaymentAllocation {
+        NewPaymentAllocation {
+            invoice_id: id,
+            amount: Money::new(cents, eur()),
+        }
+    }
+
+    #[test]
+    fn record_payment_rejects_overpayment_across_payments() {
+        let (payments, invoices) = repos();
+        let invoice = make_finalized_invoice(1000);
+        let invoice_id = invoice.id;
+        invoices.seed(invoice);
+
+        // First payment uses €700 of the €1000 budget.
+        RecordPayment::new(payments.clone(), invoices.clone())
+            .execute(new_input(700, vec![alloc(invoice_id, 700)]))
+            .unwrap();
+
+        // Second payment tries to allocate another €400 → would total €1100.
+        let err = RecordPayment::new(payments, invoices)
+            .execute(new_input(400, vec![alloc(invoice_id, 400)]))
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            AppError::Invoice(crate::domain::invoice::InvoiceError::OverAllocated)
+        ));
+    }
+
+    #[test]
+    fn record_payment_rejects_any_allocation_when_already_fully_paid() {
+        let (payments, invoices) = repos();
+        let invoice = make_finalized_invoice(1000);
+        let invoice_id = invoice.id;
+        invoices.seed(invoice);
+
+        // Fully pay the invoice.
+        RecordPayment::new(payments.clone(), invoices.clone())
+            .execute(new_input(1000, vec![alloc(invoice_id, 1000)]))
+            .unwrap();
+
+        // Second payment of €1 is refused even though the invoice domain
+        // doesn't know about the first payment directly.
+        let err = RecordPayment::new(payments, invoices)
+            .execute(new_input(1, vec![alloc(invoice_id, 1)]))
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            AppError::Invoice(crate::domain::invoice::InvoiceError::OverAllocated)
+        ));
+    }
+
+    #[test]
+    fn record_payment_accepts_partial_fill_to_exact_total() {
+        let (payments, invoices) = repos();
+        let invoice = make_finalized_invoice(1000);
+        let invoice_id = invoice.id;
+        invoices.seed(invoice);
+
+        RecordPayment::new(payments.clone(), invoices.clone())
+            .execute(new_input(600, vec![alloc(invoice_id, 600)]))
+            .unwrap();
+        // Exact fit: 600 + 400 = 1000.
+        RecordPayment::new(payments, invoices)
+            .execute(new_input(400, vec![alloc(invoice_id, 400)]))
+            .unwrap();
+    }
+
+    #[test]
+    fn update_payment_can_resave_its_own_allocation() {
+        // If a payment already fully covers an invoice, updating that same
+        // payment to re-save the same allocation must not fail: the "already
+        // allocated" count must subtract this payment's own prior amount.
+        let (payments, invoices) = repos();
+        let invoice = make_finalized_invoice(1000);
+        let invoice_id = invoice.id;
+        invoices.seed(invoice);
+
+        let recorded = RecordPayment::new(payments.clone(), invoices.clone())
+            .execute(new_input(1000, vec![alloc(invoice_id, 1000)]))
+            .unwrap();
+
+        UpdatePayment::new(payments, invoices)
+            .execute(UpdatePaymentInput {
+                id: recorded.id,
+                date: recorded.date,
+                amount: Money::new(1000, eur()),
+                method: PaymentMethod::Cash,
+                reference: Some("updated".into()),
+                allocations: vec![alloc(invoice_id, 1000)],
+                notes: None,
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn update_payment_rejects_raising_allocation_beyond_available() {
+        // Two payments split an invoice 500/500. Updating the second to try
+        // to take 600 would push the total to 1100 → reject.
+        let (payments, invoices) = repos();
+        let invoice = make_finalized_invoice(1000);
+        let invoice_id = invoice.id;
+        invoices.seed(invoice);
+
+        let record = RecordPayment::new(payments.clone(), invoices.clone());
+        record
+            .execute(new_input(500, vec![alloc(invoice_id, 500)]))
+            .unwrap();
+        let second = record
+            .execute(new_input(500, vec![alloc(invoice_id, 500)]))
+            .unwrap();
+
+        let err = UpdatePayment::new(payments, invoices)
+            .execute(UpdatePaymentInput {
+                id: second.id,
+                date: second.date,
+                amount: Money::new(600, eur()),
+                method: PaymentMethod::BankTransfer,
+                reference: None,
+                allocations: vec![alloc(invoice_id, 600)],
+                notes: None,
+            })
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            AppError::Invoice(crate::domain::invoice::InvoiceError::OverAllocated)
+        ));
+    }
+
+    #[test]
+    fn record_payment_rejects_unknown_invoice() {
+        let (payments, invoices) = repos();
+        let missing = InvoiceId::new();
+        let err = RecordPayment::new(payments, invoices)
+            .execute(new_input(500, vec![alloc(missing, 500)]))
+            .unwrap_err();
+        assert!(matches!(err, AppError::NotFound));
+    }
+
+    #[test]
+    fn record_payment_rejects_draft_invoice_allocation() {
+        let (payments, invoices) = repos();
+        let draft = Invoice::create_draft(
+            NewInvoice {
+                client_id: ClientId::new(),
+                template_id: None,
+                date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
+                due_date: None,
+                line_items: vec![NewLineItem {
+                    description: "x".into(),
+                    quantity: Decimal::from(1),
+                    unit_price: Money::new(1000, eur()),
+                }],
+                tax_ids: vec![],
+                notes: None,
+                currency: eur(),
+            },
+            &[],
+            Utc::now(),
+        )
+        .unwrap();
+        let draft_id = draft.id;
+        invoices.seed(draft);
+
+        let err = RecordPayment::new(payments, invoices)
+            .execute(new_input(500, vec![alloc(draft_id, 500)]))
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            AppError::Invoice(crate::domain::invoice::InvoiceError::NotAllocatable(_))
+        ));
     }
 }

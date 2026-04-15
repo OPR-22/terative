@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::DtoConvertError;
+use super::accounting::DerivedPaymentStatusDto;
 use super::common::MoneyDto;
 use crate::application::invoice_usecases::UpdateDraftInvoiceInput;
 use crate::application::ports::ListInvoicesQuery;
@@ -129,16 +130,44 @@ pub struct InvoiceDto {
     pub subtotal: MoneyDto,
     pub tax_total: MoneyDto,
     pub total: MoneyDto,
+    pub amount_paid: MoneyDto,
     pub currency: String,
     pub status: InvoiceStatusDto,
+    /// Populated by the list/get read paths, where the repo can afford to
+    /// fetch the allocated total alongside the invoice. `None` on write paths
+    /// (create/update/finalize/send/cancel) where callers don't need it.
+    pub payment_status: Option<DerivedPaymentStatusDto>,
     pub pdf_path: Option<String>,
     pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-impl From<&Invoice> for InvoiceDto {
-    fn from(i: &Invoice) -> Self {
+impl InvoiceDto {
+    /// Conversion for write paths where payment state is unknown. Sets
+    /// `amount_paid` to zero and `payment_status` to `None`.
+    pub fn from_invoice_basic(invoice: &Invoice) -> Self {
+        let zero = Money::new(0, invoice.currency);
+        Self::build(invoice, zero, None)
+    }
+
+    /// Conversion for read paths that know the allocated total. Computes the
+    /// derived payment status via [`Invoice::payment_status`] so the domain
+    /// owns the classification.
+    pub fn from_invoice_enriched(
+        invoice: &Invoice,
+        amount_paid: Money,
+        today: NaiveDate,
+    ) -> Self {
+        let status = invoice.payment_status(amount_paid, today).into();
+        Self::build(invoice, amount_paid, Some(status))
+    }
+
+    fn build(
+        i: &Invoice,
+        amount_paid: Money,
+        payment_status: Option<DerivedPaymentStatusDto>,
+    ) -> Self {
         Self {
             id: i.id.0,
             number: i.number.map(|n| n.0),
@@ -151,19 +180,15 @@ impl From<&Invoice> for InvoiceDto {
             subtotal: (&i.subtotal).into(),
             tax_total: (&i.tax_total).into(),
             total: (&i.total).into(),
+            amount_paid: (&amount_paid).into(),
             currency: i.currency.code().to_string(),
             status: i.status.into(),
+            payment_status,
             pdf_path: i.pdf_path.clone(),
             notes: i.notes.clone(),
             created_at: i.created_at,
             updated_at: i.updated_at,
         }
-    }
-}
-
-impl From<Invoice> for InvoiceDto {
-    fn from(i: Invoice) -> Self {
-        (&i).into()
     }
 }
 
@@ -310,7 +335,7 @@ mod tests {
     #[test]
     fn invoice_round_trip_preserves_fields() {
         let domain = sample_invoice();
-        let dto: InvoiceDto = (&domain).into();
+        let dto = InvoiceDto::from_invoice_basic(&domain);
         assert_eq!(dto.id, domain.id.0);
         assert_eq!(dto.number, Some(42));
         assert_eq!(dto.line_items.len(), 1);
@@ -319,6 +344,24 @@ mod tests {
         assert_eq!(dto.taxes_applied[0].computed_amount.amount_cents, 420);
         assert_eq!(dto.currency, "EUR");
         assert!(matches!(dto.status, InvoiceStatusDto::Finalized));
+        assert_eq!(dto.amount_paid.amount_cents, 0);
+        assert!(dto.payment_status.is_none());
+    }
+
+    #[test]
+    fn enriched_dto_carries_computed_payment_status() {
+        let domain = sample_invoice();
+        let today = NaiveDate::from_ymd_opt(2026, 4, 14).unwrap();
+        let dto = InvoiceDto::from_invoice_enriched(
+            &domain,
+            Money::new(1000, eur()),
+            today,
+        );
+        assert_eq!(dto.amount_paid.amount_cents, 1000);
+        assert!(matches!(
+            dto.payment_status,
+            Some(DerivedPaymentStatusDto::Partial)
+        ));
     }
 
     #[test]

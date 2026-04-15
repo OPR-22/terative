@@ -46,6 +46,6 @@ pub fn invoice_send(
     state
         .send_invoice
         .execute(InvoiceId(id))
-        .map(|i| (&i).into())
+        .map(|i| InvoiceDto::from_invoice_basic(&i))
         .map_err(to_ipc_err)
 }

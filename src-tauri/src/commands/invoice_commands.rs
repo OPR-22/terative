@@ -1,3 +1,4 @@
+use chrono::Utc;
 use tauri::State;
 use uuid::Uuid;
 
@@ -23,7 +24,7 @@ pub fn invoice_create_draft(
     state
         .create_draft_invoice
         .execute(domain)
-        .map(|i| (&i).into())
+        .map(|i| InvoiceDto::from_invoice_basic(&i))
         .map_err(to_ipc_err)
 }
 
@@ -37,7 +38,7 @@ pub fn invoice_update_draft(
     state
         .update_draft_invoice
         .execute(domain)
-        .map(|i| (&i).into())
+        .map(|i| InvoiceDto::from_invoice_basic(&i))
         .map_err(to_ipc_err)
 }
 
@@ -50,7 +51,7 @@ pub fn invoice_finalize(
     state
         .finalize_invoice
         .execute(InvoiceId(id))
-        .map(|i| (&i).into())
+        .map(|i| InvoiceDto::from_invoice_basic(&i))
         .map_err(to_ipc_err)
 }
 
@@ -63,7 +64,7 @@ pub fn invoice_duplicate(
     state
         .duplicate_invoice
         .execute(InvoiceId(id))
-        .map(|i| (&i).into())
+        .map(|i| InvoiceDto::from_invoice_basic(&i))
         .map_err(to_ipc_err)
 }
 
@@ -76,7 +77,7 @@ pub fn invoice_cancel(
     state
         .cancel_invoice
         .execute(InvoiceId(id))
-        .map(|i| (&i).into())
+        .map(|i| InvoiceDto::from_invoice_basic(&i))
         .map_err(to_ipc_err)
 }
 
@@ -86,10 +87,15 @@ pub fn invoice_list(
     state: State<'_, AppState>,
     query: Option<ListInvoicesQueryDto>,
 ) -> Result<Vec<InvoiceDto>, String> {
+    let today = Utc::now().date_naive();
     state
         .list_invoices
         .execute(query.unwrap_or_default().into())
-        .map(|list| list.iter().map(Into::into).collect())
+        .map(|list| {
+            list.iter()
+                .map(|(i, paid)| InvoiceDto::from_invoice_enriched(i, *paid, today))
+                .collect()
+        })
         .map_err(to_ipc_err)
 }
 
@@ -99,9 +105,10 @@ pub fn invoice_get(
     state: State<'_, AppState>,
     id: Uuid,
 ) -> Result<InvoiceDto, String> {
+    let today = Utc::now().date_naive();
     state
         .get_invoice
         .execute(InvoiceId(id))
-        .map(|i| (&i).into())
+        .map(|(i, paid)| InvoiceDto::from_invoice_enriched(&i, paid, today))
         .map_err(to_ipc_err)
 }

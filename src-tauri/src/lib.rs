@@ -33,8 +33,9 @@ use commands::{
     payment_commands::{
         payment_delete, payment_get, payment_list, payment_record, payment_update,
     },
-    service_commands::{
-        service_archive, service_create, service_list, service_unarchive, service_update,
+    catalog_item_commands::{
+        catalog_item_archive, catalog_item_create, catalog_item_list, catalog_item_unarchive,
+        catalog_item_update,
     },
     settings_commands::{
         settings_get, settings_update_app_preferences, settings_update_currency,
@@ -93,11 +94,11 @@ fn build_specta() -> Builder<tauri::Wry> {
         client_unarchive,
         client_list,
         client_get,
-        service_create,
-        service_update,
-        service_archive,
-        service_unarchive,
-        service_list,
+        catalog_item_create,
+        catalog_item_update,
+        catalog_item_archive,
+        catalog_item_unarchive,
+        catalog_item_list,
         settings_get,
         settings_update_seller_profile,
         settings_update_currency,

@@ -1,4 +1,5 @@
 pub mod accounting_usecases;
+pub mod catalog_item_usecases;
 pub mod client_usecases;
 pub mod dto;
 pub mod email_usecases;
@@ -6,11 +7,11 @@ pub mod invoice_usecases;
 pub mod notebook_usecases;
 pub mod payment_usecases;
 pub mod ports;
-pub mod service_usecases;
 pub mod settings_usecases;
 pub mod tax_usecases;
 pub mod template_usecases;
 
+use crate::domain::catalog_item::CatalogItemError;
 use crate::domain::client::ClientError;
 use crate::domain::invoice::InvoiceError;
 use crate::domain::line_item::LineItemError;
@@ -19,7 +20,6 @@ use crate::domain::notebook::{
     JournalEntryError, NotebookError, NotebookSectionError,
 };
 use crate::domain::payment::PaymentError;
-use crate::domain::service::ServiceError;
 use crate::domain::settings::{CurrencyConfigError, EmailConfigError};
 use crate::domain::tax::TaxError;
 use crate::domain::template::TemplateError;
@@ -38,9 +38,9 @@ pub enum RepoError {
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error(transparent)]
-    Client(#[from] ClientError),
+    CatalogItem(#[from] CatalogItemError),
     #[error(transparent)]
-    Service(#[from] ServiceError),
+    Client(#[from] ClientError),
     #[error(transparent)]
     Tax(#[from] TaxError),
     #[error(transparent)]

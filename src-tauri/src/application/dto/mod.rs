@@ -12,12 +12,12 @@
 //!   Use cases stay pure domain.
 
 pub mod accounting;
+pub mod catalog_item;
 pub mod client;
 pub mod common;
 pub mod invoice;
 pub mod notebook;
 pub mod payment;
-pub mod service;
 pub mod settings;
 pub mod tax;
 pub mod template;
@@ -44,7 +44,9 @@ pub use payment::{
     ListPaymentsQueryDto, NewPaymentAllocationDto, NewPaymentDto, PaymentAllocationDto,
     PaymentDto, PaymentMethodDto, UpdatePaymentDto,
 };
-pub use service::{NewServiceDto, ServiceDto, UpdateServiceDto};
+pub use catalog_item::{
+    CatalogItemDto, CatalogItemKindDto, NewCatalogItemDto, UpdateCatalogItemDto,
+};
 pub use settings::{
     AppPreferencesDto, CurrencyConfigDto, EmailConfigDto, LanguageDto, SellerProfileDto,
     SettingsSnapshotDto, ThemeDto,

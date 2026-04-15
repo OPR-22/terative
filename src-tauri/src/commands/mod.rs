@@ -1,11 +1,11 @@
 pub mod accounting_commands;
+pub mod catalog_item_commands;
 pub mod client_commands;
 pub mod data_commands;
 pub mod email_commands;
 pub mod invoice_commands;
 pub mod notebook_commands;
 pub mod payment_commands;
-pub mod service_commands;
 pub mod settings_commands;
 pub mod tax_commands;
 pub mod template_commands;
@@ -13,9 +13,9 @@ pub mod template_commands;
 use std::sync::Arc;
 
 use crate::adapters::sqlite::{
-    SqliteAccountingRepository, SqliteClientJournalRepository, SqliteClientNotebookRepository,
-    SqliteClientRepository, SqliteInvoiceNumberGenerator, SqliteInvoiceRepository,
-    SqliteNotebookSectionRepository, SqlitePaymentRepository, SqliteServiceRepository,
+    SqliteAccountingRepository, SqliteCatalogItemRepository, SqliteClientJournalRepository,
+    SqliteClientNotebookRepository, SqliteClientRepository, SqliteInvoiceNumberGenerator,
+    SqliteInvoiceRepository, SqliteNotebookSectionRepository, SqlitePaymentRepository,
     SqliteSettingsRepository, SqliteTaxRepository, SqliteTemplateRepository,
 };
 use crate::adapters::{
@@ -43,8 +43,9 @@ use crate::application::notebook_usecases::{
 use crate::application::payment_usecases::{
     DeletePayment, GetPayment, ListPayments, RecordPayment, UpdatePayment,
 };
-use crate::application::service_usecases::{
-    ArchiveService, CreateService, ListServices, UnarchiveService, UpdateService,
+use crate::application::catalog_item_usecases::{
+    ArchiveCatalogItem, CreateCatalogItem, ListCatalogItems, UnarchiveCatalogItem,
+    UpdateCatalogItem,
 };
 use crate::application::settings_usecases::{
     GetSettings, UpdateAppPreferences, UpdateCurrency, UpdateSellerProfile,
@@ -63,11 +64,11 @@ pub struct AppState {
     pub list_clients: ListClients,
     pub get_client_detail: GetClientDetail,
 
-    pub create_service: CreateService,
-    pub update_service: UpdateService,
-    pub archive_service: ArchiveService,
-    pub unarchive_service: UnarchiveService,
-    pub list_services: ListServices,
+    pub create_catalog_item: CreateCatalogItem,
+    pub update_catalog_item: UpdateCatalogItem,
+    pub archive_catalog_item: ArchiveCatalogItem,
+    pub unarchive_catalog_item: UnarchiveCatalogItem,
+    pub list_catalog_items: ListCatalogItems,
 
     pub get_settings: GetSettings,
     pub update_seller_profile: UpdateSellerProfile,
@@ -137,7 +138,7 @@ impl AppState {
         default_backup_dir: std::path::PathBuf,
     ) -> Self {
         let client_repo = Arc::new(SqliteClientRepository::new(db.clone()));
-        let service_repo = Arc::new(SqliteServiceRepository::new(db.clone()));
+        let catalog_item_repo = Arc::new(SqliteCatalogItemRepository::new(db.clone()));
         let settings_repo = Arc::new(SqliteSettingsRepository::new(db.clone()));
         let tax_repo = Arc::new(SqliteTaxRepository::new(db.clone()));
         let template_repo = Arc::new(SqliteTemplateRepository::new(db.clone()));
@@ -166,11 +167,11 @@ impl AppState {
             list_clients: ListClients::new(client_repo.clone()),
             get_client_detail: GetClientDetail::new(client_repo.clone()),
 
-            create_service: CreateService::new(service_repo.clone()),
-            update_service: UpdateService::new(service_repo.clone()),
-            archive_service: ArchiveService::new(service_repo.clone()),
-            unarchive_service: UnarchiveService::new(service_repo.clone()),
-            list_services: ListServices::new(service_repo),
+            create_catalog_item: CreateCatalogItem::new(catalog_item_repo.clone()),
+            update_catalog_item: UpdateCatalogItem::new(catalog_item_repo.clone()),
+            archive_catalog_item: ArchiveCatalogItem::new(catalog_item_repo.clone()),
+            unarchive_catalog_item: UnarchiveCatalogItem::new(catalog_item_repo.clone()),
+            list_catalog_items: ListCatalogItems::new(catalog_item_repo),
 
             get_settings: GetSettings::new(settings_repo.clone(), credentials.clone()),
             update_seller_profile: UpdateSellerProfile::new(settings_repo.clone()),
@@ -216,8 +217,8 @@ impl AppState {
                 pdf,
                 pdf_storage,
             ),
-            list_invoices: ListInvoices::new(invoice_repo.clone()),
-            get_invoice: GetInvoice::new(invoice_repo.clone()),
+            list_invoices: ListInvoices::new(invoice_repo.clone(), payment_repo.clone()),
+            get_invoice: GetInvoice::new(invoice_repo.clone(), payment_repo.clone()),
 
             update_email_config: UpdateEmailConfig::new(settings_repo.clone()),
             update_email_password: UpdateEmailPassword::new(credentials.clone()),
@@ -227,15 +228,15 @@ impl AppState {
                 email_sender.clone(),
             ),
             send_invoice: SendInvoice::new(
-                invoice_repo,
+                invoice_repo.clone(),
                 client_repo,
                 settings_repo,
                 credentials,
                 email_sender,
             ),
 
-            record_payment: RecordPayment::new(payment_repo.clone()),
-            update_payment: UpdatePayment::new(payment_repo.clone()),
+            record_payment: RecordPayment::new(payment_repo.clone(), invoice_repo.clone()),
+            update_payment: UpdatePayment::new(payment_repo.clone(), invoice_repo.clone()),
             delete_payment: DeletePayment::new(payment_repo.clone()),
             list_payments: ListPayments::new(payment_repo.clone()),
             get_payment: GetPayment::new(payment_repo),

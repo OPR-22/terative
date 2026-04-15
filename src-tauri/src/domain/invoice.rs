@@ -69,6 +69,46 @@ impl InvoiceStatus {
     }
 }
 
+/// The user-facing payment state of an invoice, combining its raw lifecycle
+/// (`InvoiceStatus`) with what's been allocated against it. This is the single
+/// source of truth for the classification — the SQL view in
+/// `migrations/001_initial.sql` mirrors these rules but the domain is
+/// authoritative.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DerivedPaymentStatus {
+    Draft,
+    Unpaid,
+    Partial,
+    Paid,
+    Overdue,
+    Cancelled,
+}
+
+impl DerivedPaymentStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Draft => "Draft",
+            Self::Unpaid => "Unpaid",
+            Self::Partial => "Partial",
+            Self::Paid => "Paid",
+            Self::Overdue => "Overdue",
+            Self::Cancelled => "Cancelled",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "Draft" => Some(Self::Draft),
+            "Unpaid" => Some(Self::Unpaid),
+            "Partial" => Some(Self::Partial),
+            "Paid" => Some(Self::Paid),
+            "Overdue" => Some(Self::Overdue),
+            "Cancelled" => Some(Self::Cancelled),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppliedTax {
     pub tax_definition_id: Option<TaxId>,
@@ -111,6 +151,12 @@ pub enum InvoiceError {
     AlreadyCancelled,
     #[error("only Finalized invoices can be sent")]
     NotFinalized,
+    #[error("allocation exceeds invoice remaining balance")]
+    OverAllocated,
+    #[error("allocation currency does not match invoice currency")]
+    AllocationCurrencyMismatch,
+    #[error("cannot allocate payments to a {0:?} invoice")]
+    NotAllocatable(InvoiceStatus),
     #[error(transparent)]
     LineItem(#[from] LineItemError),
     #[error(transparent)]
@@ -238,6 +284,92 @@ impl Invoice {
 
     pub fn set_pdf_path(&mut self, path: String) {
         self.pdf_path = Some(path);
+    }
+
+    /// Checks whether a new allocation against this invoice is legal, given
+    /// everything that's *already* allocated to it across all other payments.
+    ///
+    /// This is the cross-aggregate invariant that `Payment::create` can't
+    /// enforce alone (it has no visibility into other payments). Use cases
+    /// that record or update a payment call this for each allocation to stop
+    /// over-payment through stale UI, racing clicks, or direct IPC calls.
+    ///
+    /// Rules:
+    /// 1. The invoice must be in an allocatable state (Finalized or Sent).
+    ///    Draft and Cancelled invoices refuse all allocations.
+    /// 2. All money values must be in the invoice's currency.
+    /// 3. `already_allocated + new_allocation` must not exceed `total`.
+    ///
+    /// For the update path, callers are expected to pass `already_allocated`
+    /// *net of this payment's existing allocation on this invoice*, so that a
+    /// payment re-saving its own allocation doesn't count itself twice.
+    pub fn can_accept_allocation(
+        &self,
+        already_allocated: Money,
+        new_allocation: Money,
+    ) -> Result<(), InvoiceError> {
+        match self.status {
+            InvoiceStatus::Finalized | InvoiceStatus::Sent => {}
+            other => return Err(InvoiceError::NotAllocatable(other)),
+        }
+        if already_allocated.currency != self.total.currency
+            || new_allocation.currency != self.total.currency
+        {
+            return Err(InvoiceError::AllocationCurrencyMismatch);
+        }
+        let sum = already_allocated
+            .amount_cents
+            .checked_add(new_allocation.amount_cents)
+            .ok_or(InvoiceError::Money(MoneyError::Overflow))?;
+        if sum > self.total.amount_cents {
+            return Err(InvoiceError::OverAllocated);
+        }
+        Ok(())
+    }
+
+    /// Classifies the invoice into its user-facing payment state.
+    ///
+    /// Rules (in order):
+    /// 1. Raw `Draft` → `Draft`.
+    /// 2. Raw `Cancelled` → `Cancelled`.
+    /// 3. `amount_paid >= total` → `Paid`.
+    /// 4. Overdue (past `due_date`) with a non-zero remainder → `Overdue`.
+    /// 5. `amount_paid > 0` → `Partial`.
+    /// 6. Otherwise → `Unpaid`.
+    ///
+    /// `amount_paid` is expected to be in the same currency as `total`; if it
+    /// isn't, it's treated as zero (defensive — a currency mismatch here means
+    /// the caller has stale data).
+    pub fn payment_status(
+        &self,
+        amount_paid: Money,
+        today: NaiveDate,
+    ) -> DerivedPaymentStatus {
+        match self.status {
+            InvoiceStatus::Draft => return DerivedPaymentStatus::Draft,
+            InvoiceStatus::Cancelled => return DerivedPaymentStatus::Cancelled,
+            InvoiceStatus::Finalized | InvoiceStatus::Sent => {}
+        }
+        let paid_cents = if amount_paid.currency == self.total.currency {
+            amount_paid.amount_cents
+        } else {
+            0
+        };
+        if paid_cents >= self.total.amount_cents {
+            return DerivedPaymentStatus::Paid;
+        }
+        let is_overdue = self
+            .due_date
+            .map(|d| d < today)
+            .unwrap_or(false);
+        if is_overdue {
+            return DerivedPaymentStatus::Overdue;
+        }
+        if paid_cents > 0 {
+            DerivedPaymentStatus::Partial
+        } else {
+            DerivedPaymentStatus::Unpaid
+        }
     }
 }
 
@@ -463,6 +595,232 @@ mod tests {
         inv.finalize(InvoiceNumber(1), now()).unwrap();
         inv.mark_sent(now()).unwrap();
         assert_eq!(inv.status, InvoiceStatus::Sent);
+    }
+
+    fn finalized_invoice(due: Option<NaiveDate>, total_cents: i64) -> Invoice {
+        let mut inv = Invoice::create_draft(
+            NewInvoice {
+                client_id: ClientId::new(),
+                template_id: None,
+                date: date(),
+                due_date: due,
+                line_items: vec![line("A", 1, total_cents)],
+                tax_ids: vec![],
+                notes: None,
+                currency: eur(),
+            },
+            &[],
+            now(),
+        )
+        .unwrap();
+        inv.finalize(InvoiceNumber(1), now()).unwrap();
+        inv
+    }
+
+    #[test]
+    fn payment_status_draft_passthrough() {
+        let inv = Invoice::create_draft(
+            NewInvoice {
+                client_id: ClientId::new(),
+                template_id: None,
+                date: date(),
+                due_date: None,
+                line_items: vec![line("A", 1, 1000)],
+                tax_ids: vec![],
+                notes: None,
+                currency: eur(),
+            },
+            &[],
+            now(),
+        )
+        .unwrap();
+        assert_eq!(
+            inv.payment_status(Money::zero(eur()), date()),
+            DerivedPaymentStatus::Draft,
+        );
+    }
+
+    #[test]
+    fn payment_status_cancelled_passthrough() {
+        let mut inv = finalized_invoice(None, 1000);
+        inv.cancel(now()).unwrap();
+        assert_eq!(
+            inv.payment_status(Money::zero(eur()), date()),
+            DerivedPaymentStatus::Cancelled,
+        );
+    }
+
+    #[test]
+    fn payment_status_unpaid_when_no_allocations() {
+        let inv = finalized_invoice(None, 1000);
+        assert_eq!(
+            inv.payment_status(Money::zero(eur()), date()),
+            DerivedPaymentStatus::Unpaid,
+        );
+    }
+
+    #[test]
+    fn payment_status_partial_when_partly_allocated() {
+        let inv = finalized_invoice(None, 1000);
+        assert_eq!(
+            inv.payment_status(Money::new(300, eur()), date()),
+            DerivedPaymentStatus::Partial,
+        );
+    }
+
+    #[test]
+    fn payment_status_paid_when_fully_allocated() {
+        let inv = finalized_invoice(None, 1000);
+        assert_eq!(
+            inv.payment_status(Money::new(1000, eur()), date()),
+            DerivedPaymentStatus::Paid,
+        );
+    }
+
+    #[test]
+    fn payment_status_paid_when_over_allocated() {
+        // Overpayment still classifies as Paid — the domain doesn't moralize
+        // about the excess.
+        let inv = finalized_invoice(None, 1000);
+        assert_eq!(
+            inv.payment_status(Money::new(1200, eur()), date()),
+            DerivedPaymentStatus::Paid,
+        );
+    }
+
+    #[test]
+    fn payment_status_overdue_when_past_due_and_unpaid() {
+        let due = NaiveDate::from_ymd_opt(2026, 4, 10).unwrap();
+        let today = NaiveDate::from_ymd_opt(2026, 4, 15).unwrap();
+        let inv = finalized_invoice(Some(due), 1000);
+        assert_eq!(
+            inv.payment_status(Money::zero(eur()), today),
+            DerivedPaymentStatus::Overdue,
+        );
+    }
+
+    #[test]
+    fn payment_status_overdue_when_past_due_and_partial() {
+        let due = NaiveDate::from_ymd_opt(2026, 4, 10).unwrap();
+        let today = NaiveDate::from_ymd_opt(2026, 4, 15).unwrap();
+        let inv = finalized_invoice(Some(due), 1000);
+        assert_eq!(
+            inv.payment_status(Money::new(300, eur()), today),
+            DerivedPaymentStatus::Overdue,
+        );
+    }
+
+    #[test]
+    fn payment_status_paid_overrides_overdue() {
+        let due = NaiveDate::from_ymd_opt(2026, 4, 10).unwrap();
+        let today = NaiveDate::from_ymd_opt(2026, 4, 15).unwrap();
+        let inv = finalized_invoice(Some(due), 1000);
+        assert_eq!(
+            inv.payment_status(Money::new(1000, eur()), today),
+            DerivedPaymentStatus::Paid,
+        );
+    }
+
+    #[test]
+    fn payment_status_ignores_currency_mismatch_as_zero() {
+        let inv = finalized_invoice(None, 1000);
+        let usd = Currency::new("USD").unwrap();
+        assert_eq!(
+            inv.payment_status(Money::new(500, usd), date()),
+            DerivedPaymentStatus::Unpaid,
+        );
+    }
+
+    #[test]
+    fn can_accept_allocation_accepts_partial() {
+        let inv = finalized_invoice(None, 1000);
+        inv.can_accept_allocation(Money::zero(eur()), Money::new(300, eur()))
+            .unwrap();
+    }
+
+    #[test]
+    fn can_accept_allocation_accepts_exact_fit() {
+        let inv = finalized_invoice(None, 1000);
+        inv.can_accept_allocation(Money::new(700, eur()), Money::new(300, eur()))
+            .unwrap();
+    }
+
+    #[test]
+    fn can_accept_allocation_rejects_exceeding_total() {
+        let inv = finalized_invoice(None, 1000);
+        let err = inv
+            .can_accept_allocation(Money::new(800, eur()), Money::new(300, eur()))
+            .unwrap_err();
+        assert!(matches!(err, InvoiceError::OverAllocated));
+    }
+
+    #[test]
+    fn can_accept_allocation_rejects_already_paid() {
+        // Invoice already fully allocated; any new allocation is rejected.
+        let inv = finalized_invoice(None, 1000);
+        let err = inv
+            .can_accept_allocation(Money::new(1000, eur()), Money::new(1, eur()))
+            .unwrap_err();
+        assert!(matches!(err, InvoiceError::OverAllocated));
+    }
+
+    #[test]
+    fn can_accept_allocation_rejects_draft() {
+        let inv = Invoice::create_draft(
+            NewInvoice {
+                client_id: ClientId::new(),
+                template_id: None,
+                date: date(),
+                due_date: None,
+                line_items: vec![line("A", 1, 1000)],
+                tax_ids: vec![],
+                notes: None,
+                currency: eur(),
+            },
+            &[],
+            now(),
+        )
+        .unwrap();
+        let err = inv
+            .can_accept_allocation(Money::zero(eur()), Money::new(100, eur()))
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            InvoiceError::NotAllocatable(InvoiceStatus::Draft)
+        ));
+    }
+
+    #[test]
+    fn can_accept_allocation_rejects_cancelled() {
+        let mut inv = finalized_invoice(None, 1000);
+        inv.cancel(now()).unwrap();
+        let err = inv
+            .can_accept_allocation(Money::zero(eur()), Money::new(100, eur()))
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            InvoiceError::NotAllocatable(InvoiceStatus::Cancelled)
+        ));
+    }
+
+    #[test]
+    fn can_accept_allocation_rejects_currency_mismatch_on_new() {
+        let inv = finalized_invoice(None, 1000);
+        let usd = Currency::new("USD").unwrap();
+        let err = inv
+            .can_accept_allocation(Money::zero(eur()), Money::new(100, usd))
+            .unwrap_err();
+        assert!(matches!(err, InvoiceError::AllocationCurrencyMismatch));
+    }
+
+    #[test]
+    fn can_accept_allocation_rejects_currency_mismatch_on_existing() {
+        let inv = finalized_invoice(None, 1000);
+        let usd = Currency::new("USD").unwrap();
+        let err = inv
+            .can_accept_allocation(Money::new(0, usd), Money::new(100, eur()))
+            .unwrap_err();
+        assert!(matches!(err, InvoiceError::AllocationCurrencyMismatch));
     }
 
     #[test]

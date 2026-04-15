@@ -16,7 +16,7 @@ export function Sidebar() {
     { to: "/invoices", label: t("nav.invoices") },
     { to: "/payments", label: t("nav.payments") },
     { to: "/clients", label: t("nav.clients") },
-    { to: "/services", label: t("nav.services") },
+    { to: "/catalog", label: t("nav.catalog") },
     { to: "/taxes", label: t("nav.taxes") },
     { to: "/accounting", label: t("nav.accounting") },
     { to: "/templates", label: t("nav.templates") },

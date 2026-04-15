@@ -1,10 +1,10 @@
+pub mod catalog_item;
 pub mod client;
 pub mod invoice;
 pub mod line_item;
 pub mod money;
 pub mod notebook;
 pub mod payment;
-pub mod service;
 pub mod settings;
 pub mod tax;
 pub mod template;

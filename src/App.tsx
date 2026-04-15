@@ -2,12 +2,12 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import { Shell } from "./components/layout/Shell";
 import { Accounting } from "./pages/Accounting";
+import { CatalogList } from "./pages/CatalogList";
 import { ClientDetail } from "./pages/ClientDetail";
 import { ClientList } from "./pages/ClientList";
 import { Dashboard } from "./pages/Dashboard";
 import { InvoiceList } from "./pages/InvoiceList";
 import { PaymentList } from "./pages/PaymentList";
-import { ServiceList } from "./pages/ServiceList";
 import { Settings } from "./pages/Settings";
 import { TaxList } from "./pages/TaxList";
 import { TemplateList } from "./pages/TemplateList";
@@ -22,7 +22,7 @@ function App() {
         <Route path="payments" element={<PaymentList />} />
         <Route path="clients" element={<ClientList />} />
         <Route path="clients/:id" element={<ClientDetail />} />
-        <Route path="services" element={<ServiceList />} />
+        <Route path="catalog" element={<CatalogList />} />
         <Route path="taxes" element={<TaxList />} />
         <Route path="accounting" element={<Accounting />} />
         <Route path="templates" element={<TemplateList />} />

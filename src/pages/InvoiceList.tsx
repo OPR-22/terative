@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "../components/common/Button";
 import { StatusBadge } from "../components/invoice/StatusBadge";
+import { PaymentStatusBadge } from "../components/invoice/PaymentStatusBadge";
 import { MarkPaidModal } from "../components/invoice/MarkPaidModal";
 import { InvoiceEditor } from "./InvoiceEditor";
 import { useInvoiceStore } from "../stores/invoiceStore";
@@ -96,6 +97,9 @@ export function InvoiceList() {
               <th className="py-2 pr-3 font-medium">{t("common.date")}</th>
               <th className="py-2 pr-3 font-medium">{t("invoices.client")}</th>
               <th className="py-2 pr-3 font-medium">{t("common.status")}</th>
+              <th className="py-2 pr-3 font-medium">
+                {t("invoices.payment")}
+              </th>
               <th className="py-2 pr-3 text-right font-medium">
                 {t("invoices.total")}
               </th>
@@ -114,6 +118,12 @@ export function InvoiceList() {
                 </td>
                 <td className="py-2 pr-3">
                   <StatusBadge status={inv.status} />
+                </td>
+                <td className="py-2 pr-3">
+                  <PaymentStatusBadge
+                    paymentStatus={inv.payment_status}
+                    rawStatus={inv.status}
+                  />
                 </td>
                 <td className="py-2 pr-3 text-right font-medium text-fg">
                   {formatMoney(inv.total.amount_cents, inv.currency)}
@@ -143,7 +153,8 @@ export function InvoiceList() {
                       {t("invoices.send")}
                     </Button>
                   ) : null}
-                  {inv.status === "Finalized" || inv.status === "Sent" ? (
+                  {(inv.status === "Finalized" || inv.status === "Sent") &&
+                  inv.payment_status !== "Paid" ? (
                     <Button
                       variant="secondary"
                       onClick={() => setPayFor(inv)}

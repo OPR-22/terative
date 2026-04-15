@@ -8,7 +8,7 @@ import { StatusBadge } from "../components/invoice/StatusBadge";
 import { MarkPaidModal } from "../components/invoice/MarkPaidModal";
 import { useInvoiceStore } from "../stores/invoiceStore";
 import { useClientStore } from "../stores/clientStore";
-import { useServiceStore } from "../stores/serviceStore";
+import { useCatalogStore } from "../stores/catalogStore";
 import { useTaxStore } from "../stores/taxStore";
 import { useTemplateStore } from "../stores/templateStore";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -75,7 +75,7 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
   const { t } = useTranslation();
   const { createDraft, updateDraft, finalize, cancel, send } = useInvoiceStore();
   const { clients, refresh: refreshClients } = useClientStore();
-  const { services, refresh: refreshServices } = useServiceStore();
+  const { items: catalogItems, refresh: refreshCatalog } = useCatalogStore();
   const { taxes, refresh: refreshTaxes } = useTaxStore();
   const { templates, refresh: refreshTemplates } = useTemplateStore();
   const { snapshot, load: loadSettings } = useSettingsStore();
@@ -87,18 +87,18 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
 
   useEffect(() => {
     if (clients.length === 0) void refreshClients();
-    if (services.length === 0) void refreshServices();
+    if (catalogItems.length === 0) void refreshCatalog();
     if (taxes.length === 0) void refreshTaxes();
     if (templates.length === 0) void refreshTemplates();
     if (!snapshot) void loadSettings();
   }, [
     clients.length,
-    services.length,
+    catalogItems.length,
     taxes.length,
     templates.length,
     snapshot,
     refreshClients,
-    refreshServices,
+    refreshCatalog,
     refreshTaxes,
     refreshTemplates,
     loadSettings,
@@ -289,7 +289,8 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
             </Button>
           ) : null}
           {invoice &&
-          (invoice.status === "Finalized" || invoice.status === "Sent") ? (
+          (invoice.status === "Finalized" || invoice.status === "Sent") &&
+          invoice.payment_status !== "Paid" ? (
             <Button
               variant="secondary"
               onClick={() => setMarkingPaid(true)}
@@ -458,31 +459,48 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
                   className="grid grid-cols-12 items-end gap-2 rounded-field border border-border p-2"
                 >
                   <div className="col-span-12 md:col-span-6 flex flex-col gap-1">
-                    {!readOnly && services.length > 0 ? (
+                    {!readOnly && catalogItems.length > 0 ? (
                       <select
                         className="block w-full rounded-field border border-border bg-surface px-2 py-1 text-xs text-fg-muted shadow-sm"
                         value=""
                         onChange={(e) => {
-                          const svc = services.find(
-                            (s) => s.id === e.target.value,
+                          const item = catalogItems.find(
+                            (c) => c.id === e.target.value,
                           );
-                          if (!svc) return;
+                          if (!item) return;
                           updateLine(idx, {
-                            description: svc.name,
-                            unit_price_cents: svc.default_price.amount_cents,
+                            description: item.name,
+                            unit_price_cents: item.default_price.amount_cents,
                           });
                         }}
                       >
                         <option value="">
-                          {t("invoices.pick_service")}
+                          {t("invoices.pick_catalog_item")}
                         </option>
-                        {services.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name} ·{" "}
-                            {(s.default_price.amount_cents / 100).toFixed(2)}{" "}
-                            {currencySymbol}
-                          </option>
-                        ))}
+                        {(["Service", "Product"] as const).map((kind) => {
+                          const group = catalogItems.filter(
+                            (c) => c.kind === kind,
+                          );
+                          if (group.length === 0) return null;
+                          return (
+                            <optgroup
+                              key={kind}
+                              label={t(`catalog.kind_${kind.toLowerCase()}_plural`)}
+                            >
+                              {group.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.reference ? `[${c.reference}] ` : ""}
+                                  {c.name} ·{" "}
+                                  {(c.default_price.amount_cents / 100).toFixed(
+                                    2,
+                                  )}{" "}
+                                  {currencySymbol}
+                                  {c.unit ? ` / ${c.unit}` : ""}
+                                </option>
+                              ))}
+                            </optgroup>
+                          );
+                        })}
                       </select>
                     ) : null}
                     <Input

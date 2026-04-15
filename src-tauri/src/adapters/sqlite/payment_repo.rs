@@ -244,6 +244,52 @@ impl PaymentRepository for SqlitePaymentRepository {
             .unwrap_or_else(|| Currency::new("EUR").unwrap());
         Ok(Money::new(row.0, currency))
     }
+
+    fn allocated_for_invoices(
+        &self,
+        ids: &[InvoiceId],
+    ) -> Result<std::collections::HashMap<InvoiceId, Money>, RepoError> {
+        if ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let conn = self.db.lock();
+        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{i}")).collect();
+        let sql = format!(
+            "SELECT pa.invoice_id, SUM(pa.amount), MAX(p.currency)
+             FROM payment_allocations pa
+             JOIN payments p ON p.id = pa.payment_id
+             WHERE pa.invoice_id IN ({})
+             GROUP BY pa.invoice_id",
+            placeholders.join(", ")
+        );
+        let mut stmt = conn.prepare(&sql).map_err(map_err)?;
+        let id_strings: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+        let params_vec: Vec<&dyn rusqlite::ToSql> = id_strings
+            .iter()
+            .map(|s| s as &dyn rusqlite::ToSql)
+            .collect();
+        let rows = stmt
+            .query_map(params_vec.as_slice(), |r| {
+                let id_str: String = r.get(0)?;
+                let amount: i64 = r.get(1)?;
+                let currency_code: Option<String> = r.get(2)?;
+                Ok((id_str, amount, currency_code))
+            })
+            .map_err(map_err)?;
+        let mut out = std::collections::HashMap::new();
+        for row in rows {
+            let (id_str, amount, currency_code) = row.map_err(map_err)?;
+            let uuid = Uuid::parse_str(&id_str).map_err(|e| {
+                RepoError::Storage(format!("invalid invoice_id in allocations: {e}"))
+            })?;
+            let currency = currency_code
+                .as_deref()
+                .and_then(|c| Currency::new(c).ok())
+                .unwrap_or_else(|| Currency::new("EUR").unwrap());
+            out.insert(InvoiceId(uuid), Money::new(amount, currency));
+        }
+        Ok(out)
+    }
 }
 
 fn insert_allocations(tx: &rusqlite::Transaction<'_>, p: &Payment) -> Result<(), RepoError> {
@@ -469,6 +515,51 @@ mod tests {
 
         let allocated = repo.allocated_for_invoice(invoice_id).unwrap();
         assert_eq!(allocated.amount_cents, 1200);
+    }
+
+    #[test]
+    fn allocated_for_invoices_batches_and_skips_unallocated() {
+        let db = open_memory();
+        let client_id = seed_client(&db);
+        let inv_a = seed_finalized_invoice(&db, client_id, 1000);
+        let inv_b = seed_finalized_invoice(&db, client_id, 2000);
+        let inv_c = seed_finalized_invoice(&db, client_id, 3000);
+        let repo = SqlitePaymentRepository::new(db.clone());
+
+        repo.insert(&make_payment(
+            client_id,
+            500,
+            vec![NewPaymentAllocation {
+                invoice_id: inv_a,
+                amount: Money::new(500, eur()),
+            }],
+        ))
+        .unwrap();
+        repo.insert(&make_payment(
+            client_id,
+            700,
+            vec![NewPaymentAllocation {
+                invoice_id: inv_b,
+                amount: Money::new(700, eur()),
+            }],
+        ))
+        .unwrap();
+        // inv_c has no allocations.
+
+        let totals = repo
+            .allocated_for_invoices(&[inv_a, inv_b, inv_c])
+            .unwrap();
+        assert_eq!(totals.get(&inv_a).unwrap().amount_cents, 500);
+        assert_eq!(totals.get(&inv_b).unwrap().amount_cents, 700);
+        assert!(totals.get(&inv_c).is_none());
+    }
+
+    #[test]
+    fn allocated_for_invoices_empty_input_returns_empty() {
+        let db = open_memory();
+        let repo = SqlitePaymentRepository::new(db);
+        let totals = repo.allocated_for_invoices(&[]).unwrap();
+        assert!(totals.is_empty());
     }
 
     #[test]

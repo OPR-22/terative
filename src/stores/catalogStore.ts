@@ -1,26 +1,26 @@
 import { create } from "zustand";
 import {
   ipc,
-  type NewServiceDto,
-  type ServiceDto,
-  type UpdateServiceDto,
+  type CatalogItemDto,
+  type NewCatalogItemDto,
+  type UpdateCatalogItemDto,
 } from "../ipc";
 
-interface ServiceState {
-  services: ServiceDto[];
+interface CatalogState {
+  items: CatalogItemDto[];
   loading: boolean;
   error: string | null;
   includeInactive: boolean;
   setIncludeInactive: (v: boolean) => void;
   refresh: () => Promise<void>;
-  create: (input: NewServiceDto) => Promise<ServiceDto>;
-  update: (input: UpdateServiceDto) => Promise<ServiceDto>;
+  create: (input: NewCatalogItemDto) => Promise<CatalogItemDto>;
+  update: (input: UpdateCatalogItemDto) => Promise<CatalogItemDto>;
   archive: (id: string) => Promise<void>;
   unarchive: (id: string) => Promise<void>;
 }
 
-export const useServiceStore = create<ServiceState>((set, get) => ({
-  services: [],
+export const useCatalogStore = create<CatalogState>((set, get) => ({
+  items: [],
   loading: false,
   error: null,
   includeInactive: false,
@@ -31,28 +31,28 @@ export const useServiceStore = create<ServiceState>((set, get) => ({
   refresh: async () => {
     set({ loading: true, error: null });
     try {
-      const services = await ipc.serviceList(get().includeInactive);
-      set({ services, loading: false });
+      const items = await ipc.catalogItemList(get().includeInactive);
+      set({ items, loading: false });
     } catch (e) {
       set({ error: String(e), loading: false });
     }
   },
   create: async (input) => {
-    const service = await ipc.serviceCreate(input);
+    const item = await ipc.catalogItemCreate(input);
     await get().refresh();
-    return service;
+    return item;
   },
   update: async (input) => {
-    const service = await ipc.serviceUpdate(input);
+    const item = await ipc.catalogItemUpdate(input);
     await get().refresh();
-    return service;
+    return item;
   },
   archive: async (id) => {
-    await ipc.serviceArchive(id);
+    await ipc.catalogItemArchive(id);
     await get().refresh();
   },
   unarchive: async (id) => {
-    await ipc.serviceUnarchive(id);
+    await ipc.catalogItemUnarchive(id);
     await get().refresh();
   },
 }));

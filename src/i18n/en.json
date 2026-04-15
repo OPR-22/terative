@@ -7,7 +7,7 @@
     "invoices": "Invoices",
     "payments": "Payments",
     "clients": "Clients",
-    "services": "Services",
+    "catalog": "Catalog",
     "taxes": "Taxes",
     "accounting": "Accounting",
     "templates": "Templates",
@@ -70,12 +70,22 @@
     "no_referrer": "None",
     "archived": "archived"
   },
-  "services": {
-    "title": "Services",
-    "new": "New service",
-    "edit": "Edit service",
+  "catalog": {
+    "title": "Catalog",
+    "new": "New item",
+    "edit": "Edit item",
+    "none": "No catalog items yet.",
     "default_price": "Default price",
-    "none": "No services yet."
+    "kind": "Kind",
+    "kind_product": "Product",
+    "kind_service": "Service",
+    "kind_product_plural": "Products",
+    "kind_service_plural": "Services",
+    "filter_all": "All",
+    "unit": "Unit",
+    "unit_placeholder": "hour, day, piece, kg…",
+    "reference": "Reference",
+    "reference_placeholder": "SKU or internal code"
   },
   "taxes": {
     "title": "Taxes",
@@ -134,7 +144,7 @@
     "section_taxes": "Taxes",
     "section_lines": "Line items",
     "add_line": "Add line",
-    "pick_service": "— Pick a service —",
+    "pick_catalog_item": "— Pick from catalog —",
     "line_description": "Description",
     "line_qty": "Qty",
     "line_unit_price": "Unit price",
@@ -150,7 +160,14 @@
     "mark_paid_title": "Record payment for",
     "mark_paid_amount_due": "Amount due",
     "mark_paid_confirm": "Record payment",
-    "mark_paid_already_paid": "This invoice is already fully paid."
+    "mark_paid_already_paid": "This invoice is already fully paid.",
+    "payment": "Payment",
+    "payment_status_draft": "Draft",
+    "payment_status_unpaid": "Unpaid",
+    "payment_status_partial": "Partial",
+    "payment_status_paid": "Paid",
+    "payment_status_overdue": "Overdue",
+    "payment_status_cancelled": "Cancelled"
   },
   "preview": {
     "empty": "Preview unavailable"

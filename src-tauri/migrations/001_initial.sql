@@ -62,13 +62,18 @@ CREATE INDEX idx_notebook_entries_client    ON client_notebook_entries(client_id
 CREATE INDEX idx_notebook_entries_section   ON client_notebook_entries(section_id);
 CREATE INDEX idx_journal_client_date        ON client_journal_entries(client_id, entry_date DESC);
 
-CREATE TABLE services (
+CREATE TABLE catalog_items (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
+    kind            TEXT NOT NULL CHECK (kind IN ('Product', 'Service')),
     default_price   INTEGER NOT NULL,
     currency        TEXT NOT NULL DEFAULT 'EUR',
+    unit            TEXT,
+    reference       TEXT,
     active          INTEGER NOT NULL DEFAULT 1
 );
+
+CREATE INDEX idx_catalog_items_reference ON catalog_items(reference);
 
 CREATE TABLE tax_definitions (
     id              TEXT PRIMARY KEY,

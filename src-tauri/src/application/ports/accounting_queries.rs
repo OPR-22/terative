@@ -2,6 +2,7 @@ use chrono::NaiveDate;
 
 use crate::application::RepoError;
 use crate::domain::client::ClientId;
+pub use crate::domain::invoice::DerivedPaymentStatus;
 use crate::domain::invoice::{InvoiceId, InvoiceStatus};
 use crate::domain::money::Money;
 
@@ -43,30 +44,6 @@ pub struct InvoicePaymentRow {
     pub amount_due: Money,
     pub status: InvoiceStatus,
     pub payment_status: DerivedPaymentStatus,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DerivedPaymentStatus {
-    Draft,
-    Unpaid,
-    Partial,
-    Paid,
-    Overdue,
-    Cancelled,
-}
-
-impl DerivedPaymentStatus {
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "Draft" => Some(Self::Draft),
-            "Unpaid" => Some(Self::Unpaid),
-            "Partial" => Some(Self::Partial),
-            "Paid" => Some(Self::Paid),
-            "Overdue" => Some(Self::Overdue),
-            "Cancelled" => Some(Self::Cancelled),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

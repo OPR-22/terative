@@ -13,11 +13,11 @@ export const commands = {
 	include_inactive?: boolean,
 } | null) => typedError<ClientDto[], string>(__TAURI_INVOKE("client_list", { query })),
 	clientGet: (id: string) => typedError<ClientDto, string>(__TAURI_INVOKE("client_get", { id })),
-	serviceCreate: (input: NewServiceDto) => typedError<ServiceDto, string>(__TAURI_INVOKE("service_create", { input })),
-	serviceUpdate: (input: UpdateServiceDto) => typedError<ServiceDto, string>(__TAURI_INVOKE("service_update", { input })),
-	serviceArchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("service_archive", { id })),
-	serviceUnarchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("service_unarchive", { id })),
-	serviceList: (includeInactive: boolean | null) => typedError<ServiceDto[], string>(__TAURI_INVOKE("service_list", { includeInactive })),
+	catalogItemCreate: (input: NewCatalogItemDto) => typedError<CatalogItemDto, string>(__TAURI_INVOKE("catalog_item_create", { input })),
+	catalogItemUpdate: (input: UpdateCatalogItemDto) => typedError<CatalogItemDto, string>(__TAURI_INVOKE("catalog_item_update", { input })),
+	catalogItemArchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("catalog_item_archive", { id })),
+	catalogItemUnarchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("catalog_item_unarchive", { id })),
+	catalogItemList: (includeInactive: boolean | null) => typedError<CatalogItemDto[], string>(__TAURI_INVOKE("catalog_item_list", { includeInactive })),
 	settingsGet: () => typedError<SettingsSnapshotDto, string>(__TAURI_INVOKE("settings_get")),
 	settingsUpdateSellerProfile: (profile: SellerProfileDto) => typedError<SellerProfileDto, string>(__TAURI_INVOKE("settings_update_seller_profile", { profile })),
 	settingsUpdateCurrency: (currency: CurrencyConfigDto) => typedError<CurrencyConfigDto, string>(__TAURI_INVOKE("settings_update_currency", { currency })),
@@ -112,6 +112,18 @@ export type AppliedTaxDto = {
 	computed_amount: MoneyDto,
 };
 
+export type CatalogItemDto = {
+	id: string,
+	name: string,
+	kind: CatalogItemKindDto,
+	default_price: MoneyDto,
+	unit: string | null,
+	reference: string | null,
+	active: boolean,
+};
+
+export type CatalogItemKindDto = "Product" | "Service";
+
 export type ClientBalanceDto = {
 	client_id: string,
 	client_name: string,
@@ -199,8 +211,15 @@ export type InvoiceDto = {
 	subtotal: MoneyDto,
 	tax_total: MoneyDto,
 	total: MoneyDto,
+	amount_paid: MoneyDto,
 	currency: string,
 	status: InvoiceStatusDto,
+	/**
+	 *  Populated by the list/get read paths, where the repo can afford to
+	 *  fetch the allocated total alongside the invoice. `None` on write paths
+	 *  (create/update/finalize/send/cancel) where callers don't need it.
+	 */
+	payment_status: DerivedPaymentStatusDto | null,
 	pdf_path: string | null,
 	notes: string | null,
 	created_at: string,
@@ -273,6 +292,14 @@ export type MoneyDto = {
 	currency: string,
 };
 
+export type NewCatalogItemDto = {
+	name: string,
+	kind: CatalogItemKindDto,
+	default_price: MoneyDto,
+	unit: string | null,
+	reference: string | null,
+};
+
 export type NewClientDto = {
 	name: string,
 	emails: ContactEntryDto[],
@@ -335,11 +362,6 @@ export type NewPaymentDto = {
 	reference: string | null,
 	allocations: NewPaymentAllocationDto[],
 	notes: string | null,
-};
-
-export type NewServiceDto = {
-	name: string,
-	default_price: MoneyDto,
 };
 
 export type NewTaxDefinitionDto = {
@@ -429,13 +451,6 @@ export type SellerProfileDto = {
 	signature_image: number[] | null,
 };
 
-export type ServiceDto = {
-	id: string,
-	name: string,
-	default_price: MoneyDto,
-	active: boolean,
-};
-
 export type SettingsSnapshotDto = {
 	seller: SellerProfileDto,
 	currency: CurrencyConfigDto,
@@ -472,6 +487,15 @@ export type TemplateOverrideDto = {
 
 export type ThemeDto = "Light" | "Dark";
 
+export type UpdateCatalogItemDto = {
+	id: string,
+	name: string,
+	kind: CatalogItemKindDto,
+	default_price: MoneyDto,
+	unit: string | null,
+	reference: string | null,
+};
+
 export type UpdateClientDto = {
 	id: string,
 	name: string,
@@ -506,12 +530,6 @@ export type UpdatePaymentDto = {
 	reference: string | null,
 	allocations: NewPaymentAllocationDto[],
 	notes: string | null,
-};
-
-export type UpdateServiceDto = {
-	id: string,
-	name: string,
-	default_price: MoneyDto,
 };
 
 export type UpdateTaxDto = {

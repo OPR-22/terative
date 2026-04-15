@@ -3,11 +3,12 @@ use std::sync::Arc;
 use chrono::{NaiveDate, Utc};
 
 use crate::application::ports::{
-    ClientRepository, InvoiceNumberGenerator, InvoiceRepository, ListInvoicesQuery, PdfGenerator,
-    PdfRenderInput, PdfStorage, SettingsRepository, TaxRepository, TemplateRepository,
+    ClientRepository, InvoiceNumberGenerator, InvoiceRepository, ListInvoicesQuery, PaymentRepository,
+    PdfGenerator, PdfRenderInput, PdfStorage, SettingsRepository, TaxRepository, TemplateRepository,
 };
 use crate::application::AppError;
 use crate::domain::invoice::{Invoice, InvoiceId, InvoiceStatus, NewInvoice};
+use crate::domain::money::Money;
 use crate::domain::line_item::NewLineItem;
 use crate::domain::tax::{TaxDefinition, TaxId};
 use crate::domain::template::TemplateId;
@@ -286,27 +287,57 @@ impl CancelInvoice {
 
 pub struct ListInvoices {
     invoices: Arc<dyn InvoiceRepository>,
+    payments: Arc<dyn PaymentRepository>,
 }
 
 impl ListInvoices {
-    pub fn new(invoices: Arc<dyn InvoiceRepository>) -> Self {
-        Self { invoices }
+    pub fn new(
+        invoices: Arc<dyn InvoiceRepository>,
+        payments: Arc<dyn PaymentRepository>,
+    ) -> Self {
+        Self { invoices, payments }
     }
-    pub fn execute(&self, query: ListInvoicesQuery) -> Result<Vec<Invoice>, AppError> {
-        Ok(self.invoices.list(query)?)
+
+    /// Returns each invoice alongside its currently allocated amount. The
+    /// allocated amount's currency matches the invoice's currency when
+    /// payments exist, or defaults to the invoice currency with zero cents.
+    pub fn execute(
+        &self,
+        query: ListInvoicesQuery,
+    ) -> Result<Vec<(Invoice, Money)>, AppError> {
+        let list = self.invoices.list(query)?;
+        let ids: Vec<InvoiceId> = list.iter().map(|i| i.id).collect();
+        let totals = self.payments.allocated_for_invoices(&ids)?;
+        Ok(list
+            .into_iter()
+            .map(|inv| {
+                let paid = totals
+                    .get(&inv.id)
+                    .copied()
+                    .unwrap_or_else(|| Money::new(0, inv.currency));
+                (inv, paid)
+            })
+            .collect())
     }
 }
 
 pub struct GetInvoice {
     invoices: Arc<dyn InvoiceRepository>,
+    payments: Arc<dyn PaymentRepository>,
 }
 
 impl GetInvoice {
-    pub fn new(invoices: Arc<dyn InvoiceRepository>) -> Self {
-        Self { invoices }
+    pub fn new(
+        invoices: Arc<dyn InvoiceRepository>,
+        payments: Arc<dyn PaymentRepository>,
+    ) -> Self {
+        Self { invoices, payments }
     }
-    pub fn execute(&self, id: InvoiceId) -> Result<Invoice, AppError> {
-        self.invoices.get(id)?.ok_or(AppError::NotFound)
+
+    pub fn execute(&self, id: InvoiceId) -> Result<(Invoice, Money), AppError> {
+        let invoice = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
+        let paid = self.payments.allocated_for_invoice(id)?;
+        Ok((invoice, paid))
     }
 }
 
@@ -359,6 +390,60 @@ mod tests {
             self.inner.lock().remove(&id);
             Ok(())
         }
+    }
+
+    /// Minimal stub so invoice use cases that depend on `PaymentRepository`
+    /// can be wired in tests without bringing in the full payment aggregate.
+    /// It reports zero allocations everywhere; tests that care about payment
+    /// state should exercise the sqlite repo or the domain method directly.
+    struct StubPaymentRepo;
+    impl crate::application::ports::PaymentRepository for StubPaymentRepo {
+        fn insert(
+            &self,
+            _: &crate::domain::payment::Payment,
+        ) -> Result<(), RepoError> {
+            Ok(())
+        }
+        fn update(
+            &self,
+            _: &crate::domain::payment::Payment,
+        ) -> Result<(), RepoError> {
+            Ok(())
+        }
+        fn get(
+            &self,
+            _: crate::domain::payment::PaymentId,
+        ) -> Result<Option<crate::domain::payment::Payment>, RepoError> {
+            Ok(None)
+        }
+        fn list(
+            &self,
+            _: crate::application::ports::ListPaymentsQuery,
+        ) -> Result<Vec<crate::domain::payment::Payment>, RepoError> {
+            Ok(vec![])
+        }
+        fn delete(
+            &self,
+            _: crate::domain::payment::PaymentId,
+        ) -> Result<(), RepoError> {
+            Ok(())
+        }
+        fn allocated_for_invoice(
+            &self,
+            _: InvoiceId,
+        ) -> Result<Money, RepoError> {
+            Ok(Money::new(0, Currency::new("EUR").unwrap()))
+        }
+        fn allocated_for_invoices(
+            &self,
+            _: &[InvoiceId],
+        ) -> Result<HashMap<InvoiceId, Money>, RepoError> {
+            Ok(HashMap::new())
+        }
+    }
+
+    fn stub_payments() -> Arc<StubPaymentRepo> {
+        Arc::new(StubPaymentRepo)
     }
 
     #[derive(Default)]
@@ -712,14 +797,14 @@ mod tests {
             inv.finalize(crate::domain::invoice::InvoiceNumber(1), chrono::Utc::now())
                 .unwrap();
         }
-        let drafts = ListInvoices::new(inv_repo.clone())
+        let drafts = ListInvoices::new(inv_repo.clone(), stub_payments())
             .execute(ListInvoicesQuery {
                 status: Some(InvoiceStatus::Draft),
                 ..Default::default()
             })
             .unwrap();
         assert_eq!(drafts.len(), 1);
-        let finalized = ListInvoices::new(inv_repo)
+        let finalized = ListInvoices::new(inv_repo, stub_payments())
             .execute(ListInvoicesQuery {
                 status: Some(InvoiceStatus::Finalized),
                 ..Default::default()
@@ -731,7 +816,7 @@ mod tests {
     #[test]
     fn get_invoice_returns_not_found() {
         let (inv_repo, _, _) = setup();
-        let err = GetInvoice::new(inv_repo)
+        let err = GetInvoice::new(inv_repo, stub_payments())
             .execute(InvoiceId::new())
             .unwrap_err();
         assert!(matches!(err, AppError::NotFound));
