@@ -4,15 +4,18 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
-import { clientsApi } from "../api/clients";
-import { notebookApi } from "../api/notebook";
-import type { Client, UpdateClientInput } from "../types/client";
-import type {
-  ClientJournalEntry,
-  ClientNotebookView,
-  NewJournalEntry,
-  UpdateJournalEntryInput,
-} from "../types/notebook";
+import { ContactListEditor } from "../components/client/ContactListEditor";
+import { useClientStore } from "../stores/clientStore";
+import {
+  ipc,
+  type ClientDto,
+  type ClientJournalEntryDto,
+  type ClientNotebookViewDto,
+  type ContactEntryDto,
+  type NewJournalEntryDto,
+  type UpdateClientDto,
+  type UpdateJournalEntryDto,
+} from "../ipc";
 
 type Tab = "info" | "notebook" | "journal";
 
@@ -21,14 +24,14 @@ export function ClientDetail() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [tab, setTab] = useState<Tab>("info");
-  const [client, setClient] = useState<Client | null>(null);
+  const [client, setClient] = useState<ClientDto | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    clientsApi
-      .get(id)
+    ipc
+      .clientGet(id)
       .then((c) => {
         if (!cancelled) setClient(c);
       })
@@ -123,25 +126,34 @@ function InfoTab({
   client,
   onSaved,
 }: {
-  client: Client;
-  onSaved: (c: Client) => void;
+  client: ClientDto;
+  onSaved: (c: ClientDto) => void;
 }) {
   const { t } = useTranslation();
+  const { clients, refresh: refreshClients } = useClientStore();
   const [name, setName] = useState(client.name);
-  const [email, setEmail] = useState(client.email ?? "");
-  const [phone, setPhone] = useState(client.phone ?? "");
+  const [emails, setEmails] = useState<ContactEntryDto[]>(client.emails);
+  const [phones, setPhones] = useState<ContactEntryDto[]>(client.phones);
   const [address, setAddress] = useState(client.address ?? "");
   const [notes, setNotes] = useState(client.notes ?? "");
+  const [referredBy, setReferredBy] = useState<string | null>(
+    client.referred_by,
+  );
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    if (clients.length === 0) void refreshClients();
+  }, [clients.length, refreshClients]);
+
+  useEffect(() => {
     setName(client.name);
-    setEmail(client.email ?? "");
-    setPhone(client.phone ?? "");
+    setEmails(client.emails);
+    setPhones(client.phones);
     setAddress(client.address ?? "");
     setNotes(client.notes ?? "");
+    setReferredBy(client.referred_by);
   }, [client]);
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -149,15 +161,16 @@ function InfoTab({
     setErr(null);
     setBusy(true);
     try {
-      const payload: UpdateClientInput = {
+      const payload: UpdateClientDto = {
         id: client.id,
         name: name.trim(),
-        email: email.trim() || null,
-        phone: phone.trim() || null,
+        emails,
+        phones,
         address: address.trim() || null,
         notes: notes.trim() || null,
+        referred_by: referredBy,
       };
-      const updated = await clientsApi.update(payload);
+      const updated = await ipc.clientUpdate(payload);
       onSaved(updated);
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
@@ -168,10 +181,12 @@ function InfoTab({
     }
   };
 
+  const referrerOptions = clients.filter((c) => c.id !== client.id);
+
   return (
     <form
       onSubmit={onSubmit}
-      className="grid grid-cols-1 gap-3 rounded-card border border-border bg-surface p-5 shadow-card sm:grid-cols-2"
+      className="flex flex-col gap-4 rounded-card border border-border bg-surface p-5 shadow-card"
     >
       <Input
         label={t("common.name") ?? ""}
@@ -179,17 +194,25 @@ function InfoTab({
         onChange={(e) => setName(e.target.value)}
         required
       />
-      <Input
-        label={t("common.email") ?? ""}
+
+      <ContactListEditor
+        title={t("clients.emails")}
+        value={emails}
+        onChange={setEmails}
         type="email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
+        addLabel={t("clients.add_email")}
+        emptyLabel={t("clients.no_emails")}
       />
-      <Input
-        label={t("common.phone") ?? ""}
-        value={phone}
-        onChange={(e) => setPhone(e.target.value)}
+
+      <ContactListEditor
+        title={t("clients.phones")}
+        value={phones}
+        onChange={setPhones}
+        type="tel"
+        addLabel={t("clients.add_phone")}
+        emptyLabel={t("clients.no_phones")}
       />
+
       <Input
         label={t("common.address") ?? ""}
         value={address}
@@ -199,12 +222,27 @@ function InfoTab({
         label={t("common.notes") ?? ""}
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
-        className="sm:col-span-2"
       />
-      {err ? (
-        <p className="sm:col-span-2 text-sm text-danger">{err}</p>
-      ) : null}
-      <div className="sm:col-span-2 flex items-center gap-3">
+
+      <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
+        {t("clients.referred_by")}
+        <select
+          className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
+          value={referredBy ?? ""}
+          onChange={(e) => setReferredBy(e.target.value || null)}
+        >
+          <option value="">{t("clients.no_referrer")}</option>
+          {referrerOptions.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+              {c.active ? "" : ` (${t("clients.archived")})`}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {err ? <p className="text-sm text-danger">{err}</p> : null}
+      <div className="flex items-center gap-3">
         <Button type="submit" disabled={busy}>
           {t("common.save")}
         </Button>
@@ -220,7 +258,7 @@ function InfoTab({
 
 function NotebookTab({ clientId }: { clientId: string }) {
   const { t } = useTranslation();
-  const [view, setView] = useState<ClientNotebookView | null>(null);
+  const [view, setView] = useState<ClientNotebookViewDto | null>(null);
   const [contents, setContents] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -229,8 +267,8 @@ function NotebookTab({ clientId }: { clientId: string }) {
 
   const load = () => {
     setErr(null);
-    notebookApi
-      .getClientNotebook(clientId)
+    ipc
+      .clientNotebookGet(clientId)
       .then((v) => {
         setView(v);
         const map: Record<string, string> = {};
@@ -256,7 +294,7 @@ function NotebookTab({ clientId }: { clientId: string }) {
     setBusy(true);
     setErr(null);
     try {
-      await notebookApi.saveClientNotebook({
+      await ipc.clientNotebookSave({
         client_id: clientId,
         entries: view.sections.map((s) => ({
           section_id: s.section.id,
@@ -326,7 +364,7 @@ function NotebookTab({ clientId }: { clientId: string }) {
 type JournalEditorState =
   | { mode: "closed" }
   | { mode: "create" }
-  | { mode: "edit"; entry: ClientJournalEntry };
+  | { mode: "edit"; entry: ClientJournalEntryDto };
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -334,14 +372,14 @@ function todayIso(): string {
 
 function JournalTab({ clientId }: { clientId: string }) {
   const { t } = useTranslation();
-  const [entries, setEntries] = useState<ClientJournalEntry[]>([]);
+  const [entries, setEntries] = useState<ClientJournalEntryDto[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [editor, setEditor] = useState<JournalEditorState>({ mode: "closed" });
 
   const refresh = () => {
     setErr(null);
-    notebookApi
-      .listJournal(clientId)
+    ipc
+      .journalListForClient(clientId)
       .then(setEntries)
       .catch((e) => setErr(String(e)));
   };
@@ -354,7 +392,7 @@ function JournalTab({ clientId }: { clientId: string }) {
   const onDelete = async (id: string) => {
     if (!confirm(t("common.confirm_delete"))) return;
     try {
-      await notebookApi.deleteJournalEntry(id);
+      await ipc.journalEntryDelete(id);
       refresh();
     } catch (e) {
       setErr(String(e));
@@ -429,7 +467,7 @@ function JournalEntryModal({
   onClose,
 }: {
   clientId: string;
-  initial: ClientJournalEntry | null;
+  initial: ClientJournalEntryDto | null;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -448,19 +486,19 @@ function JournalEntryModal({
     setErr(null);
     try {
       if (initial) {
-        const payload: UpdateJournalEntryInput = {
+        const payload: UpdateJournalEntryDto = {
           id: initial.id,
           entry_date: date,
           content,
         };
-        await notebookApi.updateJournalEntry(payload);
+        await ipc.journalEntryUpdate(payload);
       } else {
-        const payload: NewJournalEntry = {
+        const payload: NewJournalEntryDto = {
           client_id: clientId,
           entry_date: date,
           content,
         };
-        await notebookApi.createJournalEntry(payload);
+        await ipc.journalEntryCreate(payload);
       }
       onClose();
     } catch (e) {

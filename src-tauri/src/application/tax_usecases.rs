@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
 
 use crate::application::ports::TaxRepository;
 use crate::application::AppError;
@@ -22,7 +21,7 @@ impl CreateTax {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct UpdateTaxInput {
     pub id: TaxId,
     pub name: String,
@@ -62,17 +61,33 @@ impl UpdateTax {
     }
 }
 
-pub struct DeleteTax {
+pub struct ArchiveTax {
     repo: Arc<dyn TaxRepository>,
 }
 
-impl DeleteTax {
+impl ArchiveTax {
     pub fn new(repo: Arc<dyn TaxRepository>) -> Self {
         Self { repo }
     }
     pub fn execute(&self, id: TaxId) -> Result<(), AppError> {
         let mut tax = self.repo.get(id)?.ok_or(AppError::NotFound)?;
         tax.deactivate();
+        self.repo.update(&tax)?;
+        Ok(())
+    }
+}
+
+pub struct UnarchiveTax {
+    repo: Arc<dyn TaxRepository>,
+}
+
+impl UnarchiveTax {
+    pub fn new(repo: Arc<dyn TaxRepository>) -> Self {
+        Self { repo }
+    }
+    pub fn execute(&self, id: TaxId) -> Result<(), AppError> {
+        let mut tax = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        tax.reactivate();
         self.repo.update(&tax)?;
         Ok(())
     }
@@ -217,7 +232,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_tax_soft_deletes() {
+    fn archive_tax_soft_deletes() {
         let r = repo();
         let tax = CreateTax::new(r.clone())
             .execute(NewTaxDefinition {
@@ -226,9 +241,25 @@ mod tests {
                 tax_id_number: None,
             })
             .unwrap();
-        DeleteTax::new(r.clone()).execute(tax.id).unwrap();
+        ArchiveTax::new(r.clone()).execute(tax.id).unwrap();
         let stored = r.inner.lock().get(&tax.id).cloned().unwrap();
         assert!(!stored.active);
+    }
+
+    #[test]
+    fn unarchive_tax_reactivates() {
+        let r = repo();
+        let tax = CreateTax::new(r.clone())
+            .execute(NewTaxDefinition {
+                name: "TVA".into(),
+                percentage: dec!(21),
+                tax_id_number: None,
+            })
+            .unwrap();
+        ArchiveTax::new(r.clone()).execute(tax.id).unwrap();
+        UnarchiveTax::new(r.clone()).execute(tax.id).unwrap();
+        let stored = r.inner.lock().get(&tax.id).cloned().unwrap();
+        assert!(stored.active);
     }
 
     #[test]
@@ -248,7 +279,7 @@ mod tests {
                 tax_id_number: None,
             })
             .unwrap();
-        DeleteTax::new(r.clone()).execute(b.id).unwrap();
+        ArchiveTax::new(r.clone()).execute(b.id).unwrap();
         assert_eq!(ListTaxes::new(r.clone()).execute(false).unwrap().len(), 1);
         assert_eq!(ListTaxes::new(r).execute(true).unwrap().len(), 2);
     }

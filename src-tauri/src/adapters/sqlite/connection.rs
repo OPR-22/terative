@@ -8,10 +8,9 @@ use rusqlite_migration::{Migrations, M};
 pub type Db = Arc<Mutex<Connection>>;
 
 const INITIAL_SQL: &str = include_str!("../../../migrations/001_initial.sql");
-const NOTEBOOK_SQL: &str = include_str!("../../../migrations/002_notebook.sql");
 
 fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![M::up(INITIAL_SQL), M::up(NOTEBOOK_SQL)])
+    Migrations::new(vec![M::up(INITIAL_SQL)])
 }
 
 pub fn open(path: &Path) -> anyhow::Result<Db> {

@@ -1,21 +1,22 @@
 import { create } from "zustand";
-import { servicesApi } from "../api/services";
-import type {
-  NewService,
-  Service,
-  UpdateServiceInput,
-} from "../types/service";
+import {
+  ipc,
+  type NewServiceDto,
+  type ServiceDto,
+  type UpdateServiceDto,
+} from "../ipc";
 
 interface ServiceState {
-  services: Service[];
+  services: ServiceDto[];
   loading: boolean;
   error: string | null;
   includeInactive: boolean;
   setIncludeInactive: (v: boolean) => void;
   refresh: () => Promise<void>;
-  create: (input: NewService) => Promise<Service>;
-  update: (input: UpdateServiceInput) => Promise<Service>;
-  remove: (id: string) => Promise<void>;
+  create: (input: NewServiceDto) => Promise<ServiceDto>;
+  update: (input: UpdateServiceDto) => Promise<ServiceDto>;
+  archive: (id: string) => Promise<void>;
+  unarchive: (id: string) => Promise<void>;
 }
 
 export const useServiceStore = create<ServiceState>((set, get) => ({
@@ -30,24 +31,28 @@ export const useServiceStore = create<ServiceState>((set, get) => ({
   refresh: async () => {
     set({ loading: true, error: null });
     try {
-      const services = await servicesApi.list(get().includeInactive);
+      const services = await ipc.serviceList(get().includeInactive);
       set({ services, loading: false });
     } catch (e) {
       set({ error: String(e), loading: false });
     }
   },
   create: async (input) => {
-    const service = await servicesApi.create(input);
+    const service = await ipc.serviceCreate(input);
     await get().refresh();
     return service;
   },
   update: async (input) => {
-    const service = await servicesApi.update(input);
+    const service = await ipc.serviceUpdate(input);
     await get().refresh();
     return service;
   },
-  remove: async (id) => {
-    await servicesApi.delete(id);
+  archive: async (id) => {
+    await ipc.serviceArchive(id);
+    await get().refresh();
+  },
+  unarchive: async (id) => {
+    await ipc.serviceUnarchive(id);
     await get().refresh();
   },
 }));

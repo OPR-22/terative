@@ -5,20 +5,22 @@ import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
 import { MoneyInput } from "../components/common/MoneyInput";
 import { StatusBadge } from "../components/invoice/StatusBadge";
+import { MarkPaidModal } from "../components/invoice/MarkPaidModal";
 import { useInvoiceStore } from "../stores/invoiceStore";
 import { useClientStore } from "../stores/clientStore";
+import { useServiceStore } from "../stores/serviceStore";
 import { useTaxStore } from "../stores/taxStore";
 import { useTemplateStore } from "../stores/templateStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import type {
-  Invoice,
-  NewInvoice,
-  NewLineItem,
-  UpdateDraftInvoiceInput,
-} from "../types/invoice";
+  InvoiceDto,
+  NewInvoiceDto,
+  NewLineItemDto,
+  UpdateDraftInvoiceDto,
+} from "../ipc";
 
 interface Props {
-  invoice: Invoice | null; // null = create mode
+  invoice: InvoiceDto | null; // null = create mode
   onClose: () => void;
 }
 
@@ -40,7 +42,7 @@ interface FormState {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-function initialForm(invoice: Invoice | null): FormState {
+function initialForm(invoice: InvoiceDto | null): FormState {
   if (!invoice) {
     return {
       client_id: "",
@@ -73,6 +75,7 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
   const { t } = useTranslation();
   const { createDraft, updateDraft, finalize, cancel, send } = useInvoiceStore();
   const { clients, refresh: refreshClients } = useClientStore();
+  const { services, refresh: refreshServices } = useServiceStore();
   const { taxes, refresh: refreshTaxes } = useTaxStore();
   const { templates, refresh: refreshTemplates } = useTemplateStore();
   const { snapshot, load: loadSettings } = useSettingsStore();
@@ -80,18 +83,22 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
   const [form, setForm] = useState<FormState>(() => initialForm(invoice));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [markingPaid, setMarkingPaid] = useState(false);
 
   useEffect(() => {
     if (clients.length === 0) void refreshClients();
+    if (services.length === 0) void refreshServices();
     if (taxes.length === 0) void refreshTaxes();
     if (templates.length === 0) void refreshTemplates();
     if (!snapshot) void loadSettings();
   }, [
     clients.length,
+    services.length,
     taxes.length,
     templates.length,
     snapshot,
     refreshClients,
+    refreshServices,
     refreshTaxes,
     refreshTemplates,
     loadSettings,
@@ -156,7 +163,7 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
         : [...f.tax_ids, id],
     }));
 
-  const buildLineItems = (): NewLineItem[] =>
+  const buildLineItems = (): NewLineItemDto[] =>
     form.lines
       .filter((li) => li.description.trim() !== "")
       .map((li) => ({
@@ -176,7 +183,7 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
         throw new Error(t("invoices.err_no_client"));
       }
       if (invoice && invoice.status === "Draft") {
-        const payload: UpdateDraftInvoiceInput = {
+        const payload: UpdateDraftInvoiceDto = {
           id: invoice.id,
           template_id: form.template_id,
           date: form.date,
@@ -187,7 +194,7 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
         };
         await updateDraft(payload);
       } else {
-        const payload: NewInvoice = {
+        const payload: NewInvoiceDto = {
           client_id: form.client_id,
           template_id: form.template_id,
           date: form.date,
@@ -279,6 +286,16 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
           {invoice && invoice.status === "Finalized" ? (
             <Button onClick={sendInvoice} disabled={submitting}>
               {t("invoices.send")}
+            </Button>
+          ) : null}
+          {invoice &&
+          (invoice.status === "Finalized" || invoice.status === "Sent") ? (
+            <Button
+              variant="secondary"
+              onClick={() => setMarkingPaid(true)}
+              disabled={submitting}
+            >
+              {t("invoices.mark_paid")}
             </Button>
           ) : null}
           {invoice &&
@@ -440,7 +457,34 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
                   key={idx}
                   className="grid grid-cols-12 items-end gap-2 rounded-field border border-border p-2"
                 >
-                  <div className="col-span-12 md:col-span-6">
+                  <div className="col-span-12 md:col-span-6 flex flex-col gap-1">
+                    {!readOnly && services.length > 0 ? (
+                      <select
+                        className="block w-full rounded-field border border-border bg-surface px-2 py-1 text-xs text-fg-muted shadow-sm"
+                        value=""
+                        onChange={(e) => {
+                          const svc = services.find(
+                            (s) => s.id === e.target.value,
+                          );
+                          if (!svc) return;
+                          updateLine(idx, {
+                            description: svc.name,
+                            unit_price_cents: svc.default_price.amount_cents,
+                          });
+                        }}
+                      >
+                        <option value="">
+                          {t("invoices.pick_service")}
+                        </option>
+                        {services.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ·{" "}
+                            {(s.default_price.amount_cents / 100).toFixed(2)}{" "}
+                            {currencySymbol}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
                     <Input
                       label={t("invoices.line_description") ?? ""}
                       value={line.description}
@@ -495,6 +539,14 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
           </div>
         </section>
       </div>
+
+      {markingPaid && invoice ? (
+        <MarkPaidModal
+          invoice={invoice}
+          onClose={() => setMarkingPaid(false)}
+          onPaid={onClose}
+        />
+      ) : null}
     </div>
   );
 }

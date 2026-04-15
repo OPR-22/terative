@@ -4,6 +4,10 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../common/Button";
 import { Input } from "../common/Input";
 import { useSettingsStore } from "../../stores/settingsStore";
+import type { LanguageDto } from "../../ipc";
+
+const languageToI18n = (lang: LanguageDto): string =>
+  lang === "Fr" ? "fr" : "en";
 
 type Step = "welcome" | "seller" | "currency" | "done";
 
@@ -23,7 +27,7 @@ export function Onboarding() {
   const [email, setEmail] = useState("");
   const [currencyCode, setCurrencyCode] = useState("EUR");
   const [currencySymbol, setCurrencySymbol] = useState("€");
-  const [language, setLanguage] = useState<"fr" | "en">("fr");
+  const [language, setLanguage] = useState<LanguageDto>("Fr");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -64,7 +68,7 @@ export function Onboarding() {
       });
       if (language !== snapshot.preferences.language) {
         await savePreferences({ ...snapshot.preferences, language });
-        await i18n.changeLanguage(language);
+        await i18n.changeLanguage(languageToI18n(language));
       }
       setStep("done");
       setTimeout(close, 900);
@@ -155,10 +159,10 @@ export function Onboarding() {
               <select
                 className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
                 value={language}
-                onChange={(e) => setLanguage(e.target.value as "fr" | "en")}
+                onChange={(e) => setLanguage(e.target.value as LanguageDto)}
               >
-                <option value="fr">Français</option>
-                <option value="en">English</option>
+                <option value="Fr">Français</option>
+                <option value="En">English</option>
               </select>
             </label>
             <div className="flex justify-between">

@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use chrono::{NaiveDate, Utc};
-use serde::{Deserialize, Serialize};
 
 use crate::application::ports::{
     AccountingQueries, AgingRow, ClientBalance, DashboardSummary, InvoicePaymentRow,
@@ -60,14 +59,14 @@ impl AccountingService {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct RevenueByPeriodInput {
     pub start: NaiveDate,
     pub end: NaiveDate,
     pub grouping: RevenueGrouping,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct RevenueByClientInput {
     pub start: NaiveDate,
     pub end: NaiveDate,

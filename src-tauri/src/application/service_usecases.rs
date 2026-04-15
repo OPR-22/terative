@@ -25,7 +25,7 @@ pub struct UpdateService {
     repo: Arc<dyn ServiceRepository>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct UpdateServiceInput {
     pub id: ServiceId,
     pub name: String,
@@ -53,18 +53,36 @@ impl UpdateService {
     }
 }
 
-pub struct DeleteService {
+pub struct ArchiveService {
     repo: Arc<dyn ServiceRepository>,
 }
 
-impl DeleteService {
+impl ArchiveService {
     pub fn new(repo: Arc<dyn ServiceRepository>) -> Self {
         Self { repo }
     }
 
     pub fn execute(&self, id: ServiceId) -> Result<(), AppError> {
-        self.repo.get(id)?.ok_or(AppError::NotFound)?;
-        self.repo.delete(id)?;
+        let mut service = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        service.deactivate();
+        self.repo.update(&service)?;
+        Ok(())
+    }
+}
+
+pub struct UnarchiveService {
+    repo: Arc<dyn ServiceRepository>,
+}
+
+impl UnarchiveService {
+    pub fn new(repo: Arc<dyn ServiceRepository>) -> Self {
+        Self { repo }
+    }
+
+    pub fn execute(&self, id: ServiceId) -> Result<(), AppError> {
+        let mut service = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        service.reactivate();
+        self.repo.update(&service)?;
         Ok(())
     }
 }
@@ -201,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_service_removes_entity() {
+    fn archive_service_deactivates_entity() {
         let repo = Arc::new(InMemoryServiceRepo::default());
         let s = CreateService::new(repo.clone())
             .execute(NewService {
@@ -209,8 +227,36 @@ mod tests {
                 default_price: Money::zero(eur()),
             })
             .unwrap();
-        DeleteService::new(repo.clone()).execute(s.id).unwrap();
-        assert!(repo.inner.lock().is_empty());
+        ArchiveService::new(repo.clone()).execute(s.id).unwrap();
+        let stored = repo.inner.lock().get(&s.id).cloned().unwrap();
+        assert!(!stored.active);
+        assert_eq!(
+            ListServices::new(repo.clone()).execute(false).unwrap().len(),
+            0
+        );
+        assert_eq!(
+            ListServices::new(repo).execute(true).unwrap().len(),
+            1
+        );
+    }
+
+    #[test]
+    fn unarchive_service_reactivates_entity() {
+        let repo = Arc::new(InMemoryServiceRepo::default());
+        let s = CreateService::new(repo.clone())
+            .execute(NewService {
+                name: "Consulting".into(),
+                default_price: Money::zero(eur()),
+            })
+            .unwrap();
+        ArchiveService::new(repo.clone()).execute(s.id).unwrap();
+        UnarchiveService::new(repo.clone()).execute(s.id).unwrap();
+        let stored = repo.inner.lock().get(&s.id).cloned().unwrap();
+        assert!(stored.active);
+        assert_eq!(
+            ListServices::new(repo).execute(false).unwrap().len(),
+            1
+        );
     }
 
     #[test]

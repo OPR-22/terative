@@ -4,25 +4,40 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
 import { MoneyInput } from "../components/common/MoneyInput";
-import { accountingApi } from "../api/accounting";
+import {
+  ipc,
+  type InvoicePaymentRowDto,
+  type NewPaymentAllocationDto,
+  type NewPaymentDto,
+  type PaymentDto,
+  type PaymentMethodDto,
+  type UpdatePaymentDto,
+} from "../ipc";
 import { usePaymentStore } from "../stores/paymentStore";
 import { useClientStore } from "../stores/clientStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import type { InvoicePaymentRow } from "../types/accounting";
-import {
-  paymentMethodLabel,
-  type NewPayment,
-  type NewPaymentAllocation,
-  type Payment,
-  type PaymentMethod,
-  type PaymentMethodKind,
-  type UpdatePaymentInput,
-} from "../types/payment";
+
+type PaymentMethodKind = PaymentMethodDto["kind"];
+
+function paymentMethodLabel(method: PaymentMethodDto): string {
+  switch (method.kind) {
+    case "BankTransfer":
+      return "Bank transfer";
+    case "Cash":
+      return "Cash";
+    case "Check":
+      return "Check";
+    case "Card":
+      return "Card";
+    case "Other":
+      return method.detail || "Other";
+  }
+}
 
 type EditorState =
   | { mode: "closed" }
   | { mode: "create" }
-  | { mode: "edit"; payment: Payment };
+  | { mode: "edit"; payment: PaymentDto };
 
 const METHOD_KINDS: PaymentMethodKind[] = [
   "BankTransfer",
@@ -146,7 +161,7 @@ export function PaymentList() {
 }
 
 interface EditorProps {
-  initial: Payment | null;
+  initial: PaymentDto | null;
   currencyCode: string;
   currencySymbol: string;
   onClose: () => void;
@@ -180,14 +195,14 @@ function PaymentEditor({
     for (const a of initial.allocations) m[a.invoice_id] = a.amount.amount_cents;
     return m;
   });
-  const [outstanding, setOutstanding] = useState<InvoicePaymentRow[]>([]);
+  const [outstanding, setOutstanding] = useState<InvoicePaymentRowDto[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    accountingApi
-      .listOutstanding()
+    ipc
+      .accountingListOutstanding()
       .then((rows) => {
         if (!cancelled) setOutstanding(rows);
       })
@@ -210,7 +225,7 @@ function PaymentEditor({
   );
   const unallocated = amountCents - allocatedTotal;
 
-  const toggleAllocation = (row: InvoicePaymentRow) => {
+  const toggleAllocation = (row: InvoicePaymentRowDto) => {
     setAllocations((prev) => {
       const next = { ...prev };
       if (row.invoice_id in next) {
@@ -228,7 +243,7 @@ function PaymentEditor({
     setAllocations((prev) => ({ ...prev, [invoiceId]: cents }));
   };
 
-  const buildMethod = (): PaymentMethod => {
+  const buildMethod = (): PaymentMethodDto => {
     switch (methodKind) {
       case "BankTransfer":
         return { kind: "BankTransfer" };
@@ -243,7 +258,7 @@ function PaymentEditor({
     }
   };
 
-  const buildAllocations = (): NewPaymentAllocation[] =>
+  const buildAllocations = (): NewPaymentAllocationDto[] =>
     Object.entries(allocations)
       .filter(([, cents]) => cents > 0)
       .map(([invoice_id, cents]) => ({
@@ -263,7 +278,7 @@ function PaymentEditor({
       if (unallocated < 0) throw new Error(t("payments.err_over_allocated"));
 
       if (initial) {
-        const payload: UpdatePaymentInput = {
+        const payload: UpdatePaymentDto = {
           id: initial.id,
           date,
           amount: { amount_cents: amountCents, currency: currencyCode },
@@ -274,7 +289,7 @@ function PaymentEditor({
         };
         await update(payload);
       } else {
-        const payload: NewPayment = {
+        const payload: NewPaymentDto = {
           client_id: clientId,
           date,
           amount: { amount_cents: amountCents, currency: currencyCode },

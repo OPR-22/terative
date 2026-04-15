@@ -1,26 +1,26 @@
 import { create } from "zustand";
-import { invoicesApi } from "../api/invoices";
-import type {
-  Invoice,
-  ListInvoicesQuery,
-  NewInvoice,
-  UpdateDraftInvoiceInput,
-} from "../types/invoice";
+import {
+  ipc,
+  type InvoiceDto,
+  type ListInvoicesQueryDto,
+  type NewInvoiceDto,
+  type UpdateDraftInvoiceDto,
+} from "../ipc";
 
 interface InvoiceState {
-  invoices: Invoice[];
+  invoices: InvoiceDto[];
   loading: boolean;
   error: string | null;
-  query: ListInvoicesQuery;
-  setQuery: (q: ListInvoicesQuery) => void;
+  query: ListInvoicesQueryDto;
+  setQuery: (q: ListInvoicesQueryDto) => void;
   refresh: () => Promise<void>;
-  get: (id: string) => Promise<Invoice>;
-  createDraft: (input: NewInvoice) => Promise<Invoice>;
-  updateDraft: (input: UpdateDraftInvoiceInput) => Promise<Invoice>;
-  finalize: (id: string) => Promise<Invoice>;
-  duplicate: (id: string) => Promise<Invoice>;
-  cancel: (id: string) => Promise<Invoice>;
-  send: (id: string) => Promise<Invoice>;
+  get: (id: string) => Promise<InvoiceDto>;
+  createDraft: (input: NewInvoiceDto) => Promise<InvoiceDto>;
+  updateDraft: (input: UpdateDraftInvoiceDto) => Promise<InvoiceDto>;
+  finalize: (id: string) => Promise<InvoiceDto>;
+  duplicate: (id: string) => Promise<InvoiceDto>;
+  cancel: (id: string) => Promise<InvoiceDto>;
+  send: (id: string) => Promise<InvoiceDto>;
 }
 
 export const useInvoiceStore = create<InvoiceState>((set, get) => ({
@@ -35,40 +35,40 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   refresh: async () => {
     set({ loading: true, error: null });
     try {
-      const invoices = await invoicesApi.list(get().query);
+      const invoices = await ipc.invoiceList(get().query);
       set({ invoices, loading: false });
     } catch (e) {
       set({ error: String(e), loading: false });
     }
   },
-  get: (id) => invoicesApi.get(id),
+  get: (id) => ipc.invoiceGet(id),
   createDraft: async (input) => {
-    const i = await invoicesApi.createDraft(input);
+    const i = await ipc.invoiceCreateDraft(input);
     await get().refresh();
     return i;
   },
   updateDraft: async (input) => {
-    const i = await invoicesApi.updateDraft(input);
+    const i = await ipc.invoiceUpdateDraft(input);
     await get().refresh();
     return i;
   },
   finalize: async (id) => {
-    const i = await invoicesApi.finalize(id);
+    const i = await ipc.invoiceFinalize(id);
     await get().refresh();
     return i;
   },
   duplicate: async (id) => {
-    const i = await invoicesApi.duplicate(id);
+    const i = await ipc.invoiceDuplicate(id);
     await get().refresh();
     return i;
   },
   cancel: async (id) => {
-    const i = await invoicesApi.cancel(id);
+    const i = await ipc.invoiceCancel(id);
     await get().refresh();
     return i;
   },
   send: async (id) => {
-    const i = await invoicesApi.send(id);
+    const i = await ipc.invoiceSend(id);
     await get().refresh();
     return i;
   },

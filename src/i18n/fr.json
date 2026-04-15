@@ -16,6 +16,7 @@
   "common": {
     "save": "Enregistrer",
     "cancel": "Annuler",
+    "close": "Fermer",
     "delete": "Supprimer",
     "edit": "Modifier",
     "view": "Voir",
@@ -26,6 +27,9 @@
     "loading": "Chargement…",
     "empty": "Aucun résultat",
     "confirm_delete": "Confirmer la suppression ?",
+    "archive": "Archiver",
+    "unarchive": "Désarchiver",
+    "confirm_archive": "Confirmer l'archivage ?",
     "name": "Nom",
     "email": "E-mail",
     "phone": "Téléphone",
@@ -52,7 +56,19 @@
     "journal_edit": "Modifier l’entrée",
     "journal_none": "Aucune entrée pour l’instant.",
     "journal_content": "Notes",
-    "journal_err_empty": "Le contenu ne peut pas être vide."
+    "journal_err_empty": "Le contenu ne peut pas être vide.",
+    "emails": "Adresses e-mail",
+    "phones": "Téléphones",
+    "add_email": "Ajouter un e-mail",
+    "add_phone": "Ajouter un téléphone",
+    "no_emails": "Aucun e-mail.",
+    "no_phones": "Aucun téléphone.",
+    "default_contact": "Définir comme contact par défaut",
+    "default_short": "Défaut",
+    "contact_label_placeholder": "Étiquette",
+    "referred_by": "Référé par",
+    "no_referrer": "Aucun",
+    "archived": "archivé"
   },
   "services": {
     "title": "Prestations",
@@ -118,6 +134,7 @@
     "section_taxes": "Taxes",
     "section_lines": "Lignes",
     "add_line": "Ajouter une ligne",
+    "pick_service": "— Choisir une prestation —",
     "line_description": "Description",
     "line_qty": "Qté",
     "line_unit_price": "Prix unitaire",
@@ -128,7 +145,12 @@
     "duplicate": "Dupliquer",
     "send": "Envoyer par e-mail",
     "confirm_cancel": "Annuler cette facture ? Cette action est définitive.",
-    "err_no_client": "Veuillez sélectionner un client."
+    "err_no_client": "Veuillez sélectionner un client.",
+    "mark_paid": "Marquer comme payée",
+    "mark_paid_title": "Enregistrer un paiement pour",
+    "mark_paid_amount_due": "Montant dû",
+    "mark_paid_confirm": "Enregistrer le paiement",
+    "mark_paid_already_paid": "Cette facture est déjà entièrement payée."
   },
   "preview": {
     "empty": "Aperçu indisponible"

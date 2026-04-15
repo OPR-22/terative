@@ -1,14 +1,13 @@
 import { create } from "zustand";
-import { notebookApi } from "../api/notebook";
-import type { NotebookSection } from "../types/notebook";
+import { ipc, type NotebookSectionDto } from "../ipc";
 
 interface NotebookSectionState {
-  sections: NotebookSection[];
+  sections: NotebookSectionDto[];
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  create: (name: string) => Promise<NotebookSection>;
-  rename: (id: string, name: string) => Promise<NotebookSection>;
+  create: (name: string) => Promise<NotebookSectionDto>;
+  rename: (id: string, name: string) => Promise<NotebookSectionDto>;
   remove: (id: string) => Promise<void>;
   reorder: (orderedIds: string[]) => Promise<void>;
 }
@@ -21,28 +20,28 @@ export const useNotebookSectionStore = create<NotebookSectionState>(
     refresh: async () => {
       set({ loading: true, error: null });
       try {
-        const sections = await notebookApi.listSections();
+        const sections = await ipc.notebookSectionList();
         set({ sections, loading: false });
       } catch (e) {
         set({ error: String(e), loading: false });
       }
     },
     create: async (name) => {
-      const s = await notebookApi.createSection(name);
+      const s = await ipc.notebookSectionCreate(name);
       await get().refresh();
       return s;
     },
     rename: async (id, name) => {
-      const s = await notebookApi.renameSection({ id, name });
+      const s = await ipc.notebookSectionRename({ id, name });
       await get().refresh();
       return s;
     },
     remove: async (id) => {
-      await notebookApi.deleteSection(id);
+      await ipc.notebookSectionDelete(id);
       await get().refresh();
     },
     reorder: async (orderedIds) => {
-      await notebookApi.reorderSections(orderedIds);
+      await ipc.notebookSectionReorder(orderedIds);
       await get().refresh();
     },
   }),

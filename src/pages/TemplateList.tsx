@@ -4,13 +4,31 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../components/common/Button";
 import { TemplateEditor } from "./TemplateEditor";
 import { useTemplateStore } from "../stores/templateStore";
-import { defaultNewTemplate } from "../types/template";
-import type { InvoiceTemplate } from "../types/template";
+import type { InvoiceTemplateDto, NewInvoiceTemplateDto } from "../ipc";
 
 type EditorState =
   | { mode: "closed" }
   | { mode: "create" }
-  | { mode: "edit"; template: InvoiceTemplate };
+  | { mode: "edit"; template: InvoiceTemplateDto };
+
+function defaultNewTemplate(): NewInvoiceTemplateDto {
+  return {
+    name: "",
+    base_layout: "Classic",
+    logo_image: null,
+    accent_color: null,
+    font_family: "SansSerif",
+    show_seller_phone: true,
+    show_seller_email: true,
+    show_registration_id: true,
+    show_tax_id_numbers: true,
+    show_signature: false,
+    show_due_date: true,
+    show_total_in_words: false,
+    header_text: null,
+    footer_text: null,
+  };
+}
 
 export function TemplateList() {
   const { t } = useTranslation();

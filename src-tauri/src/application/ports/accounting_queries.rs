@@ -1,5 +1,4 @@
 use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
 
 use crate::application::RepoError;
 use crate::domain::client::ClientId;
@@ -31,7 +30,7 @@ pub trait AccountingQueries: Send + Sync {
     fn dashboard_summary(&self, today: NaiveDate) -> Result<DashboardSummary, RepoError>;
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvoicePaymentRow {
     pub invoice_id: InvoiceId,
     pub number: Option<u64>,
@@ -46,8 +45,7 @@ pub struct InvoicePaymentRow {
     pub payment_status: DerivedPaymentStatus,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DerivedPaymentStatus {
     Draft,
     Unpaid,
@@ -71,15 +69,14 @@ impl DerivedPaymentStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RevenueGrouping {
     Day,
     Month,
     Year,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RevenueBucket {
     /// Start of the bucket (e.g. first day of the month for Month grouping).
     pub bucket_start: NaiveDate,
@@ -87,7 +84,7 @@ pub struct RevenueBucket {
     pub invoice_count: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RevenueByClient {
     pub client_id: ClientId,
     pub client_name: String,
@@ -95,7 +92,7 @@ pub struct RevenueByClient {
     pub invoice_count: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientBalance {
     pub client_id: ClientId,
     pub client_name: String,
@@ -104,7 +101,7 @@ pub struct ClientBalance {
     pub outstanding: Money,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgingRow {
     pub invoice_id: InvoiceId,
     pub number: Option<u64>,
@@ -116,8 +113,7 @@ pub struct AgingRow {
     pub bucket: AgingBucket,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgingBucket {
     Current,
     Days1To30,
@@ -126,7 +122,7 @@ pub enum AgingBucket {
     Days91Plus,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DashboardSummary {
     pub revenue_this_year: Money,
     pub outstanding_total: Money,

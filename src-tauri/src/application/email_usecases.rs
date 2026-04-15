@@ -132,8 +132,8 @@ impl SendInvoice {
         cfg.validate()?;
 
         let to_address = client
-            .email
-            .clone()
+            .default_email()
+            .map(str::to_owned)
             .ok_or_else(|| AppError::Email(crate::application::ports::EmailError::NotConfigured(
                 "client has no email address".into(),
             )))?;
@@ -265,12 +265,6 @@ mod tests {
             _: crate::application::ports::ListClientsQuery,
         ) -> Result<Vec<Client>, RepoError> {
             Ok(vec![])
-        }
-        fn has_invoices(&self, _: ClientId) -> Result<bool, RepoError> {
-            Ok(false)
-        }
-        fn delete(&self, _: ClientId) -> Result<(), RepoError> {
-            Ok(())
         }
     }
 
@@ -446,10 +440,20 @@ mod tests {
         repo: &InMemoryClientRepo,
         email: Option<&str>,
     ) -> Client {
+        use crate::domain::client::NewContactEntry;
+        let emails = email
+            .map(|e| {
+                vec![NewContactEntry {
+                    value: e.into(),
+                    label: None,
+                    is_default: true,
+                }]
+            })
+            .unwrap_or_default();
         let client = Client::create(
             NewClient {
                 name: "Acme Corp".into(),
-                email: email.map(|s| s.to_string()),
+                emails,
                 ..Default::default()
             },
             Utc::now(),

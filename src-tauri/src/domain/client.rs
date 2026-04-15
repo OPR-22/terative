@@ -1,8 +1,7 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ClientId(pub Uuid);
 
 impl ClientId {
@@ -23,14 +22,51 @@ impl std::fmt::Display for ClientId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ContactEntryId(pub Uuid);
+
+impl ContactEntryId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
+impl Default for ContactEntryId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for ContactEntryId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContactEntry {
+    pub id: ContactEntryId,
+    pub value: String,
+    pub label: Option<String>,
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct NewContactEntry {
+    pub value: String,
+    pub label: Option<String>,
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Client {
     pub id: ClientId,
     pub name: String,
-    pub email: Option<String>,
+    pub emails: Vec<ContactEntry>,
+    pub phones: Vec<ContactEntry>,
     pub address: Option<String>,
-    pub phone: Option<String>,
     pub notes: Option<String>,
+    pub referred_by: Option<ClientId>,
     pub active: bool,
     pub created_at: DateTime<Utc>,
 }
@@ -39,15 +75,20 @@ pub struct Client {
 pub enum ClientError {
     #[error("client name cannot be empty")]
     EmptyName,
+    #[error("contact entry value cannot be empty")]
+    EmptyContactValue,
+    #[error("a client cannot refer itself")]
+    SelfReferral,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct NewClient {
     pub name: String,
-    pub email: Option<String>,
+    pub emails: Vec<NewContactEntry>,
+    pub phones: Vec<NewContactEntry>,
     pub address: Option<String>,
-    pub phone: Option<String>,
     pub notes: Option<String>,
+    pub referred_by: Option<ClientId>,
 }
 
 impl Client {
@@ -56,21 +97,95 @@ impl Client {
         if name.is_empty() {
             return Err(ClientError::EmptyName);
         }
+        let emails = sanitize_contacts(input.emails)?;
+        let phones = sanitize_contacts(input.phones)?;
         Ok(Self {
             id: ClientId::new(),
             name,
-            email: input.email.and_then(non_empty),
+            emails,
+            phones,
             address: input.address.and_then(non_empty),
-            phone: input.phone.and_then(non_empty),
             notes: input.notes.and_then(non_empty),
+            referred_by: input.referred_by,
             active: true,
             created_at: now,
         })
     }
 
+    pub fn replace_emails(&mut self, new_emails: Vec<NewContactEntry>) -> Result<(), ClientError> {
+        self.emails = sanitize_contacts(new_emails)?;
+        Ok(())
+    }
+
+    pub fn replace_phones(&mut self, new_phones: Vec<NewContactEntry>) -> Result<(), ClientError> {
+        self.phones = sanitize_contacts(new_phones)?;
+        Ok(())
+    }
+
+    pub fn set_referred_by(&mut self, referrer: Option<ClientId>) -> Result<(), ClientError> {
+        if referrer == Some(self.id) {
+            return Err(ClientError::SelfReferral);
+        }
+        self.referred_by = referrer;
+        Ok(())
+    }
+
+    pub fn default_email(&self) -> Option<&str> {
+        default_value(&self.emails)
+    }
+
+    pub fn default_phone(&self) -> Option<&str> {
+        default_value(&self.phones)
+    }
+
     pub fn deactivate(&mut self) {
         self.active = false;
     }
+
+    pub fn reactivate(&mut self) {
+        self.active = true;
+    }
+}
+
+/// Trims values, drops empty ones, and normalizes the default flag so that
+/// exactly one entry is marked default when the list is non-empty.
+fn sanitize_contacts(input: Vec<NewContactEntry>) -> Result<Vec<ContactEntry>, ClientError> {
+    let mut out: Vec<ContactEntry> = Vec::with_capacity(input.len());
+    for entry in input {
+        let value = entry.value.trim().to_string();
+        if value.is_empty() {
+            return Err(ClientError::EmptyContactValue);
+        }
+        out.push(ContactEntry {
+            id: ContactEntryId::new(),
+            value,
+            label: entry.label.and_then(non_empty),
+            is_default: entry.is_default,
+        });
+    }
+    if out.is_empty() {
+        return Ok(out);
+    }
+    // At most one default; if none flagged, the first entry becomes default.
+    let mut seen_default = false;
+    for e in out.iter_mut() {
+        if e.is_default && !seen_default {
+            seen_default = true;
+        } else {
+            e.is_default = false;
+        }
+    }
+    if !seen_default {
+        out[0].is_default = true;
+    }
+    Ok(out)
+}
+
+fn default_value(list: &[ContactEntry]) -> Option<&str> {
+    list.iter()
+        .find(|e| e.is_default)
+        .or_else(|| list.first())
+        .map(|e| e.value.as_str())
 }
 
 fn non_empty(s: String) -> Option<String> {
@@ -92,19 +207,27 @@ mod tests {
             .with_timezone(&Utc)
     }
 
+    fn new_email(value: &str, is_default: bool) -> NewContactEntry {
+        NewContactEntry {
+            value: value.into(),
+            label: None,
+            is_default,
+        }
+    }
+
     #[test]
     fn create_client_with_valid_name() {
         let c = Client::create(
             NewClient {
                 name: "Acme Corp".into(),
-                email: Some("billing@acme.example".into()),
+                emails: vec![new_email("billing@acme.example", true)],
                 ..Default::default()
             },
             now(),
         )
         .unwrap();
         assert_eq!(c.name, "Acme Corp");
-        assert_eq!(c.email.as_deref(), Some("billing@acme.example"));
+        assert_eq!(c.default_email(), Some("billing@acme.example"));
         assert!(c.active);
         assert_eq!(c.created_at, now());
     }
@@ -129,35 +252,106 @@ mod tests {
     }
 
     #[test]
-    fn create_client_rejects_whitespace_only_name() {
+    fn create_client_rejects_empty_contact_value() {
         let err = Client::create(
             NewClient {
-                name: "   ".into(),
+                name: "Acme".into(),
+                emails: vec![new_email("  ", false)],
                 ..Default::default()
             },
             now(),
         )
         .unwrap_err();
-        assert_eq!(err, ClientError::EmptyName);
+        assert_eq!(err, ClientError::EmptyContactValue);
     }
 
     #[test]
-    fn create_client_normalizes_empty_optional_fields_to_none() {
+    fn first_entry_becomes_default_if_none_flagged() {
         let c = Client::create(
             NewClient {
                 name: "Acme".into(),
-                email: Some("".into()),
-                address: Some("  ".into()),
-                phone: Some("555-0100".into()),
-                notes: None,
+                emails: vec![
+                    new_email("a@x.com", false),
+                    new_email("b@x.com", false),
+                ],
+                ..Default::default()
             },
             now(),
         )
         .unwrap();
-        assert_eq!(c.email, None);
-        assert_eq!(c.address, None);
-        assert_eq!(c.phone.as_deref(), Some("555-0100"));
-        assert_eq!(c.notes, None);
+        assert_eq!(c.emails.len(), 2);
+        assert!(c.emails[0].is_default);
+        assert!(!c.emails[1].is_default);
+        assert_eq!(c.default_email(), Some("a@x.com"));
+    }
+
+    #[test]
+    fn only_first_flagged_entry_is_kept_as_default() {
+        let c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                emails: vec![
+                    new_email("a@x.com", false),
+                    new_email("b@x.com", true),
+                    new_email("c@x.com", true),
+                ],
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        assert!(!c.emails[0].is_default);
+        assert!(c.emails[1].is_default);
+        assert!(!c.emails[2].is_default);
+        assert_eq!(c.default_email(), Some("b@x.com"));
+    }
+
+    #[test]
+    fn empty_contact_lists_have_no_default() {
+        let c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        assert!(c.emails.is_empty());
+        assert!(c.phones.is_empty());
+        assert_eq!(c.default_email(), None);
+        assert_eq!(c.default_phone(), None);
+    }
+
+    #[test]
+    fn set_referred_by_rejects_self_reference() {
+        let mut c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        let own_id = c.id;
+        let err = c.set_referred_by(Some(own_id)).unwrap_err();
+        assert_eq!(err, ClientError::SelfReferral);
+    }
+
+    #[test]
+    fn set_referred_by_accepts_other_client() {
+        let mut c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        let other = ClientId::new();
+        c.set_referred_by(Some(other)).unwrap();
+        assert_eq!(c.referred_by, Some(other));
+        c.set_referred_by(None).unwrap();
+        assert_eq!(c.referred_by, None);
     }
 
     #[test]
@@ -173,5 +367,20 @@ mod tests {
         assert!(c.active);
         c.deactivate();
         assert!(!c.active);
+    }
+
+    #[test]
+    fn reactivate_restores_active_flag() {
+        let mut c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        c.deactivate();
+        c.reactivate();
+        assert!(c.active);
     }
 }

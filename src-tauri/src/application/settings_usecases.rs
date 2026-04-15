@@ -1,12 +1,10 @@
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
-
 use crate::application::ports::SettingsRepository;
 use crate::application::AppError;
 use crate::domain::settings::{AppPreferences, CurrencyConfig, EmailConfig, SellerProfile};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SettingsSnapshot {
     pub seller: SellerProfile,
     pub currency: CurrencyConfig,

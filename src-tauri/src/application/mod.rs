@@ -1,5 +1,6 @@
 pub mod accounting_usecases;
 pub mod client_usecases;
+pub mod dto;
 pub mod email_usecases;
 pub mod invoice_usecases;
 pub mod notebook_usecases;

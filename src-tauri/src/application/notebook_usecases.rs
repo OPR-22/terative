@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
 
 use crate::application::ports::{
     ClientNotebookRepository, ClientJournalRepository, NotebookSectionRepository,
@@ -32,7 +31,7 @@ impl CreateNotebookSection {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct RenameNotebookSectionInput {
     pub id: NotebookSectionId,
     pub name: String,
@@ -119,13 +118,13 @@ impl ListNotebookSections {
 /// A section + its (possibly empty) content for one client. Returned by
 /// `GetClientNotebook`, which merges the global section list with the sparse
 /// stored rows so every section shows up, in order.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ClientNotebookView {
     pub client_id: ClientId,
     pub sections: Vec<ClientNotebookSection>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ClientNotebookSection {
     pub section: NotebookSection,
     pub content: String,
@@ -171,7 +170,7 @@ impl GetClientNotebook {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SaveClientNotebookInput {
     pub client_id: ClientId,
     pub entries: Vec<NotebookEntry>,
@@ -209,7 +208,7 @@ impl CreateJournalEntry {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct UpdateJournalEntryInput {
     pub id: JournalEntryId,
     pub entry_date: NaiveDate,

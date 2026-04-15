@@ -4,7 +4,7 @@ use chrono::Utc;
 
 use crate::application::ports::{ClientRepository, ListClientsQuery};
 use crate::application::AppError;
-use crate::domain::client::{Client, ClientId, NewClient};
+use crate::domain::client::{Client, ClientId, NewClient, NewContactEntry};
 
 pub struct CreateClient {
     repo: Arc<dyn ClientRepository>,
@@ -26,14 +26,15 @@ pub struct UpdateClient {
     repo: Arc<dyn ClientRepository>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
 pub struct UpdateClientInput {
     pub id: ClientId,
     pub name: String,
-    pub email: Option<String>,
+    pub emails: Vec<NewContactEntry>,
+    pub phones: Vec<NewContactEntry>,
     pub address: Option<String>,
-    pub phone: Option<String>,
     pub notes: Option<String>,
+    pub referred_by: Option<ClientId>,
 }
 
 impl UpdateClient {
@@ -48,32 +49,46 @@ impl UpdateClient {
             return Err(crate::domain::client::ClientError::EmptyName.into());
         }
         client.name = name;
-        client.email = normalize(input.email);
+        client.replace_emails(input.emails)?;
+        client.replace_phones(input.phones)?;
         client.address = normalize(input.address);
-        client.phone = normalize(input.phone);
         client.notes = normalize(input.notes);
+        client.set_referred_by(input.referred_by)?;
         self.repo.update(&client)?;
         Ok(client)
     }
 }
 
-pub struct DeleteClient {
+pub struct ArchiveClient {
     repo: Arc<dyn ClientRepository>,
 }
 
-impl DeleteClient {
+impl ArchiveClient {
     pub fn new(repo: Arc<dyn ClientRepository>) -> Self {
         Self { repo }
     }
 
     pub fn execute(&self, id: ClientId) -> Result<(), AppError> {
         let mut client = self.repo.get(id)?.ok_or(AppError::NotFound)?;
-        if self.repo.has_invoices(id)? {
-            client.deactivate();
-            self.repo.update(&client)?;
-        } else {
-            self.repo.delete(id)?;
-        }
+        client.deactivate();
+        self.repo.update(&client)?;
+        Ok(())
+    }
+}
+
+pub struct UnarchiveClient {
+    repo: Arc<dyn ClientRepository>,
+}
+
+impl UnarchiveClient {
+    pub fn new(repo: Arc<dyn ClientRepository>) -> Self {
+        Self { repo }
+    }
+
+    pub fn execute(&self, id: ClientId) -> Result<(), AppError> {
+        let mut client = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        client.reactivate();
+        self.repo.update(&client)?;
         Ok(())
     }
 }
@@ -127,7 +142,6 @@ mod tests {
     #[derive(Default)]
     struct InMemoryClientRepo {
         inner: Mutex<HashMap<ClientId, Client>>,
-        with_invoices: Mutex<std::collections::HashSet<ClientId>>,
     }
 
     impl ClientRepository for InMemoryClientRepo {
@@ -163,19 +177,6 @@ mod tests {
             v.sort_by(|a, b| a.name.cmp(&b.name));
             Ok(v)
         }
-        fn has_invoices(&self, id: ClientId) -> Result<bool, RepoError> {
-            Ok(self.with_invoices.lock().contains(&id))
-        }
-        fn delete(&self, id: ClientId) -> Result<(), RepoError> {
-            self.inner.lock().remove(&id);
-            Ok(())
-        }
-    }
-
-    impl InMemoryClientRepo {
-        fn mark_has_invoices(&self, id: ClientId) {
-            self.with_invoices.lock().insert(id);
-        }
     }
 
     fn make_repo() -> Arc<InMemoryClientRepo> {
@@ -196,13 +197,21 @@ mod tests {
         assert_eq!(repo.inner.lock().len(), 1);
     }
 
+    fn email(value: &str, is_default: bool) -> NewContactEntry {
+        NewContactEntry {
+            value: value.into(),
+            label: None,
+            is_default,
+        }
+    }
+
     #[test]
     fn update_client_changes_fields() {
         let repo = make_repo();
         let created = CreateClient::new(repo.clone())
             .execute(NewClient {
                 name: "Old".into(),
-                email: Some("old@x.com".into()),
+                emails: vec![email("old@x.com", true)],
                 ..Default::default()
             })
             .unwrap();
@@ -210,14 +219,15 @@ mod tests {
             .execute(UpdateClientInput {
                 id: created.id,
                 name: "New Name".into(),
-                email: Some("new@x.com".into()),
+                emails: vec![email("new@x.com", true)],
+                phones: vec![],
                 address: None,
-                phone: None,
                 notes: None,
+                referred_by: None,
             })
             .unwrap();
         assert_eq!(updated.name, "New Name");
-        assert_eq!(updated.email.as_deref(), Some("new@x.com"));
+        assert_eq!(updated.default_email(), Some("new@x.com"));
     }
 
     #[test]
@@ -227,10 +237,11 @@ mod tests {
             .execute(UpdateClientInput {
                 id: ClientId::new(),
                 name: "X".into(),
-                email: None,
+                emails: vec![],
+                phones: vec![],
                 address: None,
-                phone: None,
                 notes: None,
+                referred_by: None,
             })
             .unwrap_err();
         assert!(matches!(err, AppError::NotFound));
@@ -249,10 +260,11 @@ mod tests {
             .execute(UpdateClientInput {
                 id: c.id,
                 name: "   ".into(),
-                email: None,
+                emails: vec![],
+                phones: vec![],
                 address: None,
-                phone: None,
                 notes: None,
+                referred_by: None,
             })
             .unwrap_err();
         assert!(matches!(
@@ -262,7 +274,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_client_hard_deletes_when_no_invoices() {
+    fn update_client_rejects_self_referral() {
         let repo = make_repo();
         let c = CreateClient::new(repo.clone())
             .execute(NewClient {
@@ -270,12 +282,25 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        DeleteClient::new(repo.clone()).execute(c.id).unwrap();
-        assert_eq!(repo.inner.lock().len(), 0);
+        let err = UpdateClient::new(repo)
+            .execute(UpdateClientInput {
+                id: c.id,
+                name: "Acme".into(),
+                emails: vec![],
+                phones: vec![],
+                address: None,
+                notes: None,
+                referred_by: Some(c.id),
+            })
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            AppError::Client(crate::domain::client::ClientError::SelfReferral)
+        ));
     }
 
     #[test]
-    fn delete_client_soft_deletes_when_has_invoices() {
+    fn archive_client_deactivates_entity() {
         let repo = make_repo();
         let c = CreateClient::new(repo.clone())
             .execute(NewClient {
@@ -283,10 +308,24 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        repo.mark_has_invoices(c.id);
-        DeleteClient::new(repo.clone()).execute(c.id).unwrap();
+        ArchiveClient::new(repo.clone()).execute(c.id).unwrap();
         let stored = repo.inner.lock().get(&c.id).cloned().unwrap();
         assert!(!stored.active);
+    }
+
+    #[test]
+    fn unarchive_client_reactivates_entity() {
+        let repo = make_repo();
+        let c = CreateClient::new(repo.clone())
+            .execute(NewClient {
+                name: "Acme".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        ArchiveClient::new(repo.clone()).execute(c.id).unwrap();
+        UnarchiveClient::new(repo.clone()).execute(c.id).unwrap();
+        let stored = repo.inner.lock().get(&c.id).cloned().unwrap();
+        assert!(stored.active);
     }
 
     #[test]
@@ -305,8 +344,7 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        repo.mark_has_invoices(a.id);
-        DeleteClient::new(repo.clone()).execute(a.id).unwrap();
+        ArchiveClient::new(repo.clone()).execute(a.id).unwrap();
 
         let list = ListClients::new(repo.clone())
             .execute(ListClientsQuery::default())

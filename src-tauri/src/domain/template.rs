@@ -1,7 +1,6 @@
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TemplateId(pub Uuid);
 
 impl TemplateId {
@@ -22,8 +21,7 @@ impl std::fmt::Display for TemplateId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TemplateLayout {
     Classic,
     Modern,
@@ -55,8 +53,7 @@ impl Default for TemplateLayout {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FontChoice {
     Serif,
     SansSerif,
@@ -88,12 +85,11 @@ impl Default for FontChoice {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InvoiceTemplate {
     pub id: TemplateId,
     pub name: String,
     pub base_layout: TemplateLayout,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub logo_image: Option<Vec<u8>>,
     pub accent_color: Option<String>,
     pub font_family: FontChoice,
@@ -117,7 +113,7 @@ pub enum TemplateError {
     InvalidAccentColor,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct NewInvoiceTemplate {
     pub name: String,
     pub base_layout: TemplateLayout,

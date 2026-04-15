@@ -5,18 +5,20 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
-import { dataApi } from "../api/data";
-import { notebookApi } from "../api/notebook";
 import { useNotebookSectionStore } from "../stores/notebookSectionStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import type {
-  AppPreferences,
-  CurrencyConfig,
-  EmailConfig,
-  Language,
-  SellerProfile,
-  Theme,
-} from "../types/settings";
+import {
+  ipc,
+  type AppPreferencesDto,
+  type CurrencyConfigDto,
+  type EmailConfigDto,
+  type LanguageDto,
+  type SellerProfileDto,
+  type ThemeDto,
+} from "../ipc";
+
+const languageToI18n = (lang: LanguageDto): string =>
+  lang === "Fr" ? "fr" : "en";
 
 export function Settings() {
   const { t, i18n } = useTranslation();
@@ -62,7 +64,7 @@ export function Settings() {
         prefs={snapshot.preferences}
         onSave={async (p) => {
           await savePreferences(p);
-          await i18n.changeLanguage(p.language);
+          await i18n.changeLanguage(languageToI18n(p.language));
         }}
       />
       <DataSection />
@@ -99,7 +101,7 @@ function DataSection() {
         setBusy(null);
         return;
       }
-      const written = await dataApi.export(destination);
+      const written = await ipc.dataExport(destination);
       flash("ok", t("settings.data_exported_to", { path: written }));
     } catch (e) {
       flash("err", String(e));
@@ -111,7 +113,7 @@ function DataSection() {
   const runBackup = async () => {
     setBusy("backup");
     try {
-      const path = await dataApi.backup();
+      const path = await ipc.dataBackup(null);
       flash("ok", t("settings.data_backed_up_to", { path }));
     } catch (e) {
       flash("err", String(e));
@@ -137,7 +139,7 @@ function DataSection() {
         setBusy(null);
         return;
       }
-      await dataApi.restore(source);
+      await ipc.dataRestore(source);
       flash("ok", t("settings.data_restored"));
     } catch (e) {
       flash("err", String(e));
@@ -174,20 +176,20 @@ function DataSection() {
 }
 
 interface SellerProps {
-  seller: SellerProfile;
-  onSave: (s: SellerProfile) => Promise<void>;
+  seller: SellerProfileDto;
+  onSave: (s: SellerProfileDto) => Promise<void>;
 }
 
 function SellerSection({ seller, onSave }: SellerProps) {
   const { t } = useTranslation();
-  const [form, setForm] = useState<SellerProfile>(seller);
+  const [form, setForm] = useState<SellerProfileDto>(seller);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     setForm(seller);
   }, [seller]);
 
-  const update = <K extends keyof SellerProfile>(key: K, value: SellerProfile[K]) =>
+  const update = <K extends keyof SellerProfileDto>(key: K, value: SellerProfileDto[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
   return (
@@ -248,13 +250,13 @@ function SellerSection({ seller, onSave }: SellerProps) {
 }
 
 interface CurrencyProps {
-  currency: CurrencyConfig;
-  onSave: (c: CurrencyConfig) => Promise<void>;
+  currency: CurrencyConfigDto;
+  onSave: (c: CurrencyConfigDto) => Promise<void>;
 }
 
 function CurrencySection({ currency, onSave }: CurrencyProps) {
   const { t } = useTranslation();
-  const [form, setForm] = useState<CurrencyConfig>(currency);
+  const [form, setForm] = useState<CurrencyConfigDto>(currency);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -262,7 +264,7 @@ function CurrencySection({ currency, onSave }: CurrencyProps) {
     setForm(currency);
   }, [currency]);
 
-  const update = <K extends keyof CurrencyConfig>(key: K, value: CurrencyConfig[K]) =>
+  const update = <K extends keyof CurrencyConfigDto>(key: K, value: CurrencyConfigDto[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
   return (
@@ -327,13 +329,13 @@ function CurrencySection({ currency, onSave }: CurrencyProps) {
 }
 
 interface PreferencesProps {
-  prefs: AppPreferences;
-  onSave: (p: AppPreferences) => Promise<void>;
+  prefs: AppPreferencesDto;
+  onSave: (p: AppPreferencesDto) => Promise<void>;
 }
 
 function PreferencesSection({ prefs, onSave }: PreferencesProps) {
   const { t } = useTranslation();
-  const [form, setForm] = useState<AppPreferences>(prefs);
+  const [form, setForm] = useState<AppPreferencesDto>(prefs);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -360,7 +362,7 @@ function PreferencesSection({ prefs, onSave }: PreferencesProps) {
             className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
             value={form.theme}
             onChange={(e) =>
-              setForm({ ...form, theme: e.target.value as Theme })
+              setForm({ ...form, theme: e.target.value as ThemeDto })
             }
           >
             <option value="Light">{t("settings.light")}</option>
@@ -373,11 +375,11 @@ function PreferencesSection({ prefs, onSave }: PreferencesProps) {
             className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
             value={form.language}
             onChange={(e) =>
-              setForm({ ...form, language: e.target.value as Language })
+              setForm({ ...form, language: e.target.value as LanguageDto })
             }
           >
-            <option value="fr">Français</option>
-            <option value="en">English</option>
+            <option value="Fr">Français</option>
+            <option value="En">English</option>
           </select>
         </label>
         <Input
@@ -398,9 +400,9 @@ function PreferencesSection({ prefs, onSave }: PreferencesProps) {
 }
 
 interface EmailProps {
-  config: EmailConfig;
+  config: EmailConfigDto;
   hasPassword: boolean;
-  onSaveConfig: (c: EmailConfig) => Promise<void>;
+  onSaveConfig: (c: EmailConfigDto) => Promise<void>;
   onSavePassword: (p: string) => Promise<void>;
   onTest: () => Promise<void>;
 }
@@ -424,7 +426,7 @@ function EmailSection({
   onTest,
 }: EmailProps) {
   const { t } = useTranslation();
-  const [form, setForm] = useState<EmailConfig>(config);
+  const [form, setForm] = useState<EmailConfigDto>(config);
   const [password, setPassword] = useState("");
   const [saved, setSaved] = useState(false);
   const [pwSaved, setPwSaved] = useState(false);
@@ -437,7 +439,7 @@ function EmailSection({
     setForm(config);
   }, [config]);
 
-  const update = <K extends keyof EmailConfig>(key: K, value: EmailConfig[K]) =>
+  const update = <K extends keyof EmailConfigDto>(key: K, value: EmailConfigDto[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
   const saveConfig = async (e: React.FormEvent) => {
@@ -661,7 +663,7 @@ function NotebookSectionsSection() {
   const onDelete = async (id: string, name: string) => {
     let count = 0;
     try {
-      count = await notebookApi.countSectionEntries(id);
+      count = await ipc.notebookSectionCountEntries(id);
     } catch {
       // Fall back to a generic warning if the count fails.
     }

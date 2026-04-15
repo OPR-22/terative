@@ -1,9 +1,8 @@
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::domain::money::{Money, MoneyError};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ServiceId(pub Uuid);
 
 impl ServiceId {
@@ -24,7 +23,7 @@ impl std::fmt::Display for ServiceId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Service {
     pub id: ServiceId,
     pub name: String,
@@ -42,7 +41,7 @@ pub enum ServiceError {
     Money(#[from] MoneyError),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct NewService {
     pub name: String,
     pub default_price: Money,
@@ -67,6 +66,10 @@ impl Service {
 
     pub fn deactivate(&mut self) {
         self.active = false;
+    }
+
+    pub fn reactivate(&mut self) {
+        self.active = true;
     }
 }
 
@@ -140,5 +143,17 @@ mod tests {
         .unwrap();
         s.deactivate();
         assert!(!s.active);
+    }
+
+    #[test]
+    fn reactivate_restores_active_flag() {
+        let mut s = Service::create(NewService {
+            name: "Consulting".into(),
+            default_price: Money::zero(eur()),
+        })
+        .unwrap();
+        s.deactivate();
+        s.reactivate();
+        assert!(s.active);
     }
 }

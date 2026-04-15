@@ -1,11 +1,10 @@
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::domain::money::{Money, MoneyError};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LineItemId(pub Uuid);
 
 impl LineItemId {
@@ -26,7 +25,7 @@ impl std::fmt::Display for LineItemId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LineItem {
     pub id: LineItemId,
     pub description: String,
@@ -47,7 +46,7 @@ pub enum LineItemError {
     Money(#[from] MoneyError),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct NewLineItem {
     pub description: String,
     pub quantity: Decimal,

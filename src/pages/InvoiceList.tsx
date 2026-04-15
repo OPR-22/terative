@@ -3,17 +3,18 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "../components/common/Button";
 import { StatusBadge } from "../components/invoice/StatusBadge";
+import { MarkPaidModal } from "../components/invoice/MarkPaidModal";
 import { InvoiceEditor } from "./InvoiceEditor";
 import { useInvoiceStore } from "../stores/invoiceStore";
 import { useClientStore } from "../stores/clientStore";
-import type { Invoice, InvoiceStatus } from "../types/invoice";
+import type { InvoiceDto, InvoiceStatusDto } from "../ipc";
 
 type EditorState =
   | { mode: "closed" }
   | { mode: "create" }
-  | { mode: "edit"; invoice: Invoice };
+  | { mode: "edit"; invoice: InvoiceDto };
 
-const STATUSES: InvoiceStatus[] = ["Draft", "Finalized", "Sent", "Cancelled"];
+const STATUSES: InvoiceStatusDto[] = ["Draft", "Finalized", "Sent", "Cancelled"];
 
 export function InvoiceList() {
   const { t } = useTranslation();
@@ -31,6 +32,7 @@ export function InvoiceList() {
   } = useInvoiceStore();
   const { clients, refresh: refreshClients } = useClientStore();
   const [editor, setEditor] = useState<EditorState>({ mode: "closed" });
+  const [payFor, setPayFor] = useState<InvoiceDto | null>(null);
 
   useEffect(() => {
     void refresh();
@@ -141,6 +143,14 @@ export function InvoiceList() {
                       {t("invoices.send")}
                     </Button>
                   ) : null}
+                  {inv.status === "Finalized" || inv.status === "Sent" ? (
+                    <Button
+                      variant="secondary"
+                      onClick={() => setPayFor(inv)}
+                    >
+                      {t("invoices.mark_paid")}
+                    </Button>
+                  ) : null}
                   <Button
                     variant="secondary"
                     onClick={() => void duplicate(inv.id)}
@@ -165,6 +175,14 @@ export function InvoiceList() {
           </tbody>
         </table>
       )}
+
+      {payFor ? (
+        <MarkPaidModal
+          invoice={payFor}
+          onClose={() => setPayFor(null)}
+          onPaid={() => void refresh()}
+        />
+      ) : null}
     </div>
   );
 }

@@ -2,7 +2,6 @@ use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::domain::client::ClientId;
@@ -11,7 +10,7 @@ use crate::domain::money::{Currency, Money, MoneyError};
 use crate::domain::tax::{TaxDefinition, TaxId};
 use crate::domain::template::TemplateId;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InvoiceId(pub Uuid);
 
 impl InvoiceId {
@@ -32,7 +31,7 @@ impl std::fmt::Display for InvoiceId {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InvoiceNumber(pub u64);
 
 impl std::fmt::Display for InvoiceNumber {
@@ -41,8 +40,7 @@ impl std::fmt::Display for InvoiceNumber {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InvoiceStatus {
     Draft,
     Finalized,
@@ -71,7 +69,7 @@ impl InvoiceStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppliedTax {
     pub tax_definition_id: Option<TaxId>,
     pub tax_name: String,
@@ -80,7 +78,7 @@ pub struct AppliedTax {
     pub computed_amount: Money,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Invoice {
     pub id: InvoiceId,
     pub number: Option<InvoiceNumber>,
@@ -119,7 +117,7 @@ pub enum InvoiceError {
     Money(#[from] MoneyError),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct NewInvoice {
     pub client_id: ClientId,
     pub template_id: Option<TemplateId>,

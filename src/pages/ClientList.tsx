@@ -4,18 +4,23 @@ import { useNavigate } from "react-router-dom";
 
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
+import { ContactListEditor } from "../components/client/ContactListEditor";
 import { useClientStore } from "../stores/clientStore";
-import type { NewClient } from "../types/client";
+import type { ClientDto, ContactEntryDto, NewClientDto } from "../ipc";
 
 type EditorState = { mode: "closed" } | { mode: "create" };
 
-const emptyForm: NewClient = {
+const emptyForm: NewClientDto = {
   name: "",
-  email: "",
-  address: "",
-  phone: "",
-  notes: "",
+  emails: [],
+  phones: [],
+  address: null,
+  notes: null,
+  referred_by: null,
 };
+
+const defaultContact = (entries: ContactEntryDto[]): string =>
+  entries.find((e) => e.is_default)?.value ?? entries[0]?.value ?? "—";
 
 export function ClientList() {
   const { t } = useTranslation();
@@ -28,7 +33,8 @@ export function ClientList() {
     setQuery,
     refresh,
     create,
-    remove,
+    archive,
+    unarchive,
   } = useClientStore();
   const [editor, setEditor] = useState<EditorState>({ mode: "closed" });
 
@@ -87,8 +93,12 @@ export function ClientList() {
                 onClick={() => navigate(`/clients/${c.id}`)}
               >
                 <td className="py-2 pr-3 font-medium text-fg">{c.name}</td>
-                <td className="py-2 pr-3 text-fg-muted">{c.email ?? "—"}</td>
-                <td className="py-2 pr-3 text-fg-muted">{c.phone ?? "—"}</td>
+                <td className="py-2 pr-3 text-fg-muted">
+                  {defaultContact(c.emails)}
+                </td>
+                <td className="py-2 pr-3 text-fg-muted">
+                  {defaultContact(c.phones)}
+                </td>
                 <td className="py-2 pr-3 text-fg-muted">
                   {c.active ? "✓" : "—"}
                 </td>
@@ -102,16 +112,22 @@ export function ClientList() {
                   >
                     {t("common.view")}
                   </Button>
-                  <Button
-                    variant="danger"
-                    onClick={() => {
-                      if (confirm(t("common.confirm_delete"))) {
-                        void remove(c.id);
-                      }
-                    }}
-                  >
-                    {t("common.delete")}
-                  </Button>
+                  {c.active ? (
+                    <Button
+                      variant="danger"
+                      onClick={() => {
+                        if (confirm(t("common.confirm_archive"))) {
+                          void archive(c.id);
+                        }
+                      }}
+                    >
+                      {t("common.archive")}
+                    </Button>
+                  ) : (
+                    <Button onClick={() => void unarchive(c.id)}>
+                      {t("common.unarchive")}
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -122,6 +138,7 @@ export function ClientList() {
       {editor.mode === "create" ? (
         <ClientEditor
           initial={emptyForm}
+          allClients={clients}
           onCancel={() => setEditor({ mode: "closed" })}
           onSubmit={async (form) => {
             await create(form);
@@ -134,24 +151,22 @@ export function ClientList() {
 }
 
 interface EditorProps {
-  initial: NewClient;
+  initial: NewClientDto;
+  allClients: ClientDto[];
   onCancel: () => void;
-  onSubmit: (form: NewClient) => void | Promise<void>;
+  onSubmit: (form: NewClientDto) => void | Promise<void>;
 }
 
-function ClientEditor({ initial, onCancel, onSubmit }: EditorProps) {
+function ClientEditor({ initial, allClients, onCancel, onSubmit }: EditorProps) {
   const { t } = useTranslation();
-  const [form, setForm] = useState<NewClient>(initial);
+  const [form, setForm] = useState<NewClientDto>(initial);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const update = <K extends keyof NewClient>(key: K, value: NewClient[K]) =>
-    setForm((f) => ({ ...f, [key]: value }));
-
   return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-overlay p-4">
+    <div className="fixed inset-0 z-10 flex items-start justify-center overflow-y-auto bg-overlay p-4">
       <form
-        className="w-full max-w-lg rounded-card bg-surface p-6 shadow-card"
+        className="my-8 w-full max-w-2xl rounded-card bg-surface p-6 shadow-card"
         onSubmit={async (e) => {
           e.preventDefault();
           setErr(null);
@@ -166,34 +181,61 @@ function ClientEditor({ initial, onCancel, onSubmit }: EditorProps) {
         }}
       >
         <h2 className="mb-4 text-lg font-bold text-fg">{t("clients.new")}</h2>
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           <Input
             label={t("common.name") ?? ""}
             value={form.name}
-            onChange={(e) => update("name", e.target.value)}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
             required
           />
-          <Input
-            label={t("common.email") ?? ""}
+
+          <ContactListEditor
+            title={t("clients.emails")}
+            value={form.emails}
+            onChange={(emails) => setForm({ ...form, emails })}
             type="email"
-            value={form.email ?? ""}
-            onChange={(e) => update("email", e.target.value)}
+            addLabel={t("clients.add_email")}
+            emptyLabel={t("clients.no_emails")}
           />
-          <Input
-            label={t("common.phone") ?? ""}
-            value={form.phone ?? ""}
-            onChange={(e) => update("phone", e.target.value)}
+
+          <ContactListEditor
+            title={t("clients.phones")}
+            value={form.phones}
+            onChange={(phones) => setForm({ ...form, phones })}
+            type="tel"
+            addLabel={t("clients.add_phone")}
+            emptyLabel={t("clients.no_phones")}
           />
+
           <Input
             label={t("common.address") ?? ""}
             value={form.address ?? ""}
-            onChange={(e) => update("address", e.target.value)}
+            onChange={(e) => setForm({ ...form, address: e.target.value || null })}
           />
           <Input
             label={t("common.notes") ?? ""}
             value={form.notes ?? ""}
-            onChange={(e) => update("notes", e.target.value)}
+            onChange={(e) => setForm({ ...form, notes: e.target.value || null })}
           />
+
+          <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
+            {t("clients.referred_by")}
+            <select
+              className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
+              value={form.referred_by ?? ""}
+              onChange={(e) =>
+                setForm({ ...form, referred_by: e.target.value || null })
+              }
+            >
+              <option value="">{t("clients.no_referrer")}</option>
+              {allClients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {c.active ? "" : ` (${t("clients.archived")})`}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         {err ? <p className="mt-3 text-sm text-danger">{err}</p> : null}
         <div className="mt-5 flex justify-end gap-2">

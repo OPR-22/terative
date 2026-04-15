@@ -5,6 +5,7 @@ use tauri::State;
 use super::{to_ipc_err, AppState};
 
 #[tauri::command]
+#[specta::specta]
 pub fn data_export(
     state: State<'_, AppState>,
     destination: String,
@@ -17,6 +18,7 @@ pub fn data_export(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn data_backup(
     state: State<'_, AppState>,
     backup_dir: Option<String>,
@@ -32,6 +34,7 @@ pub fn data_backup(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn data_restore(
     state: State<'_, AppState>,
     source: String,
@@ -43,6 +46,7 @@ pub fn data_restore(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn data_default_backup_dir(state: State<'_, AppState>) -> Result<String, String> {
     Ok(state.default_backup_dir.to_string_lossy().to_string())
 }

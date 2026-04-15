@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use chrono::{NaiveDate, Utc};
-use serde::{Deserialize, Serialize};
 
 use crate::application::ports::{
     ClientRepository, InvoiceNumberGenerator, InvoiceRepository, ListInvoicesQuery, PdfGenerator,
@@ -77,7 +76,7 @@ impl CreateDraftInvoice {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct UpdateDraftInvoiceInput {
     pub id: InvoiceId,
     pub template_id: Option<TemplateId>,
@@ -777,12 +776,6 @@ mod tests {
             _q: crate::application::ports::ListClientsQuery,
         ) -> Result<Vec<Client>, RepoError> {
             Ok(vec![])
-        }
-        fn has_invoices(&self, _id: ClientId) -> Result<bool, RepoError> {
-            Ok(false)
-        }
-        fn delete(&self, _id: ClientId) -> Result<(), RepoError> {
-            Ok(())
         }
     }
 

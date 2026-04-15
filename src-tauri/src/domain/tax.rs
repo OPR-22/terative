@@ -1,8 +1,7 @@
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TaxId(pub Uuid);
 
 impl TaxId {
@@ -23,7 +22,7 @@ impl std::fmt::Display for TaxId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaxDefinition {
     pub id: TaxId,
     pub name: String,
@@ -40,7 +39,7 @@ pub enum TaxError {
     NegativePercentage,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct NewTaxDefinition {
     pub name: String,
     pub percentage: Decimal,
@@ -76,6 +75,10 @@ impl TaxDefinition {
 
     pub fn deactivate(&mut self) {
         self.active = false;
+    }
+
+    pub fn reactivate(&mut self) {
+        self.active = true;
     }
 }
 
@@ -127,5 +130,18 @@ mod tests {
         })
         .unwrap();
         assert_eq!(t.percentage, dec!(0));
+    }
+
+    #[test]
+    fn reactivate_restores_active_flag() {
+        let mut t = TaxDefinition::create(NewTaxDefinition {
+            name: "TVA".into(),
+            percentage: dec!(21),
+            tax_id_number: None,
+        })
+        .unwrap();
+        t.deactivate();
+        t.reactivate();
+        assert!(t.active);
     }
 }

@@ -4,30 +4,30 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
 import { PdfPreview, useDebounced } from "../components/template/PdfPreview";
-import { templatesApi } from "../api/templates";
 import { useTemplateStore } from "../stores/templateStore";
-import type {
-  FontChoice,
-  InvoiceTemplate,
-  NewInvoiceTemplate,
-  TemplateLayout,
-  TemplateOverride,
-  UpdateTemplateInput,
-} from "../types/template";
+import {
+  ipc,
+  type FontChoiceDto,
+  type InvoiceTemplateDto,
+  type NewInvoiceTemplateDto,
+  type TemplateLayoutDto,
+  type TemplateOverrideDto,
+  type UpdateTemplateDto,
+} from "../ipc";
 
 type EditorInitial =
-  | (InvoiceTemplate & { id: string })
-  | (NewInvoiceTemplate & { id: null });
+  | (InvoiceTemplateDto & { id: string })
+  | (NewInvoiceTemplateDto & { id: null });
 
 interface Props {
   initial: EditorInitial;
   onClose: () => void;
 }
 
-const LAYOUTS: TemplateLayout[] = ["Classic", "Modern", "Minimal"];
-const FONTS: FontChoice[] = ["SansSerif", "Serif", "Mono"];
+const LAYOUTS: TemplateLayoutDto[] = ["Classic", "Modern", "Minimal"];
+const FONTS: FontChoiceDto[] = ["SansSerif", "Serif", "Mono"];
 
-type Form = NewInvoiceTemplate;
+type Form = NewInvoiceTemplateDto;
 
 export function TemplateEditor({ initial, onClose }: Props) {
   const { t } = useTranslation();
@@ -44,7 +44,7 @@ export function TemplateEditor({ initial, onClose }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    const overrides: TemplateOverride = {
+    const overrides: TemplateOverrideDto = {
       base_layout: debouncedForm.base_layout,
       accent_color: debouncedForm.accent_color,
       font_family: debouncedForm.font_family,
@@ -61,13 +61,13 @@ export function TemplateEditor({ initial, onClose }: Props) {
     };
     setPreviewLoading(true);
     setPreviewError(null);
-    templatesApi
-      .preview({
+    ipc
+      .templatePreview({
         template_id: initial.id ?? null,
         overrides,
       })
       .then((bytes) => {
-        if (!cancelled) setPreviewBytes(bytes);
+        if (!cancelled) setPreviewBytes(new Uint8Array(bytes));
       })
       .catch((e) => {
         if (!cancelled) setPreviewError(String(e));
@@ -92,7 +92,7 @@ export function TemplateEditor({ initial, onClose }: Props) {
     setSubmitting(true);
     try {
       if (initial.id) {
-        const payload: UpdateTemplateInput = { ...form, id: initial.id };
+        const payload: UpdateTemplateDto = { ...form, id: initial.id };
         await update(payload);
       } else {
         await create(form);

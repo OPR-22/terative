@@ -1,7 +1,6 @@
-use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Money {
     pub amount_cents: i64,
     pub currency: Currency,
@@ -9,19 +8,6 @@ pub struct Money {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Currency([u8; 3]);
-
-impl Serialize for Currency {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(self.code())
-    }
-}
-
-impl<'de> Deserialize<'de> for Currency {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let code = String::deserialize(d)?;
-        Currency::new(&code).map_err(serde::de::Error::custom)
-    }
-}
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum MoneyError {

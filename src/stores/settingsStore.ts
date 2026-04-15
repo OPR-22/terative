@@ -1,22 +1,22 @@
 import { create } from "zustand";
-import { settingsApi } from "../api/settings";
-import type {
-  AppPreferences,
-  CurrencyConfig,
-  EmailConfig,
-  SellerProfile,
-  SettingsSnapshot,
-} from "../types/settings";
+import {
+  ipc,
+  type AppPreferencesDto,
+  type CurrencyConfigDto,
+  type EmailConfigDto,
+  type SellerProfileDto,
+  type SettingsSnapshotDto,
+} from "../ipc";
 
 interface SettingsState {
-  snapshot: SettingsSnapshot | null;
+  snapshot: SettingsSnapshotDto | null;
   loading: boolean;
   error: string | null;
   load: () => Promise<void>;
-  saveSeller: (profile: SellerProfile) => Promise<void>;
-  saveCurrency: (currency: CurrencyConfig) => Promise<void>;
-  savePreferences: (prefs: AppPreferences) => Promise<void>;
-  saveEmailConfig: (config: EmailConfig) => Promise<void>;
+  saveSeller: (profile: SellerProfileDto) => Promise<void>;
+  saveCurrency: (currency: CurrencyConfigDto) => Promise<void>;
+  savePreferences: (prefs: AppPreferencesDto) => Promise<void>;
+  saveEmailConfig: (config: EmailConfigDto) => Promise<void>;
   saveEmailPassword: (password: string) => Promise<void>;
   testEmailConnection: () => Promise<void>;
 }
@@ -28,34 +28,34 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   load: async () => {
     set({ loading: true, error: null });
     try {
-      const snapshot = await settingsApi.get();
+      const snapshot = await ipc.settingsGet();
       set({ snapshot, loading: false });
     } catch (e) {
       set({ error: String(e), loading: false });
     }
   },
   saveSeller: async (profile) => {
-    const seller = await settingsApi.updateSellerProfile(profile);
+    const seller = await ipc.settingsUpdateSellerProfile(profile);
     const current = get().snapshot;
     if (current) set({ snapshot: { ...current, seller } });
   },
   saveCurrency: async (currency) => {
-    const updated = await settingsApi.updateCurrency(currency);
+    const updated = await ipc.settingsUpdateCurrency(currency);
     const current = get().snapshot;
     if (current) set({ snapshot: { ...current, currency: updated } });
   },
   savePreferences: async (prefs) => {
-    const preferences = await settingsApi.updateAppPreferences(prefs);
+    const preferences = await ipc.settingsUpdateAppPreferences(prefs);
     const current = get().snapshot;
     if (current) set({ snapshot: { ...current, preferences } });
   },
   saveEmailConfig: async (config) => {
-    const email = await settingsApi.updateEmailConfig(config);
+    const email = await ipc.settingsUpdateEmailConfig(config);
     const current = get().snapshot;
     if (current) set({ snapshot: { ...current, email } });
   },
   saveEmailPassword: async (password) => {
-    await settingsApi.updateEmailPassword(password);
+    await ipc.settingsUpdateEmailPassword(password);
     const current = get().snapshot;
     if (current)
       set({
@@ -63,6 +63,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       });
   },
   testEmailConnection: async () => {
-    await settingsApi.testEmailConnection();
+    await ipc.emailTestConnection();
   },
 }));

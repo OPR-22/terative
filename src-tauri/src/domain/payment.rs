@@ -1,12 +1,11 @@
 use chrono::{DateTime, NaiveDate, Utc};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::domain::client::ClientId;
 use crate::domain::invoice::InvoiceId;
 use crate::domain::money::{Currency, Money, MoneyError};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PaymentId(pub Uuid);
 
 impl PaymentId {
@@ -27,8 +26,7 @@ impl std::fmt::Display for PaymentId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "detail")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PaymentMethod {
     BankTransfer,
     Cash,
@@ -65,13 +63,13 @@ impl PaymentMethod {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PaymentAllocation {
     pub invoice_id: InvoiceId,
     pub amount: Money,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Payment {
     pub id: PaymentId,
     pub client_id: ClientId,
@@ -100,7 +98,7 @@ pub enum PaymentError {
     Money(#[from] MoneyError),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct NewPayment {
     pub client_id: ClientId,
     pub date: NaiveDate,
@@ -111,7 +109,7 @@ pub struct NewPayment {
     pub notes: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct NewPaymentAllocation {
     pub invoice_id: InvoiceId,
     pub amount: Money,

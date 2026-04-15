@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 import { useSettingsStore } from "../stores/settingsStore";
-import type { Theme } from "../types/settings";
+import type { ThemeDto } from "../ipc";
 
-function applyTheme(theme: Theme) {
+function applyTheme(theme: ThemeDto) {
   const value = theme === "Dark" ? "dark" : "light";
   document.documentElement.setAttribute("data-theme", value);
 }

@@ -12,7 +12,9 @@ use commands::{
         accounting_dashboard_summary, accounting_list_outstanding, accounting_list_overdue,
         accounting_revenue_by_client, accounting_revenue_by_period,
     },
-    client_commands::{client_create, client_delete, client_get, client_list, client_update},
+    client_commands::{
+        client_archive, client_create, client_get, client_list, client_unarchive, client_update,
+    },
     data_commands::{data_backup, data_default_backup_dir, data_export, data_restore},
     email_commands::{
         email_test_connection, invoice_send, settings_update_email_config,
@@ -31,12 +33,14 @@ use commands::{
     payment_commands::{
         payment_delete, payment_get, payment_list, payment_record, payment_update,
     },
-    service_commands::{service_create, service_delete, service_list, service_update},
+    service_commands::{
+        service_archive, service_create, service_list, service_unarchive, service_update,
+    },
     settings_commands::{
         settings_get, settings_update_app_preferences, settings_update_currency,
         settings_update_seller_profile,
     },
-    tax_commands::{tax_create, tax_delete, tax_list, tax_update},
+    tax_commands::{tax_archive, tax_create, tax_list, tax_unarchive, tax_update},
     template_commands::{
         template_create, template_delete, template_duplicate, template_list, template_preview,
         template_set_default, template_update,
@@ -44,6 +48,7 @@ use commands::{
     AppState,
 };
 use tauri::Manager;
+use tauri_specta::{collect_commands, Builder};
 
 fn resolve_app_data_dir(app: &tauri::AppHandle) -> PathBuf {
     let dir = app
@@ -77,12 +82,101 @@ fn seed_default_template_if_empty(db: &adapters::sqlite::Db) {
     }
 }
 
+/// Builds the specta `Builder` with every registered command. Extracted so
+/// that both `run()` and the bindings-export test can call it without
+/// duplicating the command list.
+fn build_specta() -> Builder<tauri::Wry> {
+    Builder::<tauri::Wry>::new().commands(collect_commands![
+        client_create,
+        client_update,
+        client_archive,
+        client_unarchive,
+        client_list,
+        client_get,
+        service_create,
+        service_update,
+        service_archive,
+        service_unarchive,
+        service_list,
+        settings_get,
+        settings_update_seller_profile,
+        settings_update_currency,
+        settings_update_app_preferences,
+        tax_create,
+        tax_update,
+        tax_archive,
+        tax_unarchive,
+        tax_list,
+        template_create,
+        template_update,
+        template_delete,
+        template_duplicate,
+        template_set_default,
+        template_list,
+        template_preview,
+        invoice_create_draft,
+        invoice_update_draft,
+        invoice_finalize,
+        invoice_duplicate,
+        invoice_cancel,
+        invoice_list,
+        invoice_get,
+        settings_update_email_config,
+        settings_update_email_password,
+        email_test_connection,
+        invoice_send,
+        payment_record,
+        payment_update,
+        payment_delete,
+        payment_list,
+        payment_get,
+        accounting_list_outstanding,
+        accounting_list_overdue,
+        accounting_revenue_by_period,
+        accounting_revenue_by_client,
+        accounting_client_balance,
+        accounting_client_balances,
+        accounting_aging_report,
+        accounting_dashboard_summary,
+        data_export,
+        data_backup,
+        data_restore,
+        data_default_backup_dir,
+        notebook_section_create,
+        notebook_section_rename,
+        notebook_section_delete,
+        notebook_section_count_entries,
+        notebook_section_reorder,
+        notebook_section_list,
+        client_notebook_get,
+        client_notebook_save,
+        journal_entry_create,
+        journal_entry_update,
+        journal_entry_delete,
+        journal_list_for_client,
+        journal_entry_get,
+    ])
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let builder = build_specta();
+
+    // Export TS bindings in debug builds so the frontend always has a fresh
+    // contract. Release builds skip this entirely.
+    #[cfg(debug_assertions)]
+    builder
+        .export(
+            specta_typescript::Typescript::default(),
+            "../src/ipc/bindings.ts",
+        )
+        .expect("failed to export typescript bindings");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
+        .invoke_handler(builder.invoke_handler())
+        .setup(move |app| {
             let data_dir = resolve_app_data_dir(app.handle());
             let db_path = data_dir.join("terative.sqlite");
             let db = adapters::sqlite::open(&db_path)
@@ -96,75 +190,27 @@ pub fn run() {
                 default_pdf_dir,
                 default_backup_dir,
             ));
+            builder.mount_events(app);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            client_create,
-            client_update,
-            client_delete,
-            client_list,
-            client_get,
-            service_create,
-            service_update,
-            service_delete,
-            service_list,
-            settings_get,
-            settings_update_seller_profile,
-            settings_update_currency,
-            settings_update_app_preferences,
-            tax_create,
-            tax_update,
-            tax_delete,
-            tax_list,
-            template_create,
-            template_update,
-            template_delete,
-            template_duplicate,
-            template_set_default,
-            template_list,
-            template_preview,
-            invoice_create_draft,
-            invoice_update_draft,
-            invoice_finalize,
-            invoice_duplicate,
-            invoice_cancel,
-            invoice_list,
-            invoice_get,
-            settings_update_email_config,
-            settings_update_email_password,
-            email_test_connection,
-            invoice_send,
-            payment_record,
-            payment_update,
-            payment_delete,
-            payment_list,
-            payment_get,
-            accounting_list_outstanding,
-            accounting_list_overdue,
-            accounting_revenue_by_period,
-            accounting_revenue_by_client,
-            accounting_client_balance,
-            accounting_client_balances,
-            accounting_aging_report,
-            accounting_dashboard_summary,
-            data_export,
-            data_backup,
-            data_restore,
-            data_default_backup_dir,
-            notebook_section_create,
-            notebook_section_rename,
-            notebook_section_delete,
-            notebook_section_count_entries,
-            notebook_section_reorder,
-            notebook_section_list,
-            client_notebook_get,
-            client_notebook_save,
-            journal_entry_create,
-            journal_entry_update,
-            journal_entry_delete,
-            journal_list_for_client,
-            journal_entry_get,
-        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod specta_bindings {
+    use super::*;
+
+    /// Regenerates `src/ipc/bindings.ts` on every `cargo test` run. Keeps the
+    /// frontend contract in sync with the Rust command set without needing
+    /// to launch the full app.
+    #[test]
+    fn export_typescript_bindings() {
+        build_specta()
+            .export(
+                specta_typescript::Typescript::default(),
+                "../src/ipc/bindings.ts",
+            )
+            .expect("failed to export typescript bindings");
+    }
 }

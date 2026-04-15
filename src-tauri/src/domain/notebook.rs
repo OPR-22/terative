@@ -1,12 +1,11 @@
 use chrono::{DateTime, NaiveDate, Utc};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::domain::client::ClientId;
 
 // ---- NotebookSection ----
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NotebookSectionId(pub Uuid);
 
 impl NotebookSectionId {
@@ -27,7 +26,7 @@ impl std::fmt::Display for NotebookSectionId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotebookSection {
     pub id: NotebookSectionId,
     pub name: String,
@@ -65,13 +64,13 @@ impl NotebookSection {
 
 // ---- ClientNotebook ----
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotebookEntry {
     pub section_id: NotebookSectionId,
     pub content: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientNotebook {
     pub client_id: ClientId,
     pub entries: Vec<NotebookEntry>,
@@ -128,7 +127,7 @@ fn normalize_entries(
 
 // ---- ClientJournalEntry ----
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct JournalEntryId(pub Uuid);
 
 impl JournalEntryId {
@@ -149,7 +148,7 @@ impl std::fmt::Display for JournalEntryId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClientJournalEntry {
     pub id: JournalEntryId,
     pub client_id: ClientId,
@@ -165,7 +164,7 @@ pub enum JournalEntryError {
     EmptyContent,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct NewJournalEntry {
     pub client_id: ClientId,
     pub entry_date: NaiveDate,

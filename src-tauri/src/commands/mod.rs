@@ -25,7 +25,7 @@ use crate::adapters::{
 use crate::application::ports::DataManagement;
 use crate::application::accounting_usecases::AccountingService;
 use crate::application::client_usecases::{
-    CreateClient, DeleteClient, GetClientDetail, ListClients, UpdateClient,
+    ArchiveClient, CreateClient, GetClientDetail, ListClients, UnarchiveClient, UpdateClient,
 };
 use crate::application::email_usecases::{
     SendInvoice, TestEmailConnection, UpdateEmailConfig, UpdateEmailPassword,
@@ -44,12 +44,12 @@ use crate::application::payment_usecases::{
     DeletePayment, GetPayment, ListPayments, RecordPayment, UpdatePayment,
 };
 use crate::application::service_usecases::{
-    CreateService, DeleteService, ListServices, UpdateService,
+    ArchiveService, CreateService, ListServices, UnarchiveService, UpdateService,
 };
 use crate::application::settings_usecases::{
     GetSettings, UpdateAppPreferences, UpdateCurrency, UpdateSellerProfile,
 };
-use crate::application::tax_usecases::{CreateTax, DeleteTax, ListTaxes, UpdateTax};
+use crate::application::tax_usecases::{ArchiveTax, CreateTax, ListTaxes, UnarchiveTax, UpdateTax};
 use crate::application::template_usecases::{
     CreateTemplate, DeleteTemplate, DuplicateTemplate, ListTemplates, PreviewTemplate,
     SetDefaultTemplate, UpdateTemplate,
@@ -58,13 +58,15 @@ use crate::application::template_usecases::{
 pub struct AppState {
     pub create_client: CreateClient,
     pub update_client: UpdateClient,
-    pub delete_client: DeleteClient,
+    pub archive_client: ArchiveClient,
+    pub unarchive_client: UnarchiveClient,
     pub list_clients: ListClients,
     pub get_client_detail: GetClientDetail,
 
     pub create_service: CreateService,
     pub update_service: UpdateService,
-    pub delete_service: DeleteService,
+    pub archive_service: ArchiveService,
+    pub unarchive_service: UnarchiveService,
     pub list_services: ListServices,
 
     pub get_settings: GetSettings,
@@ -74,7 +76,8 @@ pub struct AppState {
 
     pub create_tax: CreateTax,
     pub update_tax: UpdateTax,
-    pub delete_tax: DeleteTax,
+    pub archive_tax: ArchiveTax,
+    pub unarchive_tax: UnarchiveTax,
     pub list_taxes: ListTaxes,
 
     pub create_template: CreateTemplate,
@@ -158,13 +161,15 @@ impl AppState {
         Self {
             create_client: CreateClient::new(client_repo.clone()),
             update_client: UpdateClient::new(client_repo.clone()),
-            delete_client: DeleteClient::new(client_repo.clone()),
+            archive_client: ArchiveClient::new(client_repo.clone()),
+            unarchive_client: UnarchiveClient::new(client_repo.clone()),
             list_clients: ListClients::new(client_repo.clone()),
             get_client_detail: GetClientDetail::new(client_repo.clone()),
 
             create_service: CreateService::new(service_repo.clone()),
             update_service: UpdateService::new(service_repo.clone()),
-            delete_service: DeleteService::new(service_repo.clone()),
+            archive_service: ArchiveService::new(service_repo.clone()),
+            unarchive_service: UnarchiveService::new(service_repo.clone()),
             list_services: ListServices::new(service_repo),
 
             get_settings: GetSettings::new(settings_repo.clone(), credentials.clone()),
@@ -174,7 +179,8 @@ impl AppState {
 
             create_tax: CreateTax::new(tax_repo.clone()),
             update_tax: UpdateTax::new(tax_repo.clone()),
-            delete_tax: DeleteTax::new(tax_repo.clone()),
+            archive_tax: ArchiveTax::new(tax_repo.clone()),
+            unarchive_tax: UnarchiveTax::new(tax_repo.clone()),
             list_taxes: ListTaxes::new(tax_repo.clone()),
 
             create_template: CreateTemplate::new(template_repo.clone()),

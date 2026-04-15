@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use chrono::{NaiveDate, Utc};
-use serde::{Deserialize, Serialize};
 
 use crate::application::ports::{ListPaymentsQuery, PaymentRepository};
 use crate::application::AppError;
@@ -25,7 +24,7 @@ impl RecordPayment {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct UpdatePaymentInput {
     pub id: PaymentId,
     pub date: NaiveDate,

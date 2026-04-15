@@ -4,12 +4,16 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
 import { useTaxStore } from "../stores/taxStore";
-import type { NewTaxDefinition, TaxDefinition, UpdateTaxInput } from "../types/tax";
+import type {
+  NewTaxDefinitionDto,
+  TaxDefinitionDto,
+  UpdateTaxDto,
+} from "../ipc";
 
 type EditorState =
   | { mode: "closed" }
   | { mode: "create" }
-  | { mode: "edit"; tax: TaxDefinition };
+  | { mode: "edit"; tax: TaxDefinitionDto };
 
 interface Form {
   name: string;
@@ -30,7 +34,8 @@ export function TaxList() {
     refresh,
     create,
     update,
-    remove,
+    archive,
+    unarchive,
   } = useTaxStore();
   const [editor, setEditor] = useState<EditorState>({ mode: "closed" });
 
@@ -92,16 +97,22 @@ export function TaxList() {
                   >
                     {t("common.edit")}
                   </Button>
-                  <Button
-                    variant="danger"
-                    onClick={() => {
-                      if (confirm(t("common.confirm_delete"))) {
-                        void remove(tax.id);
-                      }
-                    }}
-                  >
-                    {t("common.delete")}
-                  </Button>
+                  {tax.active ? (
+                    <Button
+                      variant="danger"
+                      onClick={() => {
+                        if (confirm(t("common.confirm_archive"))) {
+                          void archive(tax.id);
+                        }
+                      }}
+                    >
+                      {t("common.archive")}
+                    </Button>
+                  ) : (
+                    <Button onClick={() => void unarchive(tax.id)}>
+                      {t("common.unarchive")}
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -123,7 +134,7 @@ export function TaxList() {
           onCancel={() => setEditor({ mode: "closed" })}
           onSubmit={async (form) => {
             if (editor.mode === "edit") {
-              const payload: UpdateTaxInput = {
+              const payload: UpdateTaxDto = {
                 id: editor.tax.id,
                 name: form.name,
                 percentage: form.percentage,
@@ -131,7 +142,7 @@ export function TaxList() {
               };
               await update(payload);
             } else {
-              const payload: NewTaxDefinition = {
+              const payload: NewTaxDefinitionDto = {
                 name: form.name,
                 percentage: form.percentage,
                 tax_id_number: form.tax_id_number || null,

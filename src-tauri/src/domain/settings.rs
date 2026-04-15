@@ -1,7 +1,6 @@
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct EmailConfig {
     pub smtp_host: String,
     pub smtp_port: u16,
@@ -85,7 +84,7 @@ fn find_close(bytes: &[u8]) -> Option<usize> {
     None
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SellerProfile {
     pub name: String,
     pub title: Option<String>,
@@ -93,11 +92,10 @@ pub struct SellerProfile {
     pub address: Option<String>,
     pub phone: Option<String>,
     pub email: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub signature_image: Option<Vec<u8>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CurrencyConfig {
     pub code: String,
     pub symbol: String,
@@ -151,8 +149,7 @@ impl CurrencyConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Theme {
     #[default]
     Light,
@@ -176,8 +173,7 @@ impl Theme {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Language {
     #[default]
     Fr,
@@ -201,7 +197,7 @@ impl Language {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AppPreferences {
     pub theme: Theme,
     pub language: Language,

@@ -243,8 +243,12 @@ mod tests {
             )
             .unwrap();
 
-        let client_repo = SqliteClientRepository::new(db.clone());
-        client_repo.delete(client_id).unwrap();
+        db.lock()
+            .execute(
+                "DELETE FROM clients WHERE id = ?1",
+                rusqlite::params![client_id.to_string()],
+            )
+            .unwrap();
 
         let loaded = notebook_repo.load(client_id).unwrap();
         assert!(loaded.entries.is_empty());

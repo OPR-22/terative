@@ -33,6 +33,9 @@ typst-pdf = "0.14"
 typst-as-lib = { version = "0.15", features = ["typst-kit-fonts", "typst-kit-embed-fonts"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "native-tls", "builder"] }
+specta = { version = "=2.0.0-rc.24", features = ["derive", "chrono", "uuid", "rust_decimal"] }
+specta-typescript = "0.0.11"
+tauri-specta = { version = "=2.0.0-rc.24", features = ["derive", "typescript"] }
 
 [dev-dependencies]
 tempfile = "3"

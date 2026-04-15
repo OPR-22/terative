@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
-
 use crate::application::ports::{
     ClientRepository, PdfGenerator, PdfRenderInput, SettingsRepository, TemplateRepository,
 };
@@ -31,7 +29,7 @@ impl CreateTemplate {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct UpdateTemplateInput {
     pub id: TemplateId,
     pub name: String,
@@ -213,13 +211,13 @@ impl PreviewTemplate {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct PreviewTemplateInput {
     pub template_id: Option<TemplateId>,
     pub overrides: Option<TemplateOverride>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct TemplateOverride {
     pub base_layout: TemplateLayout,
     pub accent_color: Option<String>,
@@ -279,13 +277,23 @@ fn sample_template() -> InvoiceTemplate {
 }
 
 fn sample_client() -> Client {
+    use crate::domain::client::NewContactEntry;
     Client::create(
         NewClient {
             name: "Sample Client".into(),
-            email: Some("client@example.com".into()),
+            emails: vec![NewContactEntry {
+                value: "client@example.com".into(),
+                label: None,
+                is_default: true,
+            }],
+            phones: vec![NewContactEntry {
+                value: "+32 1 234 5678".into(),
+                label: None,
+                is_default: true,
+            }],
             address: Some("123 Example St\n1000 City".into()),
-            phone: Some("+32 1 234 5678".into()),
             notes: None,
+            referred_by: None,
         },
         Utc::now(),
     )

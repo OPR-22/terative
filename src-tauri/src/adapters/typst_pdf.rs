@@ -220,9 +220,9 @@ fn build_template_data<'a>(input: &'a PdfRenderInput<'a>) -> TemplateData<'a> {
         },
         client: ClientView {
             name: &client.name,
-            email: client.email.as_deref(),
+            email: client.default_email(),
             address: client.address.as_deref(),
-            phone: client.phone.as_deref(),
+            phone: client.default_phone(),
         },
         invoice: build_invoice_view(input.invoice, currency),
     }
@@ -364,13 +364,23 @@ mod tests {
     }
 
     fn sample_client() -> Client {
+        use crate::domain::client::NewContactEntry;
         Client::create(
             NewClient {
                 name: "Acme Corp".into(),
-                email: Some("billing@acme.example".into()),
+                emails: vec![NewContactEntry {
+                    value: "billing@acme.example".into(),
+                    label: None,
+                    is_default: true,
+                }],
+                phones: vec![NewContactEntry {
+                    value: "+32 1 234 5678".into(),
+                    label: None,
+                    is_default: true,
+                }],
                 address: Some("123 Main St\n1000 City".into()),
-                phone: Some("+32 1 234 5678".into()),
                 notes: None,
+                referred_by: None,
             },
             Utc::now(),
         )

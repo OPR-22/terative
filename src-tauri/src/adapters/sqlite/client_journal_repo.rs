@@ -247,7 +247,12 @@ mod tests {
         let client_id = seed_client(&db);
         let repo = SqliteClientJournalRepository::new(db.clone());
         repo.insert(&make(client_id, "2026-04-14", "note")).unwrap();
-        SqliteClientRepository::new(db).delete(client_id).unwrap();
+        db.lock()
+            .execute(
+                "DELETE FROM clients WHERE id = ?1",
+                rusqlite::params![client_id.to_string()],
+            )
+            .unwrap();
         assert!(repo.list_for_client(client_id).unwrap().is_empty());
     }
 }

@@ -16,6 +16,7 @@
   "common": {
     "save": "Save",
     "cancel": "Cancel",
+    "close": "Close",
     "delete": "Delete",
     "edit": "Edit",
     "view": "View",
@@ -26,6 +27,9 @@
     "loading": "Loading…",
     "empty": "No results",
     "confirm_delete": "Confirm deletion?",
+    "archive": "Archive",
+    "unarchive": "Unarchive",
+    "confirm_archive": "Confirm archive?",
     "name": "Name",
     "email": "Email",
     "phone": "Phone",
@@ -52,7 +56,19 @@
     "journal_edit": "Edit entry",
     "journal_none": "No journal entries yet.",
     "journal_content": "Notes",
-    "journal_err_empty": "Content cannot be empty."
+    "journal_err_empty": "Content cannot be empty.",
+    "emails": "Email addresses",
+    "phones": "Phone numbers",
+    "add_email": "Add email",
+    "add_phone": "Add phone",
+    "no_emails": "No emails.",
+    "no_phones": "No phones.",
+    "default_contact": "Mark as default contact",
+    "default_short": "Default",
+    "contact_label_placeholder": "Label",
+    "referred_by": "Referred by",
+    "no_referrer": "None",
+    "archived": "archived"
   },
   "services": {
     "title": "Services",
@@ -118,6 +134,7 @@
     "section_taxes": "Taxes",
     "section_lines": "Line items",
     "add_line": "Add line",
+    "pick_service": "— Pick a service —",
     "line_description": "Description",
     "line_qty": "Qty",
     "line_unit_price": "Unit price",
@@ -128,7 +145,12 @@
     "duplicate": "Duplicate",
     "send": "Send by email",
     "confirm_cancel": "Cancel this invoice? This action is permanent.",
-    "err_no_client": "Please select a client."
+    "err_no_client": "Please select a client.",
+    "mark_paid": "Mark as paid",
+    "mark_paid_title": "Record payment for",
+    "mark_paid_amount_due": "Amount due",
+    "mark_paid_confirm": "Record payment",
+    "mark_paid_already_paid": "This invoice is already fully paid."
   },
   "preview": {
     "empty": "Preview unavailable"

@@ -6,17 +6,16 @@ import { Input } from "../components/common/Input";
 import { MoneyInput } from "../components/common/MoneyInput";
 import { useServiceStore } from "../stores/serviceStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import type { Money } from "../types/money";
-import type { Service } from "../types/service";
+import type { MoneyDto, ServiceDto } from "../ipc";
 
 type EditorState =
   | { mode: "closed" }
   | { mode: "create" }
-  | { mode: "edit"; service: Service };
+  | { mode: "edit"; service: ServiceDto };
 
 interface Form {
   name: string;
-  price: Money;
+  price: MoneyDto;
 }
 
 export function ServiceList() {
@@ -30,7 +29,8 @@ export function ServiceList() {
     refresh,
     create,
     update,
-    remove,
+    archive,
+    unarchive,
   } = useServiceStore();
   const { snapshot, load } = useSettingsStore();
   const [editor, setEditor] = useState<EditorState>({ mode: "closed" });
@@ -44,7 +44,7 @@ export function ServiceList() {
   const currencyCode = currency?.code ?? "EUR";
   const currencySymbol = currency?.symbol ?? "€";
 
-  const formatMoney = (m: Money) =>
+  const formatMoney = (m: MoneyDto) =>
     `${(m.amount_cents / 100).toFixed(2)} ${currencySymbol}`;
 
   return (
@@ -103,16 +103,22 @@ export function ServiceList() {
                   >
                     {t("common.edit")}
                   </Button>
-                  <Button
-                    variant="danger"
-                    onClick={() => {
-                      if (confirm(t("common.confirm_delete"))) {
-                        void remove(s.id);
-                      }
-                    }}
-                  >
-                    {t("common.delete")}
-                  </Button>
+                  {s.active ? (
+                    <Button
+                      variant="danger"
+                      onClick={() => {
+                        if (confirm(t("common.confirm_archive"))) {
+                          void archive(s.id);
+                        }
+                      }}
+                    >
+                      {t("common.archive")}
+                    </Button>
+                  ) : (
+                    <Button onClick={() => void unarchive(s.id)}>
+                      {t("common.unarchive")}
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}

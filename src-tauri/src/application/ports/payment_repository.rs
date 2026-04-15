@@ -14,10 +14,8 @@ pub trait PaymentRepository: Send + Sync {
     fn allocated_for_invoice(&self, id: InvoiceId) -> Result<Money, RepoError>;
 }
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct ListPaymentsQuery {
-    #[serde(default)]
     pub client_id: Option<ClientId>,
-    #[serde(default)]
     pub search: Option<String>,
 }

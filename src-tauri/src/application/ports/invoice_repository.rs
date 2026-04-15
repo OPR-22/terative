@@ -10,7 +10,7 @@ pub trait InvoiceRepository: Send + Sync {
     fn delete(&self, id: InvoiceId) -> Result<(), RepoError>;
 }
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct ListInvoicesQuery {
     pub status: Option<InvoiceStatus>,
     pub client_id: Option<ClientId>,

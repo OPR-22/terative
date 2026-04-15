@@ -1,22 +1,23 @@
 import { create } from "zustand";
-import { clientsApi } from "../api/clients";
-import type {
-  Client,
-  ListClientsQuery,
-  NewClient,
-  UpdateClientInput,
-} from "../types/client";
+import {
+  ipc,
+  type ClientDto,
+  type ListClientsQueryDto,
+  type NewClientDto,
+  type UpdateClientDto,
+} from "../ipc";
 
 interface ClientState {
-  clients: Client[];
+  clients: ClientDto[];
   loading: boolean;
   error: string | null;
-  query: ListClientsQuery;
-  setQuery: (q: ListClientsQuery) => void;
+  query: ListClientsQueryDto;
+  setQuery: (q: ListClientsQueryDto) => void;
   refresh: () => Promise<void>;
-  create: (input: NewClient) => Promise<Client>;
-  update: (input: UpdateClientInput) => Promise<Client>;
-  remove: (id: string) => Promise<void>;
+  create: (input: NewClientDto) => Promise<ClientDto>;
+  update: (input: UpdateClientDto) => Promise<ClientDto>;
+  archive: (id: string) => Promise<void>;
+  unarchive: (id: string) => Promise<void>;
 }
 
 export const useClientStore = create<ClientState>((set, get) => ({
@@ -31,24 +32,28 @@ export const useClientStore = create<ClientState>((set, get) => ({
   refresh: async () => {
     set({ loading: true, error: null });
     try {
-      const clients = await clientsApi.list(get().query);
+      const clients = await ipc.clientList(get().query);
       set({ clients, loading: false });
     } catch (e) {
       set({ error: String(e), loading: false });
     }
   },
   create: async (input) => {
-    const client = await clientsApi.create(input);
+    const client = await ipc.clientCreate(input);
     await get().refresh();
     return client;
   },
   update: async (input) => {
-    const client = await clientsApi.update(input);
+    const client = await ipc.clientUpdate(input);
     await get().refresh();
     return client;
   },
-  remove: async (id) => {
-    await clientsApi.delete(id);
+  archive: async (id) => {
+    await ipc.clientArchive(id);
+    await get().refresh();
+  },
+  unarchive: async (id) => {
+    await ipc.clientUnarchive(id);
     await get().refresh();
   },
 }));

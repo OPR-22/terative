@@ -1,21 +1,20 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { accountingApi } from "../api/accounting";
+import { ipc, type DashboardSummaryDto, type InvoicePaymentRowDto } from "../ipc";
 import { useSettingsStore } from "../stores/settingsStore";
-import type { DashboardSummary, InvoicePaymentRow } from "../types/accounting";
 
 export function Dashboard() {
   const { t } = useTranslation();
   const { snapshot, load } = useSettingsStore();
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
-  const [overdue, setOverdue] = useState<InvoicePaymentRow[]>([]);
+  const [summary, setSummary] = useState<DashboardSummaryDto | null>(null);
+  const [overdue, setOverdue] = useState<InvoicePaymentRowDto[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!snapshot) void load();
     let cancelled = false;
-    Promise.all([accountingApi.dashboardSummary(), accountingApi.listOverdue()])
+    Promise.all([ipc.accountingDashboardSummary(), ipc.accountingListOverdue()])
       .then(([s, o]) => {
         if (cancelled) return;
         setSummary(s);

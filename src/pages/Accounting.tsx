@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { accountingApi } from "../api/accounting";
+import {
+  ipc,
+  type AgingBucketDto,
+  type AgingRowDto,
+  type ClientBalanceDto,
+  type RevenueBucketDto,
+  type RevenueByClientDto,
+  type RevenueGroupingDto,
+} from "../ipc";
 import { useSettingsStore } from "../stores/settingsStore";
-import type {
-  AgingBucket,
-  AgingRow,
-  ClientBalance,
-  RevenueBucket,
-  RevenueByClient,
-  RevenueGrouping,
-} from "../types/accounting";
 
 type Tab = "revenue" | "aging" | "balances";
 
@@ -79,9 +79,9 @@ function RevenueTab() {
   const { snapshot } = useSettingsStore();
   const [start, setStart] = useState(THIS_YEAR_START);
   const [end, setEnd] = useState(THIS_YEAR_END);
-  const [grouping, setGrouping] = useState<RevenueGrouping>("Month");
-  const [buckets, setBuckets] = useState<RevenueBucket[]>([]);
-  const [byClient, setByClient] = useState<RevenueByClient[]>([]);
+  const [grouping, setGrouping] = useState<RevenueGroupingDto>("Month");
+  const [buckets, setBuckets] = useState<RevenueBucketDto[]>([]);
+  const [byClient, setByClient] = useState<RevenueByClientDto[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const symbol = snapshot?.currency.symbol ?? "€";
@@ -90,8 +90,8 @@ function RevenueTab() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      accountingApi.revenueByPeriod({ start, end, grouping }),
-      accountingApi.revenueByClient({ start, end }),
+      ipc.accountingRevenueByPeriod({ start, end, grouping }),
+      ipc.accountingRevenueByClient({ start, end }),
     ])
       .then(([b, c]) => {
         if (cancelled) return;
@@ -134,7 +134,7 @@ function RevenueTab() {
           {t("accounting.grouping")}
           <select
             value={grouping}
-            onChange={(e) => setGrouping(e.target.value as RevenueGrouping)}
+            onChange={(e) => setGrouping(e.target.value as RevenueGroupingDto)}
             className="rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
           >
             <option value="Day">{t("accounting.grouping_day")}</option>
@@ -232,15 +232,15 @@ function RevenueTab() {
 function AgingTab() {
   const { t } = useTranslation();
   const { snapshot } = useSettingsStore();
-  const [rows, setRows] = useState<AgingRow[]>([]);
+  const [rows, setRows] = useState<AgingRowDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const symbol = snapshot?.currency.symbol ?? "€";
   const fmt = (cents: number) => `${(cents / 100).toFixed(2)} ${symbol}`;
 
   useEffect(() => {
     let cancelled = false;
-    accountingApi
-      .agingReport()
+    ipc
+      .accountingAgingReport()
       .then((r) => !cancelled && setRows(r))
       .catch((e) => !cancelled && setError(String(e)));
     return () => {
@@ -249,7 +249,7 @@ function AgingTab() {
   }, []);
 
   const grouped = useMemo(() => {
-    const buckets: Record<AgingBucket, AgingRow[]> = {
+    const buckets: Record<AgingBucketDto, AgingRowDto[]> = {
       Current: [],
       Days1To30: [],
       Days31To60: [],
@@ -261,7 +261,7 @@ function AgingTab() {
   }, [rows]);
 
   const totals = useMemo(() => {
-    const t: Record<AgingBucket, number> = {
+    const t: Record<AgingBucketDto, number> = {
       Current: 0,
       Days1To30: 0,
       Days31To60: 0,
@@ -272,7 +272,7 @@ function AgingTab() {
     return t;
   }, [rows]);
 
-  const BUCKETS: AgingBucket[] = [
+  const BUCKETS: AgingBucketDto[] = [
     "Current",
     "Days1To30",
     "Days31To60",
@@ -353,15 +353,15 @@ function AgingTab() {
 function BalancesTab() {
   const { t } = useTranslation();
   const { snapshot } = useSettingsStore();
-  const [rows, setRows] = useState<ClientBalance[]>([]);
+  const [rows, setRows] = useState<ClientBalanceDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const symbol = snapshot?.currency.symbol ?? "€";
   const fmt = (cents: number) => `${(cents / 100).toFixed(2)} ${symbol}`;
 
   useEffect(() => {
     let cancelled = false;
-    accountingApi
-      .clientBalances()
+    ipc
+      .accountingClientBalances()
       .then((r) => !cancelled && setRows(r))
       .catch((e) => !cancelled && setError(String(e)));
     return () => {
