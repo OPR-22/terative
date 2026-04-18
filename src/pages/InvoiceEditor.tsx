@@ -6,6 +6,7 @@ import { Input } from "../components/common/Input";
 import { MoneyInput } from "../components/common/MoneyInput";
 import { StatusBadge } from "../components/invoice/StatusBadge";
 import { MarkPaidModal } from "../components/invoice/MarkPaidModal";
+import { useMoneyFormat } from "../lib/money";
 import { useInvoiceStore } from "../stores/invoiceStore";
 import { useClientStore } from "../stores/clientStore";
 import { useCatalogStore } from "../stores/catalogStore";
@@ -63,7 +64,7 @@ function initialForm(invoice: InvoiceDto | null): FormState {
     lines: invoice.line_items.map((li) => ({
       description: li.description,
       quantity: li.quantity,
-      unit_price_cents: li.unit_price.amount_cents,
+      unit_price_cents: li.unit_price.amount_minor,
     })),
     tax_ids: invoice.taxes_applied
       .map((t) => t.tax_definition_id)
@@ -105,7 +106,8 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
   ]);
 
   const currencyCode = snapshot?.currency.code ?? "EUR";
-  const currencySymbol = snapshot?.currency.symbol ?? "€";
+  const appCurrency = snapshot?.currency;
+  const { formatMinor } = useMoneyFormat();
   const readOnly = invoice !== null && invoice.status !== "Draft";
 
   const subtotalCents = useMemo(
@@ -170,7 +172,7 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
         description: li.description,
         quantity: li.quantity || "1",
         unit_price: {
-          amount_cents: li.unit_price_cents,
+          amount_minor: li.unit_price_cents,
           currency: currencyCode,
         },
       }));
@@ -414,25 +416,19 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
           <div className="mt-4 space-y-1 border-t border-border pt-3 text-sm">
             <div className="flex justify-between text-fg-muted">
               <span>{t("invoices.subtotal")}</span>
-              <span>
-                {(subtotalCents / 100).toFixed(2)} {currencySymbol}
-              </span>
+              <span>{formatMinor(subtotalCents, currencyCode)}</span>
             </div>
             {taxBreakdown.map((t) => (
               <div key={t.id} className="flex justify-between text-fg-muted">
                 <span>
                   {t.name} ({t.percentage}%)
                 </span>
-                <span>
-                  {(t.amount / 100).toFixed(2)} {currencySymbol}
-                </span>
+                <span>{formatMinor(t.amount, currencyCode)}</span>
               </div>
             ))}
             <div className="flex justify-between pt-1 text-base font-semibold text-fg">
               <span>{t("invoices.total")}</span>
-              <span>
-                {(totalCents / 100).toFixed(2)} {currencySymbol}
-              </span>
+              <span>{formatMinor(totalCents, currencyCode)}</span>
             </div>
           </div>
         </section>
@@ -470,7 +466,7 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
                           if (!item) return;
                           updateLine(idx, {
                             description: item.name,
-                            unit_price_cents: item.default_price.amount_cents,
+                            unit_price_cents: item.default_price.amount_minor,
                           });
                         }}
                       >
@@ -490,11 +486,10 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
                               {group.map((c) => (
                                 <option key={c.id} value={c.id}>
                                   {c.reference ? `[${c.reference}] ` : ""}
-                                  {c.name} ·{" "}
-                                  {(c.default_price.amount_cents / 100).toFixed(
-                                    2,
-                                  )}{" "}
-                                  {currencySymbol}
+                                  {c.name} · {formatMinor(
+                                    c.default_price.amount_minor,
+                                    c.default_price.currency,
+                                  )}
                                   {c.unit ? ` / ${c.unit}` : ""}
                                 </option>
                               ))}
@@ -526,18 +521,20 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
                     />
                   </div>
                   <div className="col-span-6 md:col-span-3">
-                    <MoneyInput
-                      label={t("invoices.line_unit_price") ?? ""}
-                      valueCents={line.unit_price_cents}
-                      currencySymbol={currencySymbol}
-                      disabled={readOnly}
-                      onChangeCents={(cents) =>
-                        updateLine(idx, { unit_price_cents: cents })
-                      }
-                    />
+                    {appCurrency ? (
+                      <MoneyInput
+                        label={t("invoices.line_unit_price") ?? ""}
+                        valueMinor={line.unit_price_cents}
+                        currency={appCurrency}
+                        disabled={readOnly}
+                        onChangeMinor={(minor) =>
+                          updateLine(idx, { unit_price_cents: minor })
+                        }
+                      />
+                    ) : null}
                   </div>
                   <div className="col-span-2 md:col-span-1 flex justify-end text-right text-sm text-fg">
-                    {(lineTotal / 100).toFixed(2)}
+                    {formatMinor(lineTotal, currencyCode)}
                   </div>
                   {!readOnly ? (
                     <div className="col-span-1 flex justify-end">

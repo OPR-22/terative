@@ -519,9 +519,9 @@ mod tests {
             .execute(new_invoice_input(ClientId::new(), tax.id))
             .unwrap();
         assert_eq!(invoice.status, InvoiceStatus::Draft);
-        assert_eq!(invoice.subtotal.amount_cents, 2000);
-        assert_eq!(invoice.tax_total.amount_cents, 420);
-        assert_eq!(invoice.total.amount_cents, 2420);
+        assert_eq!(invoice.subtotal.minor_units(), 2000);
+        assert_eq!(invoice.tax_total.minor_units(), 420);
+        assert_eq!(invoice.total.minor_units(), 2420);
         assert_eq!(inv_repo.inner.lock().len(), 1);
     }
 
@@ -546,9 +546,9 @@ mod tests {
                 notes: Some("updated".into()),
             })
             .unwrap();
-        assert_eq!(updated.subtotal.amount_cents, 5000);
-        assert_eq!(updated.tax_total.amount_cents, 1050);
-        assert_eq!(updated.total.amount_cents, 6050);
+        assert_eq!(updated.subtotal.minor_units(), 5000);
+        assert_eq!(updated.tax_total.minor_units(), 1050);
+        assert_eq!(updated.total.minor_units(), 6050);
         assert_eq!(updated.notes.as_deref(), Some("updated"));
     }
 

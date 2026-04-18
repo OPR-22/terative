@@ -312,16 +312,16 @@ impl Invoice {
             InvoiceStatus::Finalized | InvoiceStatus::Sent => {}
             other => return Err(InvoiceError::NotAllocatable(other)),
         }
-        if already_allocated.currency != self.total.currency
-            || new_allocation.currency != self.total.currency
+        if already_allocated.currency() != self.total.currency()
+            || new_allocation.currency() != self.total.currency()
         {
             return Err(InvoiceError::AllocationCurrencyMismatch);
         }
         let sum = already_allocated
-            .amount_cents
-            .checked_add(new_allocation.amount_cents)
+            .minor_units()
+            .checked_add(new_allocation.minor_units())
             .ok_or(InvoiceError::Money(MoneyError::Overflow))?;
-        if sum > self.total.amount_cents {
+        if sum > self.total.minor_units() {
             return Err(InvoiceError::OverAllocated);
         }
         Ok(())
@@ -350,12 +350,12 @@ impl Invoice {
             InvoiceStatus::Cancelled => return DerivedPaymentStatus::Cancelled,
             InvoiceStatus::Finalized | InvoiceStatus::Sent => {}
         }
-        let paid_cents = if amount_paid.currency == self.total.currency {
-            amount_paid.amount_cents
+        let paid_cents = if amount_paid.currency() == self.total.currency() {
+            amount_paid.minor_units()
         } else {
             0
         };
-        if paid_cents >= self.total.amount_cents {
+        if paid_cents >= self.total.minor_units() {
             return DerivedPaymentStatus::Paid;
         }
         let is_overdue = self
@@ -380,10 +380,10 @@ fn compute_totals(
 ) -> Result<(Money, Money, Money, Vec<AppliedTax>), InvoiceError> {
     let mut subtotal = Money::zero(currency);
     for li in items {
-        if li.total.currency != currency {
+        if li.total.currency() != currency {
             return Err(InvoiceError::Money(MoneyError::CurrencyMismatch {
                 left: currency.to_string(),
-                right: li.total.currency.to_string(),
+                right: li.total.currency().to_string(),
             }));
         }
         subtotal = subtotal.add(li.total)?;
@@ -391,7 +391,7 @@ fn compute_totals(
 
     let mut taxes_applied: Vec<AppliedTax> = Vec::with_capacity(taxes.len());
     let mut tax_total = Money::zero(currency);
-    let subtotal_dec = Decimal::from(subtotal.amount_cents);
+    let subtotal_dec = Decimal::from(subtotal.minor_units());
     for t in taxes {
         let computed = (subtotal_dec * t.percentage / dec!(100))
             .round()
@@ -475,9 +475,9 @@ mod tests {
             now(),
         )
         .unwrap();
-        assert_eq!(invoice.subtotal.amount_cents, 2500);
-        assert_eq!(invoice.tax_total.amount_cents, 525);
-        assert_eq!(invoice.total.amount_cents, 3025);
+        assert_eq!(invoice.subtotal.minor_units(), 2500);
+        assert_eq!(invoice.tax_total.minor_units(), 525);
+        assert_eq!(invoice.total.minor_units(), 3025);
         assert_eq!(invoice.status, InvoiceStatus::Draft);
         assert!(invoice.number.is_none());
     }
@@ -851,9 +851,9 @@ mod tests {
             now(),
         )
         .unwrap();
-        assert_eq!(inv.subtotal.amount_cents, 1000);
-        assert_eq!(inv.tax_total.amount_cents, 210);
-        assert_eq!(inv.total.amount_cents, 1210);
+        assert_eq!(inv.subtotal.minor_units(), 1000);
+        assert_eq!(inv.tax_total.minor_units(), 210);
+        assert_eq!(inv.total.minor_units(), 1210);
     }
 
     #[test]

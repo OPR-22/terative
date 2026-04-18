@@ -339,12 +339,12 @@ mod tests {
         assert_eq!(dto.id, domain.id.0);
         assert_eq!(dto.number, Some(42));
         assert_eq!(dto.line_items.len(), 1);
-        assert_eq!(dto.line_items[0].total.amount_cents, 2000);
+        assert_eq!(dto.line_items[0].total.amount_minor, 2000);
         assert_eq!(dto.taxes_applied.len(), 1);
-        assert_eq!(dto.taxes_applied[0].computed_amount.amount_cents, 420);
+        assert_eq!(dto.taxes_applied[0].computed_amount.amount_minor, 420);
         assert_eq!(dto.currency, "EUR");
         assert!(matches!(dto.status, InvoiceStatusDto::Finalized));
-        assert_eq!(dto.amount_paid.amount_cents, 0);
+        assert_eq!(dto.amount_paid.amount_minor, 0);
         assert!(dto.payment_status.is_none());
     }
 
@@ -357,7 +357,7 @@ mod tests {
             Money::new(1000, eur()),
             today,
         );
-        assert_eq!(dto.amount_paid.amount_cents, 1000);
+        assert_eq!(dto.amount_paid.amount_minor, 1000);
         assert!(matches!(
             dto.payment_status,
             Some(DerivedPaymentStatusDto::Partial)
@@ -389,7 +389,7 @@ mod tests {
                 description: "Widget".into(),
                 quantity: dec!(2),
                 unit_price: MoneyDto {
-                    amount_cents: 1000,
+                    amount_minor: 1000,
                     currency: "EUR".into(),
                 },
             }],

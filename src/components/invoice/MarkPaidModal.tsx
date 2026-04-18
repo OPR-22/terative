@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../common/Button";
 import { Input } from "../common/Input";
 import { MoneyInput } from "../common/MoneyInput";
+import { useMoneyFormat } from "../../lib/money";
 import {
   ipc,
   type InvoiceDto,
@@ -35,8 +36,9 @@ export function MarkPaidModal({ invoice, onClose, onPaid }: Props) {
   const { t } = useTranslation();
   const { record } = usePaymentStore();
   const { snapshot } = useSettingsStore();
-  const currencyCode = snapshot?.currency.code ?? invoice.currency;
-  const currencySymbol = snapshot?.currency.symbol ?? "€";
+  const { formatMinor } = useMoneyFormat();
+  const currency = snapshot?.currency;
+  const currencyCode = currency?.code ?? invoice.currency;
 
   const [loading, setLoading] = useState(true);
   const [amountDueCents, setAmountDueCents] = useState(0);
@@ -60,13 +62,13 @@ export function MarkPaidModal({ invoice, onClose, onPaid }: Props) {
       .then((rows) => {
         if (cancelled) return;
         const row = rows.find((r) => r.invoice_id === invoice.id);
-        if (!row || row.amount_due.amount_cents <= 0) {
+        if (!row || row.amount_due.amount_minor <= 0) {
           setFullyPaid(true);
           setAmountDueCents(0);
           setAmountCents(0);
         } else {
-          setAmountDueCents(row.amount_due.amount_cents);
-          setAmountCents(row.amount_due.amount_cents);
+          setAmountDueCents(row.amount_due.amount_minor);
+          setAmountCents(row.amount_due.amount_minor);
         }
         setLoading(false);
       })
@@ -112,13 +114,13 @@ export function MarkPaidModal({ invoice, onClose, onPaid }: Props) {
       const payload: NewPaymentDto = {
         client_id: invoice.client_id,
         date,
-        amount: { amount_cents: amountCents, currency: currencyCode },
+        amount: { amount_minor: amountCents, currency: currencyCode },
         method: buildMethod(),
         reference: reference || null,
         allocations: [
           {
             invoice_id: invoice.id,
-            amount: { amount_cents: amountCents, currency: currencyCode },
+            amount: { amount_minor: amountCents, currency: currencyCode },
           },
         ],
         notes: notes || null,
@@ -160,15 +162,17 @@ export function MarkPaidModal({ invoice, onClose, onPaid }: Props) {
           <>
             <p className="mb-3 text-xs text-fg-subtle">
               {t("invoices.mark_paid_amount_due")}:{" "}
-              {(amountDueCents / 100).toFixed(2)} {currencySymbol}
+              {formatMinor(amountDueCents, currencyCode)}
             </p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <MoneyInput
-                label={t("payments.amount") ?? ""}
-                valueCents={amountCents}
-                currencySymbol={currencySymbol}
-                onChangeCents={setAmountCents}
-              />
+              {currency ? (
+                <MoneyInput
+                  label={t("payments.amount") ?? ""}
+                  valueMinor={amountCents}
+                  currency={currency}
+                  onChangeMinor={setAmountCents}
+                />
+              ) : null}
               <Input
                 type="date"
                 label={t("common.date") ?? ""}

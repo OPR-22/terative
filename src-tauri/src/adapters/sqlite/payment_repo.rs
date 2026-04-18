@@ -108,8 +108,8 @@ impl PaymentRepository for SqlitePaymentRepository {
                 p.id.to_string(),
                 p.client_id.to_string(),
                 p.date.format("%Y-%m-%d").to_string(),
-                p.amount.amount_cents,
-                p.amount.currency.code(),
+                p.amount.minor_units(),
+                p.amount.currency().code(),
                 p.method.to_db_string(),
                 p.reference,
                 p.notes,
@@ -135,8 +135,8 @@ impl PaymentRepository for SqlitePaymentRepository {
                     p.id.to_string(),
                     p.client_id.to_string(),
                     p.date.format("%Y-%m-%d").to_string(),
-                    p.amount.amount_cents,
-                    p.amount.currency.code(),
+                    p.amount.minor_units(),
+                    p.amount.currency().code(),
                     p.method.to_db_string(),
                     p.reference,
                     p.notes,
@@ -302,7 +302,7 @@ fn insert_allocations(tx: &rusqlite::Transaction<'_>, p: &Payment) -> Result<(),
                 row_id,
                 p.id.to_string(),
                 a.invoice_id.to_string(),
-                a.amount.amount_cents,
+                a.amount.minor_units(),
             ],
         )
         .map_err(map_err)?;
@@ -443,7 +443,7 @@ mod tests {
         );
         repo.insert(&payment).unwrap();
         let loaded = repo.get(payment.id).unwrap().unwrap();
-        assert_eq!(loaded.amount.amount_cents, 1000);
+        assert_eq!(loaded.amount.minor_units(), 1000);
         assert_eq!(loaded.allocations.len(), 1);
         assert_eq!(loaded.allocations[0].invoice_id, invoice_id);
         assert_eq!(loaded.reference.as_deref(), Some("WIRE-1"));
@@ -514,7 +514,7 @@ mod tests {
         .unwrap();
 
         let allocated = repo.allocated_for_invoice(invoice_id).unwrap();
-        assert_eq!(allocated.amount_cents, 1200);
+        assert_eq!(allocated.minor_units(), 1200);
     }
 
     #[test]
@@ -549,8 +549,8 @@ mod tests {
         let totals = repo
             .allocated_for_invoices(&[inv_a, inv_b, inv_c])
             .unwrap();
-        assert_eq!(totals.get(&inv_a).unwrap().amount_cents, 500);
-        assert_eq!(totals.get(&inv_b).unwrap().amount_cents, 700);
+        assert_eq!(totals.get(&inv_a).unwrap().minor_units(), 500);
+        assert_eq!(totals.get(&inv_b).unwrap().minor_units(), 700);
         assert!(totals.get(&inv_c).is_none());
     }
 
@@ -624,6 +624,6 @@ mod tests {
         repo.insert(&payment).unwrap();
         repo.delete(payment.id).unwrap();
         assert!(repo.get(payment.id).unwrap().is_none());
-        assert_eq!(repo.allocated_for_invoice(invoice_id).unwrap().amount_cents, 0);
+        assert_eq!(repo.allocated_for_invoice(invoice_id).unwrap().minor_units(), 0);
     }
 }

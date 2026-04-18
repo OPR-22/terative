@@ -108,8 +108,8 @@ fn validate_cross_aggregate_allocations(
         // payment is still in the DB when validating the update), so subtract
         // it to get the allocations from *other* payments.
         let others_cents = total_allocated
-            .amount_cents
-            .saturating_sub(previous_self.amount_cents);
+            .minor_units()
+            .saturating_sub(previous_self.minor_units());
         let others = Money::new(others_cents, invoice.currency);
         invoice.can_accept_allocation(others, alloc.amount)?;
     }
@@ -125,7 +125,7 @@ fn sum_allocations_to(
         .allocations
         .iter()
         .filter(|a| a.invoice_id == invoice_id)
-        .map(|a| a.amount.amount_cents)
+        .map(|a| a.amount.minor_units())
         .sum();
     Money::new(cents, currency)
 }
@@ -227,7 +227,7 @@ mod tests {
                 .values()
                 .flat_map(|p| p.allocations.iter())
                 .filter(|a| a.invoice_id == id)
-                .map(|a| a.amount.amount_cents)
+                .map(|a| a.amount.minor_units())
                 .sum();
             Ok(Money::new(sum, Currency::new("EUR").unwrap()))
         }
@@ -242,7 +242,7 @@ mod tests {
                     .values()
                     .flat_map(|p| p.allocations.iter())
                     .filter(|a| a.invoice_id == *id)
-                    .map(|a| a.amount.amount_cents)
+                    .map(|a| a.amount.minor_units())
                     .sum();
                 if sum > 0 {
                     out.insert(*id, Money::new(sum, Currency::new("EUR").unwrap()));
@@ -338,7 +338,7 @@ mod tests {
         let payment = RecordPayment::new(payments.clone(), invoices)
             .execute(new_input(1000, vec![]))
             .unwrap();
-        assert_eq!(payment.amount.amount_cents, 1000);
+        assert_eq!(payment.amount.minor_units(), 1000);
         assert_eq!(payments.inner.lock().len(), 1);
     }
 
@@ -385,7 +385,7 @@ mod tests {
                 notes: None,
             })
             .unwrap();
-        assert_eq!(updated.amount.amount_cents, 1500);
+        assert_eq!(updated.amount.minor_units(), 1500);
         assert_eq!(updated.method, PaymentMethod::Cash);
         assert_eq!(updated.reference.as_deref(), Some("REF"));
     }

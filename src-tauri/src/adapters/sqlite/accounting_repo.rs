@@ -160,7 +160,7 @@ impl AccountingQueries for SqliteAccountingRepository {
                     let bucket_start_str: String = row.get("bucket_start")?;
                     let normalized = normalize_bucket(&bucket_start_str, grouping);
                     let bucket_start = parse_date(&normalized)?;
-                    let amount_cents: i64 = row.get("amount")?;
+                    let amount_minor: i64 = row.get("amount")?;
                     let count: i64 = row.get("invoice_count")?;
                     let currency_code: Option<String> = row.get("currency")?;
                     let currency = currency_code
@@ -169,7 +169,7 @@ impl AccountingQueries for SqliteAccountingRepository {
                         .unwrap_or_else(|| Currency::new("EUR").unwrap());
                     Ok(RevenueBucket {
                         bucket_start,
-                        amount: Money::new(amount_cents, currency),
+                        amount: Money::new(amount_minor, currency),
                         invoice_count: count as u64,
                     })
                 },
@@ -586,7 +586,7 @@ mod tests {
         let outstanding = repo.list_outstanding_invoices().unwrap();
         assert_eq!(outstanding.len(), 1);
         assert_eq!(outstanding[0].invoice_id, inv_open);
-        assert_eq!(outstanding[0].amount_due.amount_cents, 1000);
+        assert_eq!(outstanding[0].amount_due.minor_units(), 1000);
     }
 
     #[test]
@@ -612,7 +612,7 @@ mod tests {
             .list_overdue_invoices(NaiveDate::from_ymd_opt(2026, 4, 14).unwrap())
             .unwrap();
         assert_eq!(overdue.len(), 1);
-        assert_eq!(overdue[0].total.amount_cents, 1000);
+        assert_eq!(overdue[0].total.minor_units(), 1000);
     }
 
     #[test]
@@ -650,7 +650,7 @@ mod tests {
             .unwrap();
         assert_eq!(buckets.len(), 2);
         let march = buckets.iter().find(|b| b.bucket_start.month() == 3).unwrap();
-        assert_eq!(march.amount.amount_cents, 3500);
+        assert_eq!(march.amount.minor_units(), 3500);
         assert_eq!(march.invoice_count, 2);
     }
 
@@ -682,7 +682,7 @@ mod tests {
             .unwrap();
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].client_name, "Beta");
-        assert_eq!(list[0].total_invoiced.amount_cents, 5000);
+        assert_eq!(list[0].total_invoiced.minor_units(), 5000);
     }
 
     #[test]
@@ -707,9 +707,9 @@ mod tests {
         );
         let repo = SqliteAccountingRepository::new(db);
         let balance = repo.client_balance(client).unwrap();
-        assert_eq!(balance.total_invoiced.amount_cents, 1000);
-        assert_eq!(balance.total_paid.amount_cents, 400);
-        assert_eq!(balance.outstanding.amount_cents, 600);
+        assert_eq!(balance.total_invoiced.minor_units(), 1000);
+        assert_eq!(balance.total_paid.minor_units(), 400);
+        assert_eq!(balance.outstanding.minor_units(), 600);
     }
 
     #[test]
@@ -775,8 +775,8 @@ mod tests {
         let today = NaiveDate::from_ymd_opt(2026, 4, 14).unwrap();
         let summary = repo.dashboard_summary(today).unwrap();
         // Only the 2026 invoice counts toward revenue_this_year.
-        assert_eq!(summary.revenue_this_year.amount_cents, 1000);
-        assert_eq!(summary.outstanding_total.amount_cents, 3000);
+        assert_eq!(summary.revenue_this_year.minor_units(), 1000);
+        assert_eq!(summary.outstanding_total.minor_units(), 3000);
         assert_eq!(summary.overdue_count, 1);
         assert_eq!(summary.finalized_count, 2);
     }

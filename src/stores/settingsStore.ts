@@ -2,7 +2,6 @@ import { create } from "zustand";
 import {
   ipc,
   type AppPreferencesDto,
-  type CurrencyConfigDto,
   type EmailConfigDto,
   type SellerProfileDto,
   type SettingsSnapshotDto,
@@ -14,7 +13,7 @@ interface SettingsState {
   error: string | null;
   load: () => Promise<void>;
   saveSeller: (profile: SellerProfileDto) => Promise<void>;
-  saveCurrency: (currency: CurrencyConfigDto) => Promise<void>;
+  saveCurrency: (code: string) => Promise<void>;
   savePreferences: (prefs: AppPreferencesDto) => Promise<void>;
   saveEmailConfig: (config: EmailConfigDto) => Promise<void>;
   saveEmailPassword: (password: string) => Promise<void>;
@@ -39,8 +38,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const current = get().snapshot;
     if (current) set({ snapshot: { ...current, seller } });
   },
-  saveCurrency: async (currency) => {
-    const updated = await ipc.settingsUpdateCurrency(currency);
+  saveCurrency: async (code) => {
+    const updated = await ipc.settingsUpdateCurrency(code);
     const current = get().snapshot;
     if (current) set({ snapshot: { ...current, currency: updated } });
   },

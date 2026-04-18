@@ -19,8 +19,19 @@ export const commands = {
 	catalogItemUnarchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("catalog_item_unarchive", { id })),
 	catalogItemList: (includeInactive: boolean | null) => typedError<CatalogItemDto[], string>(__TAURI_INVOKE("catalog_item_list", { includeInactive })),
 	settingsGet: () => typedError<SettingsSnapshotDto, string>(__TAURI_INVOKE("settings_get")),
+	/**
+	 *  Returns the full list of supported currencies with their display metadata.
+	 *  The frontend calls this once at boot to populate its catalog for amount
+	 *  formatting and the Settings currency dropdown.
+	 */
+	settingsSupportedCurrencies: () => typedError<CurrencyConfigDto[], string>(__TAURI_INVOKE("settings_supported_currencies")),
 	settingsUpdateSellerProfile: (profile: SellerProfileDto) => typedError<SellerProfileDto, string>(__TAURI_INVOKE("settings_update_seller_profile", { profile })),
-	settingsUpdateCurrency: (currency: CurrencyConfigDto) => typedError<CurrencyConfigDto, string>(__TAURI_INVOKE("settings_update_currency", { currency })),
+	/**
+	 *  Updates the app's display currency by ISO 4217 code. The full metadata
+	 *  (symbol, fraction digits, unit names) is derived server-side and returned
+	 *  in the response so the frontend can keep its cache fresh.
+	 */
+	settingsUpdateCurrency: (code: string) => typedError<CurrencyConfigDto, string>(__TAURI_INVOKE("settings_update_currency", { code })),
 	settingsUpdateAppPreferences: (preferences: AppPreferencesDto) => typedError<AppPreferencesDto, string>(__TAURI_INVOKE("settings_update_app_preferences", { preferences })),
 	taxCreate: (input: NewTaxDefinitionDto) => typedError<TaxDefinitionDto, string>(__TAURI_INVOKE("tax_create", { input })),
 	taxUpdate: (input: UpdateTaxDto) => typedError<TaxDefinitionDto, string>(__TAURI_INVOKE("tax_update", { input })),
@@ -170,12 +181,20 @@ export type ContactEntryDto = {
 	is_default: boolean,
 };
 
+/**
+ *  Full metadata for a currency as seen by the frontend. The write-side
+ *  command only sends `code`; everything else is derived server-side from the
+ *  [`Currency`] enum and included on the read path so the UI can render
+ *  amounts without a second catalog lookup.
+ */
 export type CurrencyConfigDto = {
 	code: string,
+	name: string,
 	symbol: string,
 	symbol_before: boolean,
+	fraction_digits: number,
 	main_unit_name: string,
-	sub_unit_name: string,
+	sub_unit_name: string | null,
 };
 
 export type DashboardSummaryDto = {
@@ -287,8 +306,13 @@ export type ListPaymentsQueryDto = {
 	search?: string | null,
 };
 
+/**
+ *  Wire format for a monetary amount. `amount_minor` is the integer count of
+ *  the currency's smallest unit (cents for EUR, yen for JPY, etc.) — see the
+ *  doc on [`crate::domain::money::Money`] for the full contract.
+ */
 export type MoneyDto = {
-	amount_cents: number,
+	amount_minor: number,
 	currency: string,
 };
 

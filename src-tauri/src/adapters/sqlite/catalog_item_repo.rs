@@ -34,7 +34,7 @@ fn row_to_item(row: &Row<'_>) -> rusqlite::Result<CatalogItem> {
     let id = CatalogItemId(Uuid::parse_str(&id_str).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
     })?);
-    let amount_cents: i64 = row.get("default_price")?;
+    let amount_minor: i64 = row.get("default_price")?;
     let currency_code: String = row.get("currency")?;
     let currency = Currency::new(&currency_code).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
@@ -61,7 +61,7 @@ fn row_to_item(row: &Row<'_>) -> rusqlite::Result<CatalogItem> {
         id,
         name: row.get("name")?,
         kind,
-        default_price: Money::new(amount_cents, currency),
+        default_price: Money::new(amount_minor, currency),
         unit: row.get("unit")?,
         reference: row.get("reference")?,
         active: row.get::<_, i64>("active")? != 0,
@@ -79,8 +79,8 @@ impl CatalogItemRepository for SqliteCatalogItemRepository {
                 item.id.to_string(),
                 item.name,
                 item.kind.as_str(),
-                item.default_price.amount_cents,
-                item.default_price.currency.code(),
+                item.default_price.minor_units(),
+                item.default_price.currency().code(),
                 item.unit,
                 item.reference,
                 item.active as i64,
@@ -102,8 +102,8 @@ impl CatalogItemRepository for SqliteCatalogItemRepository {
                     item.id.to_string(),
                     item.name,
                     item.kind.as_str(),
-                    item.default_price.amount_cents,
-                    item.default_price.currency.code(),
+                    item.default_price.minor_units(),
+                    item.default_price.currency().code(),
                     item.unit,
                     item.reference,
                     item.active as i64,
@@ -201,8 +201,8 @@ mod tests {
         let loaded = repo.get(s.id).unwrap().unwrap();
         assert_eq!(loaded.name, "Consulting");
         assert_eq!(loaded.kind, CatalogItemKind::Service);
-        assert_eq!(loaded.default_price.amount_cents, 15000);
-        assert_eq!(loaded.default_price.currency.code(), "EUR");
+        assert_eq!(loaded.default_price.minor_units(), 15000);
+        assert_eq!(loaded.default_price.currency().code(),"EUR");
         assert_eq!(loaded.unit.as_deref(), Some("hour"));
         assert_eq!(loaded.reference, None);
     }
@@ -229,8 +229,8 @@ mod tests {
         s.default_price = Money::new(20000, usd);
         repo.update(&s).unwrap();
         let loaded = repo.get(s.id).unwrap().unwrap();
-        assert_eq!(loaded.default_price.currency.code(), "USD");
-        assert_eq!(loaded.default_price.amount_cents, 20000);
+        assert_eq!(loaded.default_price.currency().code(),"USD");
+        assert_eq!(loaded.default_price.minor_units(), 20000);
     }
 
     #[test]

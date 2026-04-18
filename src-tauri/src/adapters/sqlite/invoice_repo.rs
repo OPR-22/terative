@@ -150,9 +150,9 @@ impl InvoiceRepository for SqliteInvoiceRepository {
                 invoice.template_id.map(|t| t.to_string()),
                 invoice.date.format("%Y-%m-%d").to_string(),
                 invoice.due_date.map(|d| d.format("%Y-%m-%d").to_string()),
-                invoice.subtotal.amount_cents,
-                invoice.tax_total.amount_cents,
-                invoice.total.amount_cents,
+                invoice.subtotal.minor_units(),
+                invoice.tax_total.minor_units(),
+                invoice.total.minor_units(),
                 invoice.currency.code(),
                 invoice.status.as_str(),
                 invoice.pdf_path,
@@ -184,9 +184,9 @@ impl InvoiceRepository for SqliteInvoiceRepository {
                     invoice.template_id.map(|t| t.to_string()),
                     invoice.date.format("%Y-%m-%d").to_string(),
                     invoice.due_date.map(|d| d.format("%Y-%m-%d").to_string()),
-                    invoice.subtotal.amount_cents,
-                    invoice.tax_total.amount_cents,
-                    invoice.total.amount_cents,
+                    invoice.subtotal.minor_units(),
+                    invoice.tax_total.minor_units(),
+                    invoice.total.minor_units(),
                     invoice.currency.code(),
                     invoice.status.as_str(),
                     invoice.pdf_path,
@@ -303,8 +303,8 @@ fn insert_items_and_taxes(tx: &rusqlite::Transaction<'_>, invoice: &Invoice) -> 
                 invoice.id.to_string(),
                 li.description,
                 qty_f64,
-                li.unit_price.amount_cents,
-                li.total.amount_cents,
+                li.unit_price.minor_units(),
+                li.total.minor_units(),
                 idx as i64,
             ],
         )
@@ -323,7 +323,7 @@ fn insert_items_and_taxes(tx: &rusqlite::Transaction<'_>, invoice: &Invoice) -> 
                 t.tax_name,
                 pct_f64,
                 t.tax_id_number,
-                t.computed_amount.amount_cents,
+                t.computed_amount.minor_units(),
             ],
         )
         .map_err(map_err)?;
@@ -497,9 +497,9 @@ mod tests {
         let loaded = repo.get(invoice.id).unwrap().unwrap();
         assert_eq!(loaded.line_items.len(), 1);
         assert_eq!(loaded.line_items[0].description, "Widget");
-        assert_eq!(loaded.subtotal.amount_cents, 2000);
+        assert_eq!(loaded.subtotal.minor_units(), 2000);
         assert_eq!(loaded.taxes_applied.len(), 1);
-        assert_eq!(loaded.taxes_applied[0].computed_amount.amount_cents, 420);
+        assert_eq!(loaded.taxes_applied[0].computed_amount.minor_units(), 420);
     }
 
     #[test]
@@ -547,7 +547,7 @@ mod tests {
         let loaded = repo.get(invoice.id).unwrap().unwrap();
         assert_eq!(loaded.line_items.len(), 1);
         assert_eq!(loaded.line_items[0].description, "New");
-        assert_eq!(loaded.subtotal.amount_cents, 3000);
+        assert_eq!(loaded.subtotal.minor_units(), 3000);
     }
 
     #[test]

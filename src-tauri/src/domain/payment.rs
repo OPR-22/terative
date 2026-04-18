@@ -117,7 +117,7 @@ pub struct NewPaymentAllocation {
 
 impl Payment {
     pub fn create(input: NewPayment, now: DateTime<Utc>) -> Result<Self, PaymentError> {
-        if !input.amount.amount_cents.is_positive() {
+        if !input.amount.minor_units().is_positive() {
             return Err(PaymentError::NonPositiveAmount);
         }
         let allocations = validate_allocations(&input.allocations, input.amount)?;
@@ -143,7 +143,7 @@ impl Payment {
         allocations: Vec<NewPaymentAllocation>,
         notes: Option<String>,
     ) -> Result<(), PaymentError> {
-        if !amount.amount_cents.is_positive() {
+        if !amount.minor_units().is_positive() {
             return Err(PaymentError::NonPositiveAmount);
         }
         let allocations = validate_allocations(&allocations, amount)?;
@@ -157,8 +157,8 @@ impl Payment {
     }
 
     pub fn unallocated(&self) -> Money {
-        let sum: i64 = self.allocations.iter().map(|a| a.amount.amount_cents).sum();
-        Money::new(self.amount.amount_cents - sum, self.amount.currency)
+        let sum: i64 = self.allocations.iter().map(|a| a.amount.minor_units()).sum();
+        Money::new(self.amount.minor_units() - sum, self.amount.currency())
     }
 }
 
@@ -170,24 +170,24 @@ fn validate_allocations(
     let mut total: i64 = 0;
     let mut out = Vec::with_capacity(allocations.len());
     for a in allocations {
-        if a.amount.currency != payment_amount.currency {
+        if a.amount.currency() != payment_amount.currency() {
             return Err(PaymentError::CurrencyMismatch);
         }
-        if !a.amount.amount_cents.is_positive() {
+        if !a.amount.minor_units().is_positive() {
             return Err(PaymentError::NonPositiveAllocation);
         }
         if !seen.insert(a.invoice_id) {
             return Err(PaymentError::DuplicateAllocation);
         }
         total = total
-            .checked_add(a.amount.amount_cents)
+            .checked_add(a.amount.minor_units())
             .ok_or(PaymentError::Money(MoneyError::Overflow))?;
         out.push(PaymentAllocation {
             invoice_id: a.invoice_id,
             amount: a.amount,
         });
     }
-    if total > payment_amount.amount_cents {
+    if total > payment_amount.minor_units() {
         return Err(PaymentError::AllocationsExceedPayment);
     }
     Ok(out)
@@ -209,9 +209,9 @@ pub fn compute_allocated_for_invoice(payments: &[Payment], invoice_id: InvoiceId
         for a in &p.allocations {
             if a.invoice_id == invoice_id {
                 if currency.is_none() {
-                    currency = Some(a.amount.currency);
+                    currency = Some(a.amount.currency());
                 }
-                sum += a.amount.amount_cents;
+                sum += a.amount.minor_units();
             }
         }
     }
@@ -239,13 +239,13 @@ mod tests {
     }
 
     fn new_payment(
-        amount_cents: i64,
+        amount_minor: i64,
         allocations: Vec<NewPaymentAllocation>,
     ) -> NewPayment {
         NewPayment {
             client_id: ClientId::new(),
             date: date(),
-            amount: Money::new(amount_cents, eur()),
+            amount: Money::new(amount_minor, eur()),
             method: PaymentMethod::BankTransfer,
             reference: None,
             allocations,
@@ -263,9 +263,9 @@ mod tests {
     #[test]
     fn create_payment_with_no_allocations() {
         let p = Payment::create(new_payment(1000, vec![]), now()).unwrap();
-        assert_eq!(p.amount.amount_cents, 1000);
+        assert_eq!(p.amount.minor_units(), 1000);
         assert!(p.allocations.is_empty());
-        assert_eq!(p.unallocated().amount_cents, 1000);
+        assert_eq!(p.unallocated().minor_units(), 1000);
     }
 
     #[test]
@@ -274,7 +274,7 @@ mod tests {
         let p =
             Payment::create(new_payment(1000, vec![alloc(invoice, 1000)]), now()).unwrap();
         assert_eq!(p.allocations.len(), 1);
-        assert_eq!(p.unallocated().amount_cents, 0);
+        assert_eq!(p.unallocated().minor_units(), 0);
     }
 
     #[test]
@@ -282,7 +282,7 @@ mod tests {
         let invoice = InvoiceId::new();
         let p =
             Payment::create(new_payment(1000, vec![alloc(invoice, 600)]), now()).unwrap();
-        assert_eq!(p.unallocated().amount_cents, 400);
+        assert_eq!(p.unallocated().minor_units(), 400);
     }
 
     #[test]
@@ -365,7 +365,7 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(p.amount.amount_cents, 2000);
+        assert_eq!(p.amount.minor_units(), 2000);
         assert_eq!(p.method, PaymentMethod::Cash);
         assert_eq!(p.reference.as_deref(), Some("INV-42"));
         assert_eq!(p.allocations.len(), 1);
@@ -388,7 +388,7 @@ mod tests {
             .unwrap_err();
         assert_eq!(err, PaymentError::AllocationsExceedPayment);
         // State must be unchanged on error.
-        assert_eq!(p.amount.amount_cents, 1000);
+        assert_eq!(p.amount.minor_units(), 1000);
     }
 
     #[test]
@@ -405,6 +405,6 @@ mod tests {
         .unwrap();
         let p2 = Payment::create(new_payment(1000, vec![alloc(invoice, 400)]), now()).unwrap();
         let allocated = compute_allocated_for_invoice(&[p1, p2], invoice);
-        assert_eq!(allocated.amount_cents, 700);
+        assert_eq!(allocated.minor_units(), 700);
     }
 }

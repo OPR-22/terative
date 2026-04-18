@@ -48,36 +48,48 @@ impl From<SellerProfileDto> for SellerProfile {
 
 // ---- CurrencyConfigDto ----
 
+/// Full metadata for a currency as seen by the frontend. The write-side
+/// command only sends `code`; everything else is derived server-side from the
+/// [`Currency`] enum and included on the read path so the UI can render
+/// amounts without a second catalog lookup.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct CurrencyConfigDto {
     pub code: String,
+    pub name: String,
     pub symbol: String,
     pub symbol_before: bool,
+    pub fraction_digits: u8,
     pub main_unit_name: String,
-    pub sub_unit_name: String,
+    pub sub_unit_name: Option<String>,
 }
 
-impl From<&CurrencyConfig> for CurrencyConfigDto {
-    fn from(c: &CurrencyConfig) -> Self {
+impl From<crate::domain::money::Currency> for CurrencyConfigDto {
+    fn from(currency: crate::domain::money::Currency) -> Self {
+        let meta = currency.meta();
         Self {
-            code: c.code.clone(),
-            symbol: c.symbol.clone(),
-            symbol_before: c.symbol_before,
-            main_unit_name: c.main_unit_name.clone(),
-            sub_unit_name: c.sub_unit_name.clone(),
+            code: meta.code.to_string(),
+            name: meta.name.to_string(),
+            symbol: meta.symbol.to_string(),
+            symbol_before: matches!(
+                meta.symbol_position,
+                crate::domain::money::SymbolPosition::Before
+            ),
+            fraction_digits: meta.fraction_digits,
+            main_unit_name: meta.main_unit_name.to_string(),
+            sub_unit_name: meta.sub_unit_name.map(|s| s.to_string()),
         }
     }
 }
 
-impl From<CurrencyConfigDto> for CurrencyConfig {
-    fn from(dto: CurrencyConfigDto) -> Self {
-        CurrencyConfig {
-            code: dto.code,
-            symbol: dto.symbol,
-            symbol_before: dto.symbol_before,
-            main_unit_name: dto.main_unit_name,
-            sub_unit_name: dto.sub_unit_name,
-        }
+impl From<&CurrencyConfig> for CurrencyConfigDto {
+    fn from(c: &CurrencyConfig) -> Self {
+        c.currency().into()
+    }
+}
+
+impl From<CurrencyConfig> for CurrencyConfigDto {
+    fn from(c: CurrencyConfig) -> Self {
+        (&c).into()
     }
 }
 
@@ -267,11 +279,23 @@ mod tests {
     }
 
     #[test]
-    fn currency_config_round_trip() {
-        let domain = CurrencyConfig::default();
-        let dto: CurrencyConfigDto = (&domain).into();
-        let back: CurrencyConfig = dto.into();
-        assert_eq!(back, domain);
+    fn currency_config_dto_carries_metadata_for_read_side() {
+        let dto: CurrencyConfigDto = (&CurrencyConfig::default()).into();
+        assert_eq!(dto.code, "EUR");
+        assert_eq!(dto.symbol, "€");
+        assert!(!dto.symbol_before);
+        assert_eq!(dto.fraction_digits, 2);
+        assert_eq!(dto.main_unit_name, "euros");
+    }
+
+    #[test]
+    fn currency_config_dto_for_jpy_has_no_sub_unit() {
+        let dto: CurrencyConfigDto =
+            CurrencyConfig::new(crate::domain::money::Currency::Jpy)
+                .into();
+        assert_eq!(dto.code, "JPY");
+        assert_eq!(dto.fraction_digits, 0);
+        assert_eq!(dto.sub_unit_name, None);
     }
 
     #[test]

@@ -62,7 +62,8 @@ impl UpdateCurrency {
     }
 
     pub fn execute(&self, currency: CurrencyConfig) -> Result<CurrencyConfig, AppError> {
-        currency.validate()?;
+        // No validate step needed: `CurrencyConfig` wraps a bounded enum, so
+        // if the value is in memory it's already a supported variant.
         self.repo.set_currency_config(&currency)?;
         Ok(currency)
     }
@@ -159,7 +160,7 @@ mod tests {
     fn get_settings_returns_defaults_from_repo() {
         let r = repo();
         let s = GetSettings::new(r, creds()).execute().unwrap();
-        assert_eq!(s.currency.code, "EUR");
+        assert_eq!(s.currency.currency(), crate::domain::money::Currency::Eur);
         assert_eq!(s.preferences.theme, Theme::Light);
         assert_eq!(s.preferences.language, Language::Fr);
         assert!(!s.has_email_password);
@@ -182,30 +183,14 @@ mod tests {
     }
 
     #[test]
-    fn update_currency_rejects_empty_code() {
-        let r = repo();
-        let c = CurrencyConfig {
-            code: "".into(),
-            ..CurrencyConfig::default()
-        };
-        let err = UpdateCurrency::new(r).execute(c).unwrap_err();
-        assert!(matches!(err, AppError::Currency(_)));
-    }
-
-    #[test]
     fn update_currency_persists_valid() {
         let r = repo();
-        let c = CurrencyConfig {
-            code: "USD".into(),
-            symbol: "$".into(),
-            symbol_before: true,
-            main_unit_name: "dollars".into(),
-            sub_unit_name: "cents".into(),
-        };
-        UpdateCurrency::new(r.clone())
-            .execute(c.clone())
-            .unwrap();
-        assert_eq!(r.get_currency_config().unwrap().code, "USD");
+        let c = CurrencyConfig::new(crate::domain::money::Currency::Usd);
+        UpdateCurrency::new(r.clone()).execute(c).unwrap();
+        assert_eq!(
+            r.get_currency_config().unwrap().currency(),
+            crate::domain::money::Currency::Usd,
+        );
     }
 
     #[test]

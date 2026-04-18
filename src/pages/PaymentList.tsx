@@ -4,8 +4,10 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
 import { MoneyInput } from "../components/common/MoneyInput";
+import { useMoneyFormat } from "../lib/money";
 import {
   ipc,
+  type CurrencyConfigDto,
   type InvoicePaymentRowDto,
   type NewPaymentAllocationDto,
   type NewPaymentDto,
@@ -64,7 +66,8 @@ export function PaymentList() {
     if (!snapshot) void load();
   }, [refresh, refreshClients, load, snapshot]);
 
-  const symbol = snapshot?.currency.symbol ?? "€";
+  const { formatMinor } = useMoneyFormat();
+  const currency = snapshot?.currency;
   const currencyCode = snapshot?.currency.code ?? "EUR";
   const clientName = (id: string) =>
     clients.find((c) => c.id === id)?.name ?? id;
@@ -103,7 +106,7 @@ export function PaymentList() {
           <tbody>
             {payments.map((p) => {
               const allocated = p.allocations.reduce(
-                (sum, a) => sum + a.amount.amount_cents,
+                (sum, a) => sum + a.amount.amount_minor,
                 0,
               );
               return (
@@ -117,10 +120,10 @@ export function PaymentList() {
                     {p.reference ?? "—"}
                   </td>
                   <td className="py-2 pr-3 text-right font-medium text-fg">
-                    {(p.amount.amount_cents / 100).toFixed(2)} {symbol}
+                    {formatMinor(p.amount.amount_minor, p.amount.currency)}
                   </td>
                   <td className="py-2 pr-3 text-right text-fg-muted">
-                    {(allocated / 100).toFixed(2)} {symbol}
+                    {formatMinor(allocated, currencyCode)}
                   </td>
                   <td className="flex justify-end gap-2 py-2 pr-3">
                     <Button
@@ -147,12 +150,12 @@ export function PaymentList() {
         </table>
       )}
 
-      {editor.mode !== "closed" ? (
+      {editor.mode !== "closed" && currency ? (
         <PaymentEditor
           key={editor.mode === "edit" ? editor.payment.id : "new"}
           initial={editor.mode === "edit" ? editor.payment : null}
           currencyCode={currencyCode}
-          currencySymbol={symbol}
+          currency={currency}
           onClose={() => setEditor({ mode: "closed" })}
         />
       ) : null}
@@ -163,23 +166,24 @@ export function PaymentList() {
 interface EditorProps {
   initial: PaymentDto | null;
   currencyCode: string;
-  currencySymbol: string;
+  currency: CurrencyConfigDto;
   onClose: () => void;
 }
 
 function PaymentEditor({
   initial,
   currencyCode,
-  currencySymbol,
+  currency,
   onClose,
 }: EditorProps) {
   const { t } = useTranslation();
+  const { formatMinor } = useMoneyFormat();
   const { record, update } = usePaymentStore();
   const { clients } = useClientStore();
 
   const [clientId, setClientId] = useState(initial?.client_id ?? "");
   const [date, setDate] = useState(initial?.date ?? today());
-  const [amountCents, setAmountCents] = useState(initial?.amount.amount_cents ?? 0);
+  const [amountCents, setAmountCents] = useState(initial?.amount.amount_minor ?? 0);
   const [methodKind, setMethodKind] = useState<PaymentMethodKind>(
     initial?.method.kind ?? "BankTransfer",
   );
@@ -192,7 +196,7 @@ function PaymentEditor({
   const [allocations, setAllocations] = useState<Record<string, number>>(() => {
     if (!initial) return {};
     const m: Record<string, number> = {};
-    for (const a of initial.allocations) m[a.invoice_id] = a.amount.amount_cents;
+    for (const a of initial.allocations) m[a.invoice_id] = a.amount.amount_minor;
     return m;
   });
   const [outstanding, setOutstanding] = useState<InvoicePaymentRowDto[]>([]);
@@ -233,7 +237,7 @@ function PaymentEditor({
       } else {
         // default to whichever is smaller: remaining unallocated or invoice due
         const remaining = Math.max(0, amountCents - allocatedTotal);
-        next[row.invoice_id] = Math.min(remaining, row.amount_due.amount_cents);
+        next[row.invoice_id] = Math.min(remaining, row.amount_due.amount_minor);
       }
       return next;
     });
@@ -263,7 +267,7 @@ function PaymentEditor({
       .filter(([, cents]) => cents > 0)
       .map(([invoice_id, cents]) => ({
         invoice_id,
-        amount: { amount_cents: cents, currency: currencyCode },
+        amount: { amount_minor: cents, currency: currencyCode },
       }));
 
   const submit = async (e: React.FormEvent) => {
@@ -281,7 +285,7 @@ function PaymentEditor({
         const payload: UpdatePaymentDto = {
           id: initial.id,
           date,
-          amount: { amount_cents: amountCents, currency: currencyCode },
+          amount: { amount_minor: amountCents, currency: currencyCode },
           method: buildMethod(),
           reference: reference || null,
           allocations: buildAllocations(),
@@ -292,7 +296,7 @@ function PaymentEditor({
         const payload: NewPaymentDto = {
           client_id: clientId,
           date,
-          amount: { amount_cents: amountCents, currency: currencyCode },
+          amount: { amount_minor: amountCents, currency: currencyCode },
           method: buildMethod(),
           reference: reference || null,
           allocations: buildAllocations(),
@@ -346,9 +350,9 @@ function PaymentEditor({
           />
           <MoneyInput
             label={t("payments.amount") ?? ""}
-            valueCents={amountCents}
-            currencySymbol={currencySymbol}
-            onChangeCents={setAmountCents}
+            valueMinor={amountCents}
+            currency={currency}
+            onChangeMinor={setAmountCents}
           />
           <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
             {t("payments.method")}
@@ -417,17 +421,19 @@ function PaymentEditor({
                       </span>
                       <span className="text-xs text-fg-subtle">
                         {t("accounting.amount_due")}:{" "}
-                        {(row.amount_due.amount_cents / 100).toFixed(2)}{" "}
-                        {currencySymbol}
+                        {formatMinor(
+                          row.amount_due.amount_minor,
+                          row.amount_due.currency,
+                        )}
                       </span>
                     </label>
                     <div className="col-span-6">
                       {checked ? (
                         <MoneyInput
                           label={t("payments.allocate_amount") ?? ""}
-                          valueCents={cents}
-                          currencySymbol={currencySymbol}
-                          onChangeCents={(c) =>
+                          valueMinor={cents}
+                          currency={currency}
+                          onChangeMinor={(c) =>
                             updateAllocation(row.invoice_id, c)
                           }
                         />
@@ -441,8 +447,7 @@ function PaymentEditor({
 
           <div className="mt-3 flex justify-between text-sm">
             <span className="text-fg-muted">
-              {t("payments.allocated")}:{" "}
-              {(allocatedTotal / 100).toFixed(2)} {currencySymbol}
+              {t("payments.allocated")}: {formatMinor(allocatedTotal, currencyCode)}
             </span>
             <span
               className={
@@ -451,8 +456,7 @@ function PaymentEditor({
                   : "text-fg-muted"
               }
             >
-              {t("payments.unallocated")}:{" "}
-              {(unallocated / 100).toFixed(2)} {currencySymbol}
+              {t("payments.unallocated")}: {formatMinor(unallocated, currencyCode)}
             </span>
           </div>
         </div>

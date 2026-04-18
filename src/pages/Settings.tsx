@@ -5,6 +5,8 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
+import { Money } from "../lib/money";
+import { useCurrencyCatalogStore } from "../stores/currencyCatalogStore";
 import { useNotebookSectionStore } from "../stores/notebookSectionStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import {
@@ -251,21 +253,28 @@ function SellerSection({ seller, onSave }: SellerProps) {
 
 interface CurrencyProps {
   currency: CurrencyConfigDto;
-  onSave: (c: CurrencyConfigDto) => Promise<void>;
+  onSave: (code: string) => Promise<void>;
 }
 
 function CurrencySection({ currency, onSave }: CurrencyProps) {
   const { t } = useTranslation();
-  const [form, setForm] = useState<CurrencyConfigDto>(currency);
+  const { all, load: loadCatalog } = useCurrencyCatalogStore();
+  const [code, setCode] = useState<string>(currency.code);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    setForm(currency);
-  }, [currency]);
+    void loadCatalog();
+  }, [loadCatalog]);
 
-  const update = <K extends keyof CurrencyConfigDto>(key: K, value: CurrencyConfigDto[K]) =>
-    setForm((f) => ({ ...f, [key]: value }));
+  useEffect(() => {
+    setCode(currency.code);
+  }, [currency.code]);
+
+  const selected = all.find((c) => c.code === code) ?? currency;
+  const sampleMinor =
+    selected.fraction_digits === 0 ? BigInt(1000) : BigInt(123456);
+  const sampleMoney = new Money(sampleMinor, selected.code);
 
   return (
     <section>
@@ -273,12 +282,12 @@ function CurrencySection({ currency, onSave }: CurrencyProps) {
         {t("settings.currency")}
       </h2>
       <form
-        className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+        className="flex flex-col gap-3"
         onSubmit={async (e) => {
           e.preventDefault();
           setErr(null);
           try {
-            await onSave(form);
+            await onSave(code);
             setSaved(true);
             setTimeout(() => setSaved(false), 1500);
           } catch (e) {
@@ -286,37 +295,25 @@ function CurrencySection({ currency, onSave }: CurrencyProps) {
           }
         }}
       >
-        <Input
-          label={t("settings.currency_code") ?? ""}
-          value={form.code}
-          onChange={(e) => update("code", e.target.value.toUpperCase())}
-          required
-        />
-        <Input
-          label={t("settings.currency_symbol") ?? ""}
-          value={form.symbol}
-          onChange={(e) => update("symbol", e.target.value)}
-          required
-        />
-        <Input
-          label={t("settings.main_unit") ?? ""}
-          value={form.main_unit_name}
-          onChange={(e) => update("main_unit_name", e.target.value)}
-        />
-        <Input
-          label={t("settings.sub_unit") ?? ""}
-          value={form.sub_unit_name}
-          onChange={(e) => update("sub_unit_name", e.target.value)}
-        />
-        <label className="flex items-center gap-2 text-sm text-fg-muted">
-          <input
-            type="checkbox"
-            checked={form.symbol_before}
-            onChange={(e) => update("symbol_before", e.target.checked)}
-          />
-          {t("settings.symbol_before")}
+        <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
+          {t("settings.currency")}
+          <select
+            className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+          >
+            {all.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code} · {c.name}
+                {c.fraction_digits === 0 ? ` (${t("settings.no_decimals")})` : ""}
+              </option>
+            ))}
+          </select>
         </label>
-        <div className="sm:col-span-2 flex items-center gap-3">
+        <p className="text-xs text-fg-subtle">
+          {t("settings.currency_sample")}: {sampleMoney.format(selected)}
+        </p>
+        <div className="flex items-center gap-3">
           <Button type="submit">{t("common.save")}</Button>
           {saved ? (
             <span className="text-sm text-success">{t("settings.saved")}</span>

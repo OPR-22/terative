@@ -247,7 +247,7 @@ mod tests {
         let dto: PaymentDto = (&domain).into();
         assert_eq!(dto.allocations.len(), 1);
         assert_eq!(dto.allocations[0].invoice_id, invoice_id.0);
-        assert_eq!(dto.allocations[0].amount.amount_cents, 1000);
+        assert_eq!(dto.allocations[0].amount.amount_minor, 1000);
     }
 
     #[test]
@@ -256,7 +256,7 @@ mod tests {
             client_id: Uuid::new_v4(),
             date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
             amount: MoneyDto {
-                amount_cents: 500,
+                amount_minor: 500,
                 currency: "EUR".into(),
             },
             method: PaymentMethodDto::Cash,
@@ -264,7 +264,7 @@ mod tests {
             allocations: vec![NewPaymentAllocationDto {
                 invoice_id: Uuid::new_v4(),
                 amount: MoneyDto {
-                    amount_cents: 500,
+                    amount_minor: 500,
                     currency: "EUR".into(),
                 },
             }],
@@ -272,6 +272,6 @@ mod tests {
         };
         let input: NewPayment = dto.try_into().unwrap();
         assert_eq!(input.allocations.len(), 1);
-        assert_eq!(input.amount.amount_cents, 500);
+        assert_eq!(input.amount.minor_units(), 500);
     }
 }

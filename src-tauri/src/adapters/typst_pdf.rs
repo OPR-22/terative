@@ -235,8 +235,8 @@ fn build_invoice_view(invoice: &Invoice, currency: &CurrencyConfig) -> InvoiceVi
         .map(|li| LineItemView {
             description: li.description.clone(),
             quantity: format_quantity(li.quantity),
-            unit_price: currency.format(li.unit_price.amount_cents),
-            total: currency.format(li.total.amount_cents),
+            unit_price: li.unit_price.format(),
+            total: li.total.format(),
         })
         .collect();
     let taxes = invoice
@@ -246,7 +246,7 @@ fn build_invoice_view(invoice: &Invoice, currency: &CurrencyConfig) -> InvoiceVi
             name: t.tax_name.clone(),
             percentage: format_percent(t.percentage),
             tax_id_number: t.tax_id_number.clone(),
-            amount: currency.format(t.computed_amount.amount_cents),
+            amount: t.computed_amount.format(),
         })
         .collect();
     InvoiceView {
@@ -257,14 +257,14 @@ fn build_invoice_view(invoice: &Invoice, currency: &CurrencyConfig) -> InvoiceVi
         status: invoice.status.as_str().to_string(),
         date: invoice.date.format("%Y-%m-%d").to_string(),
         due_date: invoice.due_date.map(|d| d.format("%Y-%m-%d").to_string()),
-        currency_symbol: currency.symbol.clone(),
-        currency_code: currency.code.clone(),
+        currency_symbol: currency.currency().symbol().to_string(),
+        currency_code: currency.currency().code().to_string(),
         line_items,
         taxes,
-        subtotal: currency.format(invoice.subtotal.amount_cents),
-        tax_total: currency.format(invoice.tax_total.amount_cents),
-        total: currency.format(invoice.total.amount_cents),
-        total_in_words: amount_in_words(invoice.total.amount_cents, currency),
+        subtotal: invoice.subtotal.format(),
+        tax_total: invoice.tax_total.format(),
+        total: invoice.total.format(),
+        total_in_words: amount_in_words(invoice.total),
         notes: invoice.notes.clone(),
     }
 }
@@ -279,12 +279,20 @@ fn format_percent(p: rust_decimal::Decimal) -> String {
     format!("{normalized}%")
 }
 
-fn amount_in_words(cents: i64, currency: &CurrencyConfig) -> String {
-    let whole = cents / 100;
-    let frac = (cents % 100).unsigned_abs();
+fn amount_in_words(amount: crate::domain::money::Money) -> String {
+    let meta = amount.currency().meta();
+    let scale = amount.currency().minor_unit_scale();
+    let minor = amount.minor_units();
+    let whole = minor / scale;
+    if meta.fraction_digits == 0 {
+        return format!("{} {}", whole, meta.main_unit_name);
+    }
+    let frac = (minor % scale).unsigned_abs();
+    let sub = meta.sub_unit_name.unwrap_or("");
     format!(
-        "{} {} {:02} {}",
-        whole, currency.main_unit_name, frac, currency.sub_unit_name
+        "{whole} {main} {frac:0width$} {sub}",
+        main = meta.main_unit_name,
+        width = meta.fraction_digits as usize,
     )
 }
 

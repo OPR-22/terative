@@ -183,11 +183,7 @@ INSERT INTO email_config (id) VALUES (1);
 
 CREATE TABLE currency_config (
     id                  INTEGER PRIMARY KEY CHECK (id = 1),
-    code                TEXT NOT NULL DEFAULT 'EUR',
-    symbol              TEXT NOT NULL DEFAULT '€',
-    symbol_before       INTEGER NOT NULL DEFAULT 0,
-    main_unit_name      TEXT NOT NULL DEFAULT 'euros',
-    sub_unit_name       TEXT NOT NULL DEFAULT 'centimes'
+    code                TEXT NOT NULL DEFAULT 'EUR'
 );
 INSERT INTO currency_config (id) VALUES (1);
 

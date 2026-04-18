@@ -141,7 +141,7 @@ mod tests {
         let s = CatalogItem::create(new_service("Consulting")).unwrap();
         assert_eq!(s.name, "Consulting");
         assert_eq!(s.kind, CatalogItemKind::Service);
-        assert_eq!(s.default_price.amount_cents, 15000);
+        assert_eq!(s.default_price.minor_units(), 15000);
         assert_eq!(s.unit.as_deref(), Some("hour"));
         assert!(s.active);
     }

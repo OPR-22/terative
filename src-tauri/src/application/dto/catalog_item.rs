@@ -122,7 +122,7 @@ mod tests {
         };
         let dto: CatalogItemDto = (&domain).into();
         assert_eq!(dto.id, domain.id.0);
-        assert_eq!(dto.default_price.amount_cents, 15000);
+        assert_eq!(dto.default_price.amount_minor, 15000);
         assert_eq!(dto.default_price.currency, "EUR");
         assert_eq!(dto.unit.as_deref(), Some("hour"));
         assert!(matches!(dto.kind, CatalogItemKindDto::Service));
@@ -134,7 +134,7 @@ mod tests {
             name: "Coaching".into(),
             kind: CatalogItemKindDto::Service,
             default_price: MoneyDto {
-                amount_cents: 20000,
+                amount_minor: 20000,
                 currency: "EUR".into(),
             },
             unit: Some("session".into()),
@@ -142,7 +142,7 @@ mod tests {
         };
         let input: NewCatalogItem = dto.try_into().unwrap();
         assert_eq!(input.name, "Coaching");
-        assert_eq!(input.default_price.amount_cents, 20000);
+        assert_eq!(input.default_price.minor_units(), 20000);
         assert_eq!(input.unit.as_deref(), Some("session"));
         assert_eq!(input.reference.as_deref(), Some("COACH-1"));
     }
@@ -154,7 +154,7 @@ mod tests {
             name: "X".into(),
             kind: CatalogItemKindDto::Product,
             default_price: MoneyDto {
-                amount_cents: 100,
+                amount_minor: 100,
                 currency: "xx".into(),
             },
             unit: None,

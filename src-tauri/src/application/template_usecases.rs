@@ -190,7 +190,7 @@ impl PreviewTemplate {
         let seller = self.settings.get_seller_profile()?;
         let currency = self.settings.get_currency_config()?;
         let prefs = self.settings.get_app_preferences()?;
-        let sample_currency = Currency::new(&currency.code).unwrap_or_else(|_| Currency::new("EUR").unwrap());
+        let sample_currency = currency.currency();
 
         let sample_client = sample_client();
         let _ = self.clients.list(Default::default());

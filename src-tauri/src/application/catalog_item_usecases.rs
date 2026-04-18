@@ -236,7 +236,7 @@ mod tests {
                 reference: Some("SR-001".into()),
             })
             .unwrap();
-        assert_eq!(updated.default_price.amount_cents, 20000);
+        assert_eq!(updated.default_price.minor_units(), 20000);
         assert_eq!(updated.name, "Consulting (senior)");
         assert_eq!(updated.unit.as_deref(), Some("day"));
         assert_eq!(updated.reference.as_deref(), Some("SR-001"));

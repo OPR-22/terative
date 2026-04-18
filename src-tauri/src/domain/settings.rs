@@ -95,57 +95,45 @@ pub struct SellerProfile {
     pub signature_image: Option<Vec<u8>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// The app's display-currency setting. A thin newtype around
+/// [`crate::domain::money::Currency`]; all formatting metadata (symbol,
+/// fraction digits, unit names) is derived from the enum, not stored here.
+///
+/// The user picks one value from the closed set of [`Currency::all`]. There's
+/// no free-form editing of symbol/position/etc. — the settings UI is a
+/// dropdown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CurrencyConfig {
-    pub code: String,
-    pub symbol: String,
-    pub symbol_before: bool,
-    pub main_unit_name: String,
-    pub sub_unit_name: String,
+    currency: crate::domain::money::Currency,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum CurrencyConfigError {
-    #[error("currency code must not be empty")]
-    EmptyCode,
-    #[error("currency symbol must not be empty")]
-    EmptySymbol,
+    #[error("unsupported currency code: {0:?}")]
+    UnsupportedCurrency(String),
 }
 
 impl Default for CurrencyConfig {
     fn default() -> Self {
         Self {
-            code: "EUR".into(),
-            symbol: "€".into(),
-            symbol_before: false,
-            main_unit_name: "euros".into(),
-            sub_unit_name: "centimes".into(),
+            currency: crate::domain::money::Currency::Eur,
         }
     }
 }
 
 impl CurrencyConfig {
-    pub fn validate(&self) -> Result<(), CurrencyConfigError> {
-        if self.code.trim().is_empty() {
-            return Err(CurrencyConfigError::EmptyCode);
-        }
-        if self.symbol.trim().is_empty() {
-            return Err(CurrencyConfigError::EmptySymbol);
-        }
-        Ok(())
+    pub const fn new(currency: crate::domain::money::Currency) -> Self {
+        Self { currency }
     }
 
-    pub fn format(&self, amount_cents: i64) -> String {
-        let sign = if amount_cents < 0 { "-" } else { "" };
-        let abs = amount_cents.unsigned_abs();
-        let whole = abs / 100;
-        let frac = abs % 100;
-        let number = format!("{sign}{whole}.{frac:02}");
-        if self.symbol_before {
-            format!("{}{}", self.symbol, number)
-        } else {
-            format!("{} {}", number, self.symbol)
-        }
+    pub fn from_code(code: &str) -> Result<Self, CurrencyConfigError> {
+        crate::domain::money::Currency::parse(code)
+            .map(Self::new)
+            .ok_or_else(|| CurrencyConfigError::UnsupportedCurrency(code.to_string()))
+    }
+
+    pub const fn currency(&self) -> crate::domain::money::Currency {
+        self.currency
     }
 }
 
@@ -211,58 +199,25 @@ mod tests {
     #[test]
     fn default_currency_config_is_euro() {
         let c = CurrencyConfig::default();
-        assert_eq!(c.code, "EUR");
-        assert_eq!(c.symbol, "€");
-        assert!(!c.symbol_before);
+        assert_eq!(c.currency(), crate::domain::money::Currency::Eur);
     }
 
     #[test]
-    fn currency_config_validate_accepts_defaults() {
-        assert!(CurrencyConfig::default().validate().is_ok());
+    fn from_code_accepts_supported_codes() {
+        assert_eq!(
+            CurrencyConfig::from_code("USD").unwrap().currency(),
+            crate::domain::money::Currency::Usd,
+        );
+        assert_eq!(
+            CurrencyConfig::from_code("JPY").unwrap().currency(),
+            crate::domain::money::Currency::Jpy,
+        );
     }
 
     #[test]
-    fn currency_config_validate_rejects_empty_code() {
-        let c = CurrencyConfig {
-            code: "".into(),
-            ..CurrencyConfig::default()
-        };
-        assert_eq!(c.validate(), Err(CurrencyConfigError::EmptyCode));
-    }
-
-    #[test]
-    fn currency_config_validate_rejects_empty_symbol() {
-        let c = CurrencyConfig {
-            symbol: "".into(),
-            ..CurrencyConfig::default()
-        };
-        assert_eq!(c.validate(), Err(CurrencyConfigError::EmptySymbol));
-    }
-
-    #[test]
-    fn currency_format_symbol_after() {
-        let c = CurrencyConfig::default();
-        assert_eq!(c.format(12345), "123.45 €");
-        assert_eq!(c.format(0), "0.00 €");
-        assert_eq!(c.format(5), "0.05 €");
-    }
-
-    #[test]
-    fn currency_format_symbol_before() {
-        let c = CurrencyConfig {
-            code: "USD".into(),
-            symbol: "$".into(),
-            symbol_before: true,
-            main_unit_name: "dollars".into(),
-            sub_unit_name: "cents".into(),
-        };
-        assert_eq!(c.format(12345), "$123.45");
-    }
-
-    #[test]
-    fn currency_format_negative() {
-        let c = CurrencyConfig::default();
-        assert_eq!(c.format(-12345), "-123.45 €");
+    fn from_code_rejects_unsupported() {
+        let err = CurrencyConfig::from_code("XXX").unwrap_err();
+        assert!(matches!(err, CurrencyConfigError::UnsupportedCurrency(_)));
     }
 
     #[test]

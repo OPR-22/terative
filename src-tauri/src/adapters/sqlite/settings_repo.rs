@@ -66,36 +66,23 @@ impl SettingsRepository for SqliteSettingsRepository {
 
     fn get_currency_config(&self) -> Result<CurrencyConfig, RepoError> {
         let conn = self.db.lock();
-        conn.query_row(
-            "SELECT code, symbol, symbol_before, main_unit_name, sub_unit_name
-             FROM currency_config WHERE id = 1",
-            [],
-            |row| {
-                Ok(CurrencyConfig {
-                    code: row.get(0)?,
-                    symbol: row.get(1)?,
-                    symbol_before: row.get::<_, i64>(2)? != 0,
-                    main_unit_name: row.get(3)?,
-                    sub_unit_name: row.get(4)?,
-                })
-            },
-        )
-        .map_err(map_err)
+        let code: String = conn
+            .query_row(
+                "SELECT code FROM currency_config WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(map_err)?;
+        // If the stored code isn't in the supported set (e.g. migrating from
+        // an older schema), fall back to the default.
+        Ok(CurrencyConfig::from_code(&code).unwrap_or_default())
     }
 
     fn set_currency_config(&self, c: &CurrencyConfig) -> Result<(), RepoError> {
         let conn = self.db.lock();
         conn.execute(
-            "UPDATE currency_config
-             SET code = ?1, symbol = ?2, symbol_before = ?3, main_unit_name = ?4, sub_unit_name = ?5
-             WHERE id = 1",
-            params![
-                c.code,
-                c.symbol,
-                c.symbol_before as i64,
-                c.main_unit_name,
-                c.sub_unit_name,
-            ],
+            "UPDATE currency_config SET code = ?1 WHERE id = 1",
+            params![c.currency().code()],
         )
         .map_err(map_err)?;
         Ok(())
@@ -206,13 +193,7 @@ mod tests {
     fn currency_config_round_trip() {
         let db = open_memory();
         let repo = SqliteSettingsRepository::new(db);
-        let c = CurrencyConfig {
-            code: "USD".into(),
-            symbol: "$".into(),
-            symbol_before: true,
-            main_unit_name: "dollars".into(),
-            sub_unit_name: "cents".into(),
-        };
+        let c = CurrencyConfig::new(crate::domain::money::Currency::Usd);
         repo.set_currency_config(&c).unwrap();
         let loaded = repo.get_currency_config().unwrap();
         assert_eq!(loaded, c);
@@ -223,8 +204,7 @@ mod tests {
         let db = open_memory();
         let repo = SqliteSettingsRepository::new(db);
         let loaded = repo.get_currency_config().unwrap();
-        assert_eq!(loaded.code, "EUR");
-        assert_eq!(loaded.symbol, "€");
+        assert_eq!(loaded.currency(), crate::domain::money::Currency::Eur);
     }
 
     #[test]

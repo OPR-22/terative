@@ -10,6 +10,7 @@ import {
   type RevenueByClientDto,
   type RevenueGroupingDto,
 } from "../ipc";
+import { useMoneyFormat } from "../lib/money";
 import { useSettingsStore } from "../stores/settingsStore";
 
 type Tab = "revenue" | "aging" | "balances";
@@ -76,7 +77,6 @@ function TabButton({
 
 function RevenueTab() {
   const { t } = useTranslation();
-  const { snapshot } = useSettingsStore();
   const [start, setStart] = useState(THIS_YEAR_START);
   const [end, setEnd] = useState(THIS_YEAR_END);
   const [grouping, setGrouping] = useState<RevenueGroupingDto>("Month");
@@ -84,8 +84,9 @@ function RevenueTab() {
   const [byClient, setByClient] = useState<RevenueByClientDto[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const symbol = snapshot?.currency.symbol ?? "€";
-  const fmt = (cents: number) => `${(cents / 100).toFixed(2)} ${symbol}`;
+  const { formatMinor } = useMoneyFormat();
+  const currencyCode = useSettingsStore().snapshot?.currency.code ?? "EUR";
+  const fmt = (minor: number) => formatMinor(minor, currencyCode);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,8 +107,8 @@ function RevenueTab() {
     };
   }, [start, end, grouping]);
 
-  const total = buckets.reduce((sum, b) => sum + b.amount.amount_cents, 0);
-  const maxBucket = Math.max(1, ...buckets.map((b) => b.amount.amount_cents));
+  const total = buckets.reduce((sum, b) => sum + b.amount.amount_minor, 0);
+  const maxBucket = Math.max(1, ...buckets.map((b) => b.amount.amount_minor));
 
   return (
     <div className="flex flex-col gap-4">
@@ -161,7 +162,7 @@ function RevenueTab() {
         ) : (
           <div className="flex flex-col gap-2">
             {buckets.map((bucket) => {
-              const pct = (bucket.amount.amount_cents / maxBucket) * 100;
+              const pct = (bucket.amount.amount_minor / maxBucket) * 100;
               return (
                 <div
                   key={bucket.bucket_start}
@@ -177,7 +178,7 @@ function RevenueTab() {
                     />
                   </div>
                   <span className="col-span-2 text-right text-sm font-medium text-fg">
-                    {fmt(bucket.amount.amount_cents)}
+                    {fmt(bucket.amount.amount_minor)}
                   </span>
                 </div>
               );
@@ -217,7 +218,7 @@ function RevenueTab() {
                     {row.invoice_count}
                   </td>
                   <td className="py-2 pr-3 text-right text-fg">
-                    {fmt(row.total_invoiced.amount_cents)}
+                    {fmt(row.total_invoiced.amount_minor)}
                   </td>
                 </tr>
               ))}
@@ -231,11 +232,11 @@ function RevenueTab() {
 
 function AgingTab() {
   const { t } = useTranslation();
-  const { snapshot } = useSettingsStore();
   const [rows, setRows] = useState<AgingRowDto[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const symbol = snapshot?.currency.symbol ?? "€";
-  const fmt = (cents: number) => `${(cents / 100).toFixed(2)} ${symbol}`;
+  const { formatMinor } = useMoneyFormat();
+  const currencyCode = useSettingsStore().snapshot?.currency.code ?? "EUR";
+  const fmt = (minor: number) => formatMinor(minor, currencyCode);
 
   useEffect(() => {
     let cancelled = false;
@@ -268,7 +269,7 @@ function AgingTab() {
       Days61To90: 0,
       Days91Plus: 0,
     };
-    for (const row of rows) t[row.bucket] += row.amount_due.amount_cents;
+    for (const row of rows) t[row.bucket] += row.amount_due.amount_minor;
     return t;
   }, [rows]);
 
@@ -338,7 +339,7 @@ function AgingTab() {
                     {t(`accounting.bucket_${row.bucket.toLowerCase()}`)}
                   </td>
                   <td className="py-2 pr-3 text-right font-medium text-fg">
-                    {fmt(row.amount_due.amount_cents)}
+                    {fmt(row.amount_due.amount_minor)}
                   </td>
                 </tr>
               ))}
@@ -352,11 +353,11 @@ function AgingTab() {
 
 function BalancesTab() {
   const { t } = useTranslation();
-  const { snapshot } = useSettingsStore();
   const [rows, setRows] = useState<ClientBalanceDto[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const symbol = snapshot?.currency.symbol ?? "€";
-  const fmt = (cents: number) => `${(cents / 100).toFixed(2)} ${symbol}`;
+  const { formatMinor } = useMoneyFormat();
+  const currencyCode = useSettingsStore().snapshot?.currency.code ?? "EUR";
+  const fmt = (minor: number) => formatMinor(minor, currencyCode);
 
   useEffect(() => {
     let cancelled = false;
@@ -397,20 +398,20 @@ function BalancesTab() {
                   {row.client_name}
                 </td>
                 <td className="py-2 pr-3 text-right text-fg-muted">
-                  {fmt(row.total_invoiced.amount_cents)}
+                  {fmt(row.total_invoiced.amount_minor)}
                 </td>
                 <td className="py-2 pr-3 text-right text-fg-muted">
-                  {fmt(row.total_paid.amount_cents)}
+                  {fmt(row.total_paid.amount_minor)}
                 </td>
                 <td
                   className={[
                     "py-2 pr-3 text-right font-semibold",
-                    row.outstanding.amount_cents > 0
+                    row.outstanding.amount_minor > 0
                       ? "text-warning"
                       : "text-fg",
                   ].join(" ")}
                 >
-                  {fmt(row.outstanding.amount_cents)}
+                  {fmt(row.outstanding.amount_minor)}
                 </td>
               </tr>
             ))}

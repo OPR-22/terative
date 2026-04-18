@@ -4,11 +4,13 @@ import { useTranslation } from "react-i18next";
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
 import { MoneyInput } from "../components/common/MoneyInput";
+import { useMoneyFormat } from "../lib/money";
 import { useCatalogStore } from "../stores/catalogStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import type {
   CatalogItemDto,
   CatalogItemKindDto,
+  CurrencyConfigDto,
   MoneyDto,
 } from "../ipc";
 
@@ -52,12 +54,9 @@ export function CatalogList() {
     if (!snapshot) void load();
   }, [refresh, load, snapshot]);
 
+  const { format: formatMoney } = useMoneyFormat();
   const currency = snapshot?.currency;
   const currencyCode = currency?.code ?? "EUR";
-  const currencySymbol = currency?.symbol ?? "€";
-
-  const formatMoney = (m: MoneyDto) =>
-    `${(m.amount_cents / 100).toFixed(2)} ${currencySymbol}`;
 
   const visibleItems =
     kindFilter === "All" ? items : items.filter((i) => i.kind === kindFilter);
@@ -180,12 +179,12 @@ export function CatalogList() {
               : {
                   name: "",
                   kind: "Service",
-                  price: { amount_cents: 0, currency: currencyCode },
+                  price: { amount_minor: 0, currency: currencyCode },
                   unit: "",
                   reference: "",
                 }
           }
-          currencySymbol={currencySymbol}
+          currency={currency}
           onCancel={() => setEditor({ mode: "closed" })}
           onSubmit={async (form) => {
             if (editor.mode === "edit") {
@@ -241,14 +240,14 @@ function FilterPill({
 
 interface EditorProps {
   initial: Form;
-  currencySymbol: string;
+  currency: CurrencyConfigDto | undefined;
   onCancel: () => void;
   onSubmit: (form: Form) => void | Promise<void>;
 }
 
 function CatalogItemEditor({
   initial,
-  currencySymbol,
+  currency,
   onCancel,
   onSubmit,
 }: EditorProps) {
@@ -304,17 +303,19 @@ function CatalogItemEditor({
             onChange={(e) => setForm({ ...form, reference: e.target.value })}
             placeholder={t("catalog.reference_placeholder") ?? ""}
           />
-          <MoneyInput
-            label={t("catalog.default_price") ?? ""}
-            valueCents={form.price.amount_cents}
-            currencySymbol={currencySymbol}
-            onChangeCents={(cents) =>
-              setForm({
-                ...form,
-                price: { ...form.price, amount_cents: cents },
-              })
-            }
-          />
+          {currency ? (
+            <MoneyInput
+              label={t("catalog.default_price") ?? ""}
+              valueMinor={form.price.amount_minor}
+              currency={currency}
+              onChangeMinor={(minor) =>
+                setForm({
+                  ...form,
+                  price: { ...form.price, amount_minor: minor },
+                })
+              }
+            />
+          ) : null}
           <Input
             label={t("catalog.unit") ?? ""}
             value={form.unit}

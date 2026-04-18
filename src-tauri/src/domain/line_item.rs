@@ -77,12 +77,10 @@ impl LineItem {
 }
 
 pub(crate) fn compute_total(quantity: Decimal, unit_price: Money) -> Result<Money, LineItemError> {
-    let unit_dec = Decimal::from(unit_price.amount_cents);
-    let cents = (unit_dec * quantity)
-        .round()
-        .to_i64()
-        .ok_or(LineItemError::Money(MoneyError::Overflow))?;
-    Ok(Money::new(cents, unit_price.currency))
+    // Money::multiply handles banker's rounding internally.
+    unit_price
+        .multiply(quantity)
+        .map_err(LineItemError::Money)
 }
 
 #[cfg(test)]
@@ -103,7 +101,7 @@ mod tests {
             unit_price: Money::new(1000, eur()),
         })
         .unwrap();
-        assert_eq!(li.total.amount_cents, 3000);
+        assert_eq!(li.total.minor_units(), 3000);
     }
 
     #[test]
@@ -114,7 +112,7 @@ mod tests {
             unit_price: Money::new(10000, eur()),
         })
         .unwrap();
-        assert_eq!(li.total.amount_cents, 25000);
+        assert_eq!(li.total.minor_units(), 25000);
     }
 
     #[test]

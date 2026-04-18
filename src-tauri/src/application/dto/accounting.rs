@@ -319,8 +319,8 @@ mod tests {
             outstanding: Money::new(7000, eur),
         };
         let dto: ClientBalanceDto = (&balance).into();
-        assert_eq!(dto.outstanding.amount_cents, 7000);
-        assert_eq!(dto.total_invoiced.amount_cents, 10000);
+        assert_eq!(dto.outstanding.amount_minor, 7000);
+        assert_eq!(dto.total_invoiced.amount_minor, 10000);
     }
 
     #[test]

@@ -5,6 +5,7 @@ import { Button } from "../components/common/Button";
 import { StatusBadge } from "../components/invoice/StatusBadge";
 import { PaymentStatusBadge } from "../components/invoice/PaymentStatusBadge";
 import { MarkPaidModal } from "../components/invoice/MarkPaidModal";
+import { useMoneyFormat } from "../lib/money";
 import { InvoiceEditor } from "./InvoiceEditor";
 import { useInvoiceStore } from "../stores/invoiceStore";
 import { useClientStore } from "../stores/clientStore";
@@ -32,6 +33,7 @@ export function InvoiceList() {
     send,
   } = useInvoiceStore();
   const { clients, refresh: refreshClients } = useClientStore();
+  const { format } = useMoneyFormat();
   const [editor, setEditor] = useState<EditorState>({ mode: "closed" });
   const [payFor, setPayFor] = useState<InvoiceDto | null>(null);
 
@@ -126,7 +128,7 @@ export function InvoiceList() {
                   />
                 </td>
                 <td className="py-2 pr-3 text-right font-medium text-fg">
-                  {formatMoney(inv.total.amount_cents, inv.currency)}
+                  {format(inv.total)}
                 </td>
                 <td className="flex flex-wrap justify-end gap-2 py-2 pr-3">
                   <Button
@@ -207,6 +209,3 @@ function filterClass(active: boolean) {
   ].join(" ");
 }
 
-function formatMoney(cents: number, _currency: string) {
-  return `${(cents / 100).toFixed(2)}`;
-}

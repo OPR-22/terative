@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "../common/Button";
 import { Input } from "../common/Input";
+import { useCurrencyCatalogStore } from "../../stores/currencyCatalogStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import type { LanguageDto } from "../../ipc";
 
@@ -21,14 +22,18 @@ export function Onboarding() {
   const { t, i18n } = useTranslation();
   const { snapshot, load, saveSeller, saveCurrency, savePreferences } =
     useSettingsStore();
+  const { all: currencies, load: loadCatalog } = useCurrencyCatalogStore();
   const [step, setStep] = useState<Step>("welcome");
   const [visible, setVisible] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [currencyCode, setCurrencyCode] = useState("EUR");
-  const [currencySymbol, setCurrencySymbol] = useState("€");
   const [language, setLanguage] = useState<LanguageDto>("Fr");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void loadCatalog();
+  }, [loadCatalog]);
 
   useEffect(() => {
     if (!snapshot) {
@@ -42,7 +47,6 @@ export function Onboarding() {
       setName(snapshot.seller.name);
       setEmail(snapshot.seller.email ?? "");
       setCurrencyCode(snapshot.currency.code);
-      setCurrencySymbol(snapshot.currency.symbol);
       setLanguage(snapshot.preferences.language);
       setVisible(true);
     }
@@ -61,11 +65,9 @@ export function Onboarding() {
         name: name.trim() || snapshot.seller.name,
         email: email.trim() || null,
       });
-      await saveCurrency({
-        ...snapshot.currency,
-        code: currencyCode || snapshot.currency.code,
-        symbol: currencySymbol || snapshot.currency.symbol,
-      });
+      if (currencyCode !== snapshot.currency.code) {
+        await saveCurrency(currencyCode);
+      }
       if (language !== snapshot.preferences.language) {
         await savePreferences({ ...snapshot.preferences, language });
         await i18n.changeLanguage(languageToI18n(language));
@@ -142,18 +144,20 @@ export function Onboarding() {
             <p className="text-sm text-fg-muted">
               {t("onboarding.currency_body")}
             </p>
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                label={t("settings.currency_code") ?? ""}
+            <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
+              {t("settings.currency")}
+              <select
+                className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
                 value={currencyCode}
-                onChange={(e) => setCurrencyCode(e.target.value.toUpperCase())}
-              />
-              <Input
-                label={t("settings.currency_symbol") ?? ""}
-                value={currencySymbol}
-                onChange={(e) => setCurrencySymbol(e.target.value)}
-              />
-            </div>
+                onChange={(e) => setCurrencyCode(e.target.value)}
+              >
+                {currencies.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.code} · {c.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
               {t("settings.language")}
               <select

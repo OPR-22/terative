@@ -38,8 +38,8 @@ use commands::{
         catalog_item_update,
     },
     settings_commands::{
-        settings_get, settings_update_app_preferences, settings_update_currency,
-        settings_update_seller_profile,
+        settings_get, settings_supported_currencies, settings_update_app_preferences,
+        settings_update_currency, settings_update_seller_profile,
     },
     tax_commands::{tax_archive, tax_create, tax_list, tax_unarchive, tax_update},
     template_commands::{
@@ -100,6 +100,7 @@ fn build_specta() -> Builder<tauri::Wry> {
         catalog_item_unarchive,
         catalog_item_list,
         settings_get,
+        settings_supported_currencies,
         settings_update_seller_profile,
         settings_update_currency,
         settings_update_app_preferences,

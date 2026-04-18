@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ipc, type DashboardSummaryDto, type InvoicePaymentRowDto } from "../ipc";
+import { useMoneyFormat } from "../lib/money";
 import { useSettingsStore } from "../stores/settingsStore";
 
 export function Dashboard() {
@@ -28,8 +29,7 @@ export function Dashboard() {
     };
   }, [snapshot, load]);
 
-  const symbol = snapshot?.currency.symbol ?? "€";
-  const fmt = (cents: number) => `${(cents / 100).toFixed(2)} ${symbol}`;
+  const { format } = useMoneyFormat();
 
   return (
     <div className="max-w-6xl">
@@ -42,12 +42,12 @@ export function Dashboard() {
           <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Card
               label={t("dashboard.revenue_this_year")}
-              value={fmt(summary.revenue_this_year.amount_cents)}
+              value={format(summary.revenue_this_year)}
               accent="brand"
             />
             <Card
               label={t("dashboard.outstanding")}
-              value={fmt(summary.outstanding_total.amount_cents)}
+              value={format(summary.outstanding_total)}
               accent="warning"
             />
             <Card
@@ -99,7 +99,7 @@ export function Dashboard() {
                         {row.due_date ?? "—"}
                       </td>
                       <td className="py-2 pr-3 text-right text-fg">
-                        {fmt(row.amount_due.amount_cents)}
+                        {format(row.amount_due)}
                       </td>
                     </tr>
                   ))}

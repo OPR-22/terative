@@ -200,10 +200,10 @@ pub(crate) fn build_placeholder_vars<'a>(
             .map(|d| d.format("%Y-%m-%d").to_string())
             .unwrap_or_default(),
     );
-    vars.insert("total", currency.format(invoice.total.amount_cents));
-    vars.insert("subtotal", currency.format(invoice.subtotal.amount_cents));
+    vars.insert("total", invoice.total.format());
+    vars.insert("subtotal", invoice.subtotal.format());
     vars.insert("seller_name", seller.name.clone());
-    vars.insert("currency_code", currency.code.clone());
+    vars.insert("currency_code", currency.currency().code().to_string());
     vars
 }
 
