@@ -139,6 +139,7 @@ pub struct InvoiceDto {
     pub payment_status: Option<DerivedPaymentStatusDto>,
     pub pdf_path: Option<String>,
     pub notes: Option<String>,
+    pub emails_sent_count: u32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -186,6 +187,7 @@ impl InvoiceDto {
             payment_status,
             pdf_path: i.pdf_path.clone(),
             notes: i.notes.clone(),
+            emails_sent_count: i.emails_sent_count,
             created_at: i.created_at,
             updated_at: i.updated_at,
         }
@@ -327,6 +329,7 @@ mod tests {
             status: InvoiceStatus::Finalized,
             pdf_path: None,
             notes: None,
+            emails_sent_count: 0,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

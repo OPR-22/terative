@@ -4,12 +4,13 @@ use std::sync::Arc;
 use chrono::Utc;
 
 use crate::application::ports::{
-    ClientRepository, CredentialStore, EmailAttachment, EmailSender, InvoiceRepository,
-    OutboundEmail, SettingsRepository,
+    ClientRepository, CredentialStore, EmailAttachment, EmailSender, EmailTemplateRepository,
+    InvoiceRepository, OutboundEmail, SettingsRepository,
 };
 use crate::application::AppError;
+use crate::domain::email_template::EmailTemplateType;
 use crate::domain::invoice::{Invoice, InvoiceId, InvoiceStatus};
-use crate::domain::settings::{CurrencyConfig, EmailConfig, SellerProfile};
+use crate::domain::settings::{CurrencyConfig, SellerProfile};
 
 pub struct UpdateEmailConfig {
     repo: Arc<dyn SettingsRepository>,
@@ -19,15 +20,13 @@ impl UpdateEmailConfig {
     pub fn new(repo: Arc<dyn SettingsRepository>) -> Self {
         Self { repo }
     }
-    pub fn execute(&self, config: EmailConfig) -> Result<EmailConfig, AppError> {
+    pub fn execute(&self, config: crate::domain::settings::EmailConfig) -> Result<crate::domain::settings::EmailConfig, AppError> {
         // Allow saving an incomplete config (user may fill it in progressively),
         // but validate on send/test. We only trim here.
-        let trimmed = EmailConfig {
+        let trimmed = crate::domain::settings::EmailConfig {
             smtp_host: config.smtp_host.trim().to_string(),
             smtp_port: config.smtp_port,
             sender_address: config.sender_address.trim().to_string(),
-            subject_template: config.subject_template,
-            body_template: config.body_template,
         };
         self.repo.set_email_config(&trimmed)?;
         Ok(trimmed)
@@ -89,6 +88,7 @@ pub struct SendInvoice {
     settings: Arc<dyn SettingsRepository>,
     credentials: Arc<dyn CredentialStore>,
     email: Arc<dyn EmailSender>,
+    email_templates: Arc<dyn EmailTemplateRepository>,
 }
 
 impl SendInvoice {
@@ -98,6 +98,7 @@ impl SendInvoice {
         settings: Arc<dyn SettingsRepository>,
         credentials: Arc<dyn CredentialStore>,
         email: Arc<dyn EmailSender>,
+        email_templates: Arc<dyn EmailTemplateRepository>,
     ) -> Self {
         Self {
             invoices,
@@ -105,14 +106,15 @@ impl SendInvoice {
             settings,
             credentials,
             email,
+            email_templates,
         }
     }
 
     pub fn execute(&self, id: InvoiceId) -> Result<Invoice, AppError> {
         let mut invoice = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
-        if invoice.status != InvoiceStatus::Finalized {
+        if invoice.status != InvoiceStatus::Finalized && invoice.status != InvoiceStatus::Sent {
             return Err(AppError::Invoice(
-                crate::domain::invoice::InvoiceError::NotFinalized,
+                crate::domain::invoice::InvoiceError::NotSendable,
             ));
         }
         let pdf_path = invoice
@@ -138,9 +140,19 @@ impl SendInvoice {
                 "client has no email address".into(),
             )))?;
 
+        let template_type = if invoice.emails_sent_count == 0 {
+            EmailTemplateType::InitialContact
+        } else {
+            EmailTemplateType::FollowUp
+        };
+        let email_template = self
+            .email_templates
+            .get_default_for_type(template_type)?
+            .ok_or(AppError::NoDefaultEmailTemplate)?;
+
         let vars = build_placeholder_vars(&invoice, &client, &seller, &currency);
-        let subject = cfg.render_subject(&vars);
-        let body = cfg.render_body(&vars);
+        let subject = email_template.render_subject(&vars);
+        let body = email_template.render_body(&vars);
 
         let password = self
             .credentials
@@ -171,7 +183,7 @@ impl SendInvoice {
             }),
         })?;
 
-        invoice.mark_sent(Utc::now())?;
+        invoice.record_email_sent(Utc::now())?;
         self.invoices.update(&invoice)?;
         Ok(invoice)
     }
@@ -213,10 +225,11 @@ mod tests {
     use crate::application::ports::{EmailError, ListInvoicesQuery};
     use crate::application::RepoError;
     use crate::domain::client::{Client, ClientId, NewClient};
+    use crate::domain::email_template::{EmailTemplate, EmailTemplateId, NewEmailTemplate};
     use crate::domain::invoice::{AppliedTax, InvoiceNumber};
     use crate::domain::line_item::{LineItem, LineItemId};
     use crate::domain::money::{Currency, Money};
-    use crate::domain::settings::AppPreferences;
+    use crate::domain::settings::{AppPreferences, EmailConfig};
     use chrono::NaiveDate;
     use parking_lot::Mutex;
     use rust_decimal_macros::dec;
@@ -280,9 +293,6 @@ mod tests {
                     smtp_host: "smtp.example.com".into(),
                     smtp_port: 587,
                     sender_address: "me@example.com".into(),
-                    subject_template: "Invoice {{number}} for {{client_name}}".into(),
-                    body_template: "Hi {{client_name}},\n\nTotal: {{total}}\n— {{seller_name}}"
-                        .into(),
                 }),
                 seller: Mutex::new(SellerProfile {
                     name: "Acme Freelance".into(),
@@ -392,6 +402,80 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct InMemoryEmailTemplateRepo(Mutex<Map<EmailTemplateId, EmailTemplate>>);
+    impl EmailTemplateRepository for InMemoryEmailTemplateRepo {
+        fn insert(&self, t: &EmailTemplate) -> Result<(), RepoError> {
+            self.0.lock().insert(t.id, t.clone());
+            Ok(())
+        }
+        fn update(&self, t: &EmailTemplate) -> Result<(), RepoError> {
+            self.0.lock().insert(t.id, t.clone());
+            Ok(())
+        }
+        fn get(&self, id: EmailTemplateId) -> Result<Option<EmailTemplate>, RepoError> {
+            Ok(self.0.lock().get(&id).cloned())
+        }
+        fn list(&self) -> Result<Vec<EmailTemplate>, RepoError> {
+            Ok(self.0.lock().values().cloned().collect())
+        }
+        fn get_default_for_type(
+            &self,
+            t: EmailTemplateType,
+        ) -> Result<Option<EmailTemplate>, RepoError> {
+            Ok(self
+                .0
+                .lock()
+                .values()
+                .find(|tmpl| tmpl.template_type == t && tmpl.is_default)
+                .cloned())
+        }
+        fn set_default_for_type(
+            &self,
+            id: EmailTemplateId,
+            t: EmailTemplateType,
+        ) -> Result<(), RepoError> {
+            let mut map = self.0.lock();
+            for tmpl in map.values_mut() {
+                if tmpl.template_type == t {
+                    tmpl.is_default = false;
+                }
+            }
+            if let Some(tmpl) = map.get_mut(&id) {
+                tmpl.is_default = true;
+            }
+            Ok(())
+        }
+        fn delete(&self, id: EmailTemplateId) -> Result<(), RepoError> {
+            self.0.lock().remove(&id);
+            Ok(())
+        }
+    }
+
+    fn seed_default_email_templates() -> Arc<InMemoryEmailTemplateRepo> {
+        let repo = Arc::new(InMemoryEmailTemplateRepo::default());
+        let mut ic = EmailTemplate::create(NewEmailTemplate {
+            name: "Default".into(),
+            template_type: EmailTemplateType::InitialContact,
+            subject_template: "Invoice {{number}} for {{client_name}}".into(),
+            body_template: "Hi {{client_name}},\n\nTotal: {{total}}\n— {{seller_name}}".into(),
+        })
+        .unwrap();
+        ic.is_default = true;
+        repo.insert(&ic).unwrap();
+        let mut fu = EmailTemplate::create(NewEmailTemplate {
+            name: "Default reminder".into(),
+            template_type: EmailTemplateType::FollowUp,
+            subject_template: "Reminder: Invoice {{number}}".into(),
+            body_template: "Hi {{client_name}}, this is a reminder for invoice {{number}}."
+                .into(),
+        })
+        .unwrap();
+        fu.is_default = true;
+        repo.insert(&fu).unwrap();
+        repo
+    }
+
     // --- fixtures ---
 
     fn eur() -> Currency {
@@ -431,6 +515,7 @@ mod tests {
             status: InvoiceStatus::Finalized,
             pdf_path,
             notes: None,
+            emails_sent_count: 0,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -474,8 +559,6 @@ mod tests {
                 smtp_host: "  smtp.new.com  ".into(),
                 smtp_port: 465,
                 sender_address: "  new@example.com  ".into(),
-                subject_template: "Hi".into(),
-                body_template: "Body".into(),
             })
             .unwrap();
         assert_eq!(saved.smtp_host, "smtp.new.com");
@@ -531,8 +614,6 @@ mod tests {
                 smtp_host: "".into(),
                 smtp_port: 587,
                 sender_address: "me@example.com".into(),
-                subject_template: "".into(),
-                body_template: "".into(),
             })
             .unwrap();
         let creds = Arc::new(InMemoryCredentialStore::default());
@@ -566,12 +647,14 @@ mod tests {
         );
         invoices.insert(&invoice).unwrap();
 
+        let email_templates = seed_default_email_templates();
         let sent = SendInvoice::new(
             invoices.clone(),
             clients,
             settings,
             creds,
             sender.clone(),
+            email_templates,
         )
         .execute(invoice.id)
         .unwrap();
@@ -608,12 +691,13 @@ mod tests {
         invoice.status = InvoiceStatus::Draft;
         invoices.insert(&invoice).unwrap();
 
-        let err = SendInvoice::new(invoices, clients, settings, creds, sender)
+        let email_templates = seed_default_email_templates();
+        let err = SendInvoice::new(invoices, clients, settings, creds, sender, email_templates)
             .execute(invoice.id)
             .unwrap_err();
         assert!(matches!(
             err,
-            AppError::Invoice(crate::domain::invoice::InvoiceError::NotFinalized)
+            AppError::Invoice(crate::domain::invoice::InvoiceError::NotSendable)
         ));
     }
 
@@ -630,7 +714,8 @@ mod tests {
         let invoice = make_finalized_invoice_with_pdf(client.id, None);
         invoices.insert(&invoice).unwrap();
 
-        let err = SendInvoice::new(invoices, clients, settings, creds, sender)
+        let email_templates = seed_default_email_templates();
+        let err = SendInvoice::new(invoices, clients, settings, creds, sender, email_templates)
             .execute(invoice.id)
             .unwrap_err();
         assert!(matches!(err, AppError::MissingInvoicePdf));
@@ -656,7 +741,8 @@ mod tests {
         );
         invoices.insert(&invoice).unwrap();
 
-        let err = SendInvoice::new(invoices, clients, settings, creds, sender)
+        let email_templates = seed_default_email_templates();
+        let err = SendInvoice::new(invoices, clients, settings, creds, sender, email_templates)
             .execute(invoice.id)
             .unwrap_err();
         assert!(matches!(err, AppError::Email(EmailError::NotConfigured(_))));
@@ -683,12 +769,14 @@ mod tests {
         );
         invoices.insert(&invoice).unwrap();
 
+        let email_templates = seed_default_email_templates();
         let err = SendInvoice::new(
             invoices.clone(),
             clients,
             settings,
             creds,
             sender,
+            email_templates,
         )
         .execute(invoice.id)
         .unwrap_err();

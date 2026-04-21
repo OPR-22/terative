@@ -60,6 +60,11 @@ export const commands = {
 	settingsUpdateEmailPassword: (password: string) => typedError<null, string>(__TAURI_INVOKE("settings_update_email_password", { password })),
 	emailTestConnection: () => typedError<null, string>(__TAURI_INVOKE("email_test_connection")),
 	invoiceSend: (id: string) => typedError<InvoiceDto, string>(__TAURI_INVOKE("invoice_send", { id })),
+	emailTemplateCreate: (input: NewEmailTemplateDto) => typedError<EmailTemplateDto, string>(__TAURI_INVOKE("email_template_create", { input })),
+	emailTemplateUpdate: (input: UpdateEmailTemplateDto) => typedError<EmailTemplateDto, string>(__TAURI_INVOKE("email_template_update", { input })),
+	emailTemplateDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("email_template_delete", { id })),
+	emailTemplateSetDefault: (id: string) => typedError<null, string>(__TAURI_INVOKE("email_template_set_default", { id })),
+	emailTemplateList: () => typedError<EmailTemplateDto[], string>(__TAURI_INVOKE("email_template_list")),
 	paymentRecord: (input: NewPaymentDto) => typedError<PaymentDto, string>(__TAURI_INVOKE("payment_record", { input })),
 	paymentUpdate: (input: UpdatePaymentDto) => typedError<PaymentDto, string>(__TAURI_INVOKE("payment_update", { input })),
 	paymentDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("payment_delete", { id })),
@@ -212,9 +217,18 @@ export type EmailConfigDto = {
 	smtp_host: string,
 	smtp_port: number,
 	sender_address: string,
+};
+
+export type EmailTemplateDto = {
+	id: string,
+	name: string,
+	template_type: EmailTemplateTypeDto,
 	subject_template: string,
 	body_template: string,
+	is_default: boolean,
 };
+
+export type EmailTemplateTypeDto = "InitialContact" | "FollowUp";
 
 export type FontChoiceDto = "Serif" | "SansSerif" | "Mono";
 
@@ -241,6 +255,7 @@ export type InvoiceDto = {
 	payment_status: DerivedPaymentStatusDto | null,
 	pdf_path: string | null,
 	notes: string | null,
+	emails_sent_count: number,
 	created_at: string,
 	updated_at: string,
 };
@@ -331,6 +346,13 @@ export type NewClientDto = {
 	address: string | null,
 	notes: string | null,
 	referred_by: string | null,
+};
+
+export type NewEmailTemplateDto = {
+	name: string,
+	template_type: EmailTemplateTypeDto,
+	subject_template: string,
+	body_template: string,
 };
 
 export type NewInvoiceDto = {
@@ -538,6 +560,13 @@ export type UpdateDraftInvoiceDto = {
 	line_items: NewLineItemDto[],
 	tax_ids: string[],
 	notes: string | null,
+};
+
+export type UpdateEmailTemplateDto = {
+	id: string,
+	name: string,
+	subject_template: string,
+	body_template: string,
 };
 
 export type UpdateJournalEntryDto = {

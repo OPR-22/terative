@@ -20,6 +20,10 @@ use commands::{
         email_test_connection, invoice_send, settings_update_email_config,
         settings_update_email_password,
     },
+    email_template_commands::{
+        email_template_create, email_template_delete, email_template_list,
+        email_template_set_default, email_template_update,
+    },
     invoice_commands::{
         invoice_cancel, invoice_create_draft, invoice_duplicate, invoice_finalize, invoice_get,
         invoice_list, invoice_update_draft,
@@ -83,6 +87,44 @@ fn seed_default_template_if_empty(db: &adapters::sqlite::Db) {
     }
 }
 
+/// First-launch seed: if no email templates exist, insert default ones for
+/// both template types so sending works out of the box.
+fn seed_default_email_templates_if_empty(db: &adapters::sqlite::Db) {
+    use application::ports::EmailTemplateRepository;
+    use domain::email_template::{EmailTemplate, EmailTemplateType, NewEmailTemplate};
+    let repo = adapters::sqlite::SqliteEmailTemplateRepository::new(db.clone());
+    let existing = match repo.list() {
+        Ok(list) => list,
+        Err(e) => {
+            eprintln!("seed default email templates: list failed: {e}");
+            return;
+        }
+    };
+    if !existing.is_empty() {
+        return;
+    }
+    let mut ic = EmailTemplate::create(NewEmailTemplate {
+        name: "Default".into(),
+        template_type: EmailTemplateType::InitialContact,
+        subject_template: "Invoice {{number}} from {{seller_name}}".into(),
+        body_template: "Hi {{client_name}},\n\nPlease find invoice {{number}} attached. Total: {{total}}.\n\n— {{seller_name}}".into(),
+    }).unwrap();
+    ic.is_default = true;
+    if let Err(e) = repo.insert(&ic) {
+        eprintln!("seed default email template (initial_contact): {e}");
+    }
+    let mut fu = EmailTemplate::create(NewEmailTemplate {
+        name: "Default reminder".into(),
+        template_type: EmailTemplateType::FollowUp,
+        subject_template: "Reminder: Invoice {{number}}".into(),
+        body_template: "Hi {{client_name}},\n\nThis is a friendly reminder regarding invoice {{number}} ({{total}}), due on {{due_date}}.\n\n— {{seller_name}}".into(),
+    }).unwrap();
+    fu.is_default = true;
+    if let Err(e) = repo.insert(&fu) {
+        eprintln!("seed default email template (follow_up): {e}");
+    }
+}
+
 /// Builds the specta `Builder` with every registered command. Extracted so
 /// that both `run()` and the bindings-export test can call it without
 /// duplicating the command list.
@@ -127,6 +169,11 @@ fn build_specta() -> Builder<tauri::Wry> {
         settings_update_email_password,
         email_test_connection,
         invoice_send,
+        email_template_create,
+        email_template_update,
+        email_template_delete,
+        email_template_set_default,
+        email_template_list,
         payment_record,
         payment_update,
         payment_delete,
@@ -184,6 +231,7 @@ pub fn run() {
             let db = adapters::sqlite::open(&db_path)
                 .unwrap_or_else(|e| panic!("open sqlite at {db_path:?}: {e}"));
             seed_default_template_if_empty(&db);
+            seed_default_email_templates_if_empty(&db);
             let default_pdf_dir = data_dir.join("invoices");
             let default_backup_dir = data_dir.join("backups");
             app.manage(AppState::new(

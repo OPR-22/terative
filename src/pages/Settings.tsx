@@ -7,6 +7,7 @@ import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
 import { Money } from "../lib/money";
 import { useCurrencyCatalogStore } from "../stores/currencyCatalogStore";
+import { useEmailTemplateStore } from "../stores/emailTemplateStore";
 import { useNotebookSectionStore } from "../stores/notebookSectionStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import {
@@ -14,6 +15,8 @@ import {
   type AppPreferencesDto,
   type CurrencyConfigDto,
   type EmailConfigDto,
+  type EmailTemplateDto,
+  type EmailTemplateTypeDto,
   type LanguageDto,
   type SellerProfileDto,
   type ThemeDto,
@@ -61,6 +64,7 @@ export function Settings() {
         onSavePassword={saveEmailPassword}
         onTest={testEmailConnection}
       />
+      <EmailTemplatesSection />
       <NotebookSectionsSection />
       <PreferencesSection
         prefs={snapshot.preferences}
@@ -404,17 +408,6 @@ interface EmailProps {
   onTest: () => Promise<void>;
 }
 
-const PLACEHOLDER_KEYS = [
-  "number",
-  "client_name",
-  "date",
-  "due_date",
-  "total",
-  "subtotal",
-  "seller_name",
-  "currency_code",
-];
-
 function EmailSection({
   config,
   hasPassword,
@@ -507,34 +500,6 @@ function EmailSection({
           className="sm:col-span-2"
           placeholder="you@example.com"
         />
-        <label className="sm:col-span-2 flex flex-col gap-1 text-sm font-medium text-fg-muted">
-          {t("settings.subject_template")}
-          <input
-            className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
-            value={form.subject_template}
-            onChange={(e) => update("subject_template", e.target.value)}
-            placeholder="Invoice {{number}} from {{seller_name}}"
-          />
-        </label>
-        <label className="sm:col-span-2 flex flex-col gap-1 text-sm font-medium text-fg-muted">
-          {t("settings.body_template")}
-          <textarea
-            className="block min-h-32 w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
-            value={form.body_template}
-            onChange={(e) => update("body_template", e.target.value)}
-            placeholder={`Hi {{client_name}},\n\nPlease find invoice {{number}} attached. Total: {{total}}.\n\n— {{seller_name}}`}
-          />
-        </label>
-
-        <p className="sm:col-span-2 text-xs text-fg-subtle">
-          {t("settings.placeholders_help")}{" "}
-          {PLACEHOLDER_KEYS.map((k) => (
-            <code
-              key={k}
-              className="mx-0.5 rounded-field bg-surface-muted px-1 py-0.5 text-fg-muted"
-            >{`{{${k}}}`}</code>
-          ))}
-        </p>
 
         <div className="sm:col-span-2 flex items-center gap-3">
           <Button type="submit">{t("common.save")}</Button>
@@ -600,6 +565,200 @@ function EmailSection({
         </div>
         {err ? <p className="sm:col-span-2 text-sm text-danger">{err}</p> : null}
       </div>
+    </section>
+  );
+}
+
+const PLACEHOLDER_KEYS = [
+  "number",
+  "client_name",
+  "date",
+  "due_date",
+  "total",
+  "subtotal",
+  "seller_name",
+  "currency_code",
+];
+
+function EmailTemplatesSection() {
+  const { t } = useTranslation();
+  const { templates, loading, refresh, create, update, remove, setDefault } =
+    useEmailTemplateStore();
+  const [editing, setEditing] = useState<EmailTemplateDto | null>(null);
+  const [creating, setCreating] = useState<EmailTemplateTypeDto | null>(null);
+  const [form, setForm] = useState({ name: "", subject_template: "", body_template: "" });
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const startEdit = (tmpl: EmailTemplateDto) => {
+    setEditing(tmpl);
+    setCreating(null);
+    setForm({
+      name: tmpl.name,
+      subject_template: tmpl.subject_template,
+      body_template: tmpl.body_template,
+    });
+    setErr(null);
+  };
+
+  const startCreate = (templateType: EmailTemplateTypeDto) => {
+    setCreating(templateType);
+    setEditing(null);
+    setForm({ name: "", subject_template: "", body_template: "" });
+    setErr(null);
+  };
+
+  const cancelEdit = () => {
+    setEditing(null);
+    setCreating(null);
+    setErr(null);
+  };
+
+  const save = async () => {
+    setErr(null);
+    try {
+      if (editing) {
+        await update({
+          id: editing.id,
+          name: form.name,
+          subject_template: form.subject_template,
+          body_template: form.body_template,
+        });
+      } else if (creating) {
+        await create({
+          name: form.name,
+          template_type: creating,
+          subject_template: form.subject_template,
+          body_template: form.body_template,
+        });
+      }
+      cancelEdit();
+    } catch (e) {
+      setErr(String(e));
+    }
+  };
+
+  const typeLabel = (t_type: EmailTemplateTypeDto) =>
+    t_type === "InitialContact"
+      ? t("email_templates.initial_contact")
+      : t("email_templates.follow_up");
+
+  const renderGroup = (templateType: EmailTemplateTypeDto) => {
+    const group = templates.filter((tmpl) => tmpl.template_type === templateType);
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-fg">{typeLabel(templateType)}</h3>
+          <Button variant="secondary" onClick={() => startCreate(templateType)}>
+            {t("common.add")}
+          </Button>
+        </div>
+        {group.length === 0 ? (
+          <p className="text-sm text-fg-subtle">{t("email_templates.none")}</p>
+        ) : (
+          <ul className="space-y-1">
+            {group.map((tmpl) => (
+              <li
+                key={tmpl.id}
+                className="flex items-center justify-between rounded-field border border-border bg-surface px-3 py-2"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-fg">{tmpl.name}</span>
+                  {tmpl.is_default ? (
+                    <span className="rounded-field bg-accent/10 px-1.5 py-0.5 text-xs font-medium text-accent">
+                      {t("email_templates.default_badge")}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="flex items-center gap-1">
+                  {!tmpl.is_default ? (
+                    <Button
+                      variant="secondary"
+                      onClick={() => void setDefault(tmpl.id).catch((e) => alert(String(e)))}
+                    >
+                      {t("email_templates.set_default")}
+                    </Button>
+                  ) : null}
+                  <Button variant="secondary" onClick={() => startEdit(tmpl)}>
+                    {t("common.edit")}
+                  </Button>
+                  {!tmpl.is_default ? (
+                    <Button
+                      variant="danger"
+                      onClick={() => void remove(tmpl.id).catch((e) => alert(String(e)))}
+                    >
+                      {t("common.delete")}
+                    </Button>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  };
+
+  if (loading) return <p>{t("common.loading")}</p>;
+
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-semibold text-fg">
+        {t("email_templates.title")}
+      </h2>
+      <div className="space-y-4">
+        {renderGroup("InitialContact")}
+        {renderGroup("FollowUp")}
+      </div>
+
+      {(editing || creating) ? (
+        <div className="mt-4 space-y-3 rounded-field border border-border bg-surface-muted p-4">
+          <h3 className="text-sm font-semibold text-fg">
+            {editing ? t("common.edit") : t("common.add")}
+          </h3>
+          <Input
+            label={t("email_templates.name") ?? ""}
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          />
+          <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
+            {t("email_templates.subject")}
+            <input
+              className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
+              value={form.subject_template}
+              onChange={(e) => setForm((f) => ({ ...f, subject_template: e.target.value }))}
+              placeholder="Invoice {{number}} from {{seller_name}}"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
+            {t("email_templates.body")}
+            <textarea
+              className="block min-h-32 w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
+              value={form.body_template}
+              onChange={(e) => setForm((f) => ({ ...f, body_template: e.target.value }))}
+            />
+          </label>
+          <p className="text-xs text-fg-subtle">
+            {t("email_templates.placeholders_help")}{" "}
+            {PLACEHOLDER_KEYS.map((k) => (
+              <code
+                key={k}
+                className="mx-0.5 rounded-field bg-surface-muted px-1 py-0.5 text-fg-muted"
+              >{`{{${k}}}`}</code>
+            ))}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button onClick={save}>{t("common.save")}</Button>
+            <Button variant="secondary" onClick={cancelEdit}>
+              {t("common.cancel")}
+            </Button>
+          </div>
+          {err ? <p className="text-sm text-danger">{err}</p> : null}
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -135,6 +135,7 @@ pub struct Invoice {
     pub status: InvoiceStatus,
     pub pdf_path: Option<String>,
     pub notes: Option<String>,
+    pub emails_sent_count: u32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -151,6 +152,8 @@ pub enum InvoiceError {
     AlreadyCancelled,
     #[error("only Finalized invoices can be sent")]
     NotFinalized,
+    #[error("invoice must be Finalized or Sent to send an email")]
+    NotSendable,
     #[error("allocation exceeds invoice remaining balance")]
     OverAllocated,
     #[error("allocation currency does not match invoice currency")]
@@ -207,6 +210,7 @@ impl Invoice {
             status: InvoiceStatus::Draft,
             pdf_path: None,
             notes: input.notes.and_then(non_empty),
+            emails_sent_count: 0,
             created_at: now,
             updated_at: now,
         })
@@ -261,13 +265,21 @@ impl Invoice {
         Ok(())
     }
 
-    pub fn mark_sent(&mut self, now: DateTime<Utc>) -> Result<(), InvoiceError> {
-        if self.status != InvoiceStatus::Finalized {
-            return Err(InvoiceError::NotFinalized);
+    pub fn record_email_sent(&mut self, now: DateTime<Utc>) -> Result<(), InvoiceError> {
+        match self.status {
+            InvoiceStatus::Finalized => {
+                self.status = InvoiceStatus::Sent;
+                self.emails_sent_count += 1;
+                self.updated_at = now;
+                Ok(())
+            }
+            InvoiceStatus::Sent => {
+                self.emails_sent_count += 1;
+                self.updated_at = now;
+                Ok(())
+            }
+            _ => Err(InvoiceError::NotSendable),
         }
-        self.status = InvoiceStatus::Sent;
-        self.updated_at = now;
-        Ok(())
     }
 
     pub fn cancel(&mut self, now: DateTime<Utc>) -> Result<(), InvoiceError> {
@@ -572,7 +584,7 @@ mod tests {
     }
 
     #[test]
-    fn mark_sent_requires_finalized() {
+    fn record_email_sent_requires_finalized_or_sent() {
         let mut inv = Invoice::create_draft(
             NewInvoice {
                 client_id: ClientId::new(),
@@ -589,12 +601,17 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            inv.mark_sent(now()).unwrap_err(),
-            InvoiceError::NotFinalized
+            inv.record_email_sent(now()).unwrap_err(),
+            InvoiceError::NotSendable
         ));
         inv.finalize(InvoiceNumber(1), now()).unwrap();
-        inv.mark_sent(now()).unwrap();
+        inv.record_email_sent(now()).unwrap();
         assert_eq!(inv.status, InvoiceStatus::Sent);
+        assert_eq!(inv.emails_sent_count, 1);
+        // Can send again when already Sent (reminder).
+        inv.record_email_sent(now()).unwrap();
+        assert_eq!(inv.status, InvoiceStatus::Sent);
+        assert_eq!(inv.emails_sent_count, 2);
     }
 
     fn finalized_invoice(due: Option<NaiveDate>, total_cents: i64) -> Invoice {

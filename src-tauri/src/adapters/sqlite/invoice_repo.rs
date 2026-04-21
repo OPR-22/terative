@@ -87,6 +87,7 @@ fn row_to_invoice_head(row: &Row<'_>) -> rusqlite::Result<InvoiceHead> {
     })?;
     let pdf_path: Option<String> = row.get("pdf_path")?;
     let notes: Option<String> = row.get("notes")?;
+    let emails_sent_count: i64 = row.get("emails_sent_count")?;
     let created_at_str: String = row.get("created_at")?;
     let updated_at_str: String = row.get("updated_at")?;
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
@@ -109,6 +110,7 @@ fn row_to_invoice_head(row: &Row<'_>) -> rusqlite::Result<InvoiceHead> {
         status,
         pdf_path,
         notes,
+        emails_sent_count: emails_sent_count as u32,
         created_at,
         updated_at,
     })
@@ -128,12 +130,13 @@ struct InvoiceHead {
     status: InvoiceStatus,
     pdf_path: Option<String>,
     notes: Option<String>,
+    emails_sent_count: u32,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
 
 const SELECT_HEAD: &str = "id, number, client_id, template_id, date, due_date, subtotal, tax_total, \
-    total, currency, status, pdf_path, notes, created_at, updated_at";
+    total, currency, status, pdf_path, notes, emails_sent_count, created_at, updated_at";
 
 impl InvoiceRepository for SqliteInvoiceRepository {
     fn insert(&self, invoice: &Invoice) -> Result<(), RepoError> {
@@ -141,8 +144,8 @@ impl InvoiceRepository for SqliteInvoiceRepository {
         let tx = conn.transaction().map_err(map_err)?;
         tx.execute(
             "INSERT INTO invoices (id, number, client_id, template_id, date, due_date, subtotal,
-                tax_total, total, currency, status, pdf_path, notes, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                tax_total, total, currency, status, pdf_path, notes, emails_sent_count, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 invoice.id.to_string(),
                 invoice.number.map(|n| n.0 as i64),
@@ -157,6 +160,7 @@ impl InvoiceRepository for SqliteInvoiceRepository {
                 invoice.status.as_str(),
                 invoice.pdf_path,
                 invoice.notes,
+                invoice.emails_sent_count as i64,
                 invoice.created_at.to_rfc3339(),
                 invoice.updated_at.to_rfc3339(),
             ],
@@ -175,7 +179,7 @@ impl InvoiceRepository for SqliteInvoiceRepository {
                 "UPDATE invoices SET
                     number = ?2, client_id = ?3, template_id = ?4, date = ?5, due_date = ?6,
                     subtotal = ?7, tax_total = ?8, total = ?9, currency = ?10, status = ?11,
-                    pdf_path = ?12, notes = ?13, updated_at = ?14
+                    pdf_path = ?12, notes = ?13, emails_sent_count = ?14, updated_at = ?15
                  WHERE id = ?1",
                 params![
                     invoice.id.to_string(),
@@ -191,6 +195,7 @@ impl InvoiceRepository for SqliteInvoiceRepository {
                     invoice.status.as_str(),
                     invoice.pdf_path,
                     invoice.notes,
+                    invoice.emails_sent_count as i64,
                     invoice.updated_at.to_rfc3339(),
                 ],
             )
@@ -420,6 +425,7 @@ fn assemble(head: InvoiceHead, line_items: Vec<LineItem>, taxes_applied: Vec<App
         status: head.status,
         pdf_path: head.pdf_path,
         notes: head.notes,
+        emails_sent_count: head.emails_sent_count,
         created_at: head.created_at,
         updated_at: head.updated_at,
     }

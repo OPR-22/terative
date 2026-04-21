@@ -121,7 +121,7 @@ impl SettingsRepository for SqliteSettingsRepository {
     fn get_email_config(&self) -> Result<EmailConfig, RepoError> {
         let conn = self.db.lock();
         conn.query_row(
-            "SELECT smtp_host, smtp_port, sender_address, subject_template, body_template
+            "SELECT smtp_host, smtp_port, sender_address
              FROM email_config WHERE id = 1",
             [],
             |row| {
@@ -130,8 +130,6 @@ impl SettingsRepository for SqliteSettingsRepository {
                     smtp_host: row.get(0)?,
                     smtp_port: port as u16,
                     sender_address: row.get(2)?,
-                    subject_template: row.get(3)?,
-                    body_template: row.get(4)?,
                 })
             },
         )
@@ -142,16 +140,9 @@ impl SettingsRepository for SqliteSettingsRepository {
         let conn = self.db.lock();
         conn.execute(
             "UPDATE email_config
-             SET smtp_host = ?1, smtp_port = ?2, sender_address = ?3,
-                 subject_template = ?4, body_template = ?5
+             SET smtp_host = ?1, smtp_port = ?2, sender_address = ?3
              WHERE id = 1",
-            params![
-                c.smtp_host,
-                c.smtp_port as i64,
-                c.sender_address,
-                c.subject_template,
-                c.body_template,
-            ],
+            params![c.smtp_host, c.smtp_port as i64, c.sender_address],
         )
         .map_err(map_err)?;
         Ok(())
@@ -247,8 +238,6 @@ mod tests {
             smtp_host: "smtp.example.com".into(),
             smtp_port: 465,
             sender_address: "me@example.com".into(),
-            subject_template: "Invoice {{number}}".into(),
-            body_template: "Hello {{client_name}}".into(),
         };
         repo.set_email_config(&c).unwrap();
         let loaded = repo.get_email_config().unwrap();

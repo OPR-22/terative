@@ -146,13 +146,15 @@ export function InvoiceList() {
                       {t("invoices.finalize")}
                     </Button>
                   ) : null}
-                  {inv.status === "Finalized" ? (
+                  {inv.status === "Finalized" || inv.status === "Sent" ? (
                     <Button
                       onClick={() =>
                         void send(inv.id).catch((e) => alert(String(e)))
                       }
                     >
-                      {t("invoices.send")}
+                      {inv.emails_sent_count === 0
+                        ? t("invoices.send")
+                        : t("invoices.send_reminder")}
                     </Button>
                   ) : null}
                   {(inv.status === "Finalized" || inv.status === "Sent") &&

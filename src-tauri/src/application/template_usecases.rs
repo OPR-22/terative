@@ -537,6 +537,7 @@ fn sample_invoice(currency: Currency, client_id: ClientId, template_id: Template
         status: InvoiceStatus::Finalized,
         pdf_path: None,
         notes: Some("Merci pour votre confiance.".into()),
+        emails_sent_count: 0,
         created_at: Utc::now(),
         updated_at: Utc::now(),
     }

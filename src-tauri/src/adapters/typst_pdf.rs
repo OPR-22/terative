@@ -366,6 +366,7 @@ mod tests {
             status: InvoiceStatus::Finalized,
             pdf_path: None,
             notes: Some("Thanks for your business.".into()),
+            emails_sent_count: 0,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

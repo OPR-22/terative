@@ -1,5 +1,6 @@
 pub mod catalog_item;
 pub mod client;
+pub mod email_template;
 pub mod invoice;
 pub mod line_item;
 pub mod money;

@@ -183,8 +183,6 @@ pub struct EmailConfigDto {
     pub smtp_host: String,
     pub smtp_port: u16,
     pub sender_address: String,
-    pub subject_template: String,
-    pub body_template: String,
 }
 
 impl From<&EmailConfig> for EmailConfigDto {
@@ -193,8 +191,6 @@ impl From<&EmailConfig> for EmailConfigDto {
             smtp_host: c.smtp_host.clone(),
             smtp_port: c.smtp_port,
             sender_address: c.sender_address.clone(),
-            subject_template: c.subject_template.clone(),
-            body_template: c.body_template.clone(),
         }
     }
 }
@@ -205,8 +201,6 @@ impl From<EmailConfigDto> for EmailConfig {
             smtp_host: dto.smtp_host,
             smtp_port: dto.smtp_port,
             sender_address: dto.sender_address,
-            subject_template: dto.subject_template,
-            body_template: dto.body_template,
         }
     }
 }

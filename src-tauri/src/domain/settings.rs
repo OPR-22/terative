@@ -5,8 +5,6 @@ pub struct EmailConfig {
     pub smtp_host: String,
     pub smtp_port: u16,
     pub sender_address: String,
-    pub subject_template: String,
-    pub body_template: String,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -39,13 +37,6 @@ impl EmailConfig {
         Ok(())
     }
 
-    pub fn render_subject(&self, vars: &HashMap<&str, String>) -> String {
-        render_placeholders(&self.subject_template, vars)
-    }
-
-    pub fn render_body(&self, vars: &HashMap<&str, String>) -> String {
-        render_placeholders(&self.body_template, vars)
-    }
 }
 
 /// Replace `{{key}}` occurrences with the corresponding value.
@@ -246,8 +237,6 @@ mod tests {
             smtp_host: "smtp.example.com".into(),
             smtp_port: 587,
             sender_address: "me@example.com".into(),
-            subject_template: "Invoice {{number}}".into(),
-            body_template: "Hi {{client_name}}, total: {{total}}".into(),
         }
     }
 
@@ -330,14 +319,4 @@ mod tests {
         assert_eq!(out, "Bonjour Élise — merci");
     }
 
-    #[test]
-    fn email_config_render_subject_and_body_use_same_engine() {
-        let cfg = valid_email_config();
-        let mut vars = HashMap::new();
-        vars.insert("number", "1001".to_string());
-        vars.insert("client_name", "Acme".to_string());
-        vars.insert("total", "181.50 €".to_string());
-        assert_eq!(cfg.render_subject(&vars), "Invoice 1001");
-        assert_eq!(cfg.render_body(&vars), "Hi Acme, total: 181.50 €");
-    }
 }

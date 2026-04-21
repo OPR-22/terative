@@ -154,6 +154,7 @@
     "cancel": "Annuler la facture",
     "duplicate": "Dupliquer",
     "send": "Envoyer par e-mail",
+    "send_reminder": "Envoyer un rappel",
     "confirm_cancel": "Annuler cette facture ? Cette action est définitive.",
     "err_no_client": "Veuillez sélectionner un client.",
     "mark_paid": "Marquer comme payée",
@@ -192,8 +193,6 @@
     "smtp_host": "Serveur SMTP",
     "smtp_port": "Port SMTP",
     "sender_address": "Adresse expéditeur",
-    "subject_template": "Modèle d’objet",
-    "body_template": "Modèle de corps",
     "smtp_password": "Mot de passe SMTP",
     "password_stored": "Stocké dans le trousseau système",
     "password_unset": "Non défini",
@@ -201,7 +200,6 @@
     "update_password": "Mettre à jour le mot de passe",
     "test_connection": "Tester la connexion",
     "test_ok": "Connexion réussie",
-    "placeholders_help": "Variables disponibles :",
     "data": "Données",
     "data_help": "Exportez la base de données vers un fichier, créez une sauvegarde horodatée ou restaurez depuis un fichier. Une restauration nécessite un redémarrage de l’application.",
     "data_export": "Exporter la base",
@@ -296,6 +294,18 @@
     "currency_body": "Choisissez les valeurs par défaut pour les nouvelles factures. Le symbole est celui imprimé sur le PDF.",
     "done_title": "Tout est prêt",
     "done_body": "Vous pouvez créer votre première facture."
+  },
+  "email_templates": {
+    "title": "Modèles d'e-mail",
+    "initial_contact": "Premier contact",
+    "follow_up": "Relance",
+    "name": "Nom du modèle",
+    "subject": "Objet",
+    "body": "Corps",
+    "set_default": "Par défaut",
+    "default_badge": "Par défaut",
+    "none": "Aucun modèle.",
+    "placeholders_help": "Variables disponibles :"
   },
   "placeholder": {
     "coming_soon": "Disponible dans une phase ultérieure."

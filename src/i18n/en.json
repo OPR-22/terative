@@ -154,6 +154,7 @@
     "cancel": "Cancel invoice",
     "duplicate": "Duplicate",
     "send": "Send by email",
+    "send_reminder": "Send reminder",
     "confirm_cancel": "Cancel this invoice? This action is permanent.",
     "err_no_client": "Please select a client.",
     "mark_paid": "Mark as paid",
@@ -192,8 +193,6 @@
     "smtp_host": "SMTP host",
     "smtp_port": "SMTP port",
     "sender_address": "Sender address",
-    "subject_template": "Subject template",
-    "body_template": "Body template",
     "smtp_password": "SMTP password",
     "password_stored": "Stored in system keyring",
     "password_unset": "Not set",
@@ -201,7 +200,6 @@
     "update_password": "Update password",
     "test_connection": "Test connection",
     "test_ok": "Connection successful",
-    "placeholders_help": "Available placeholders:",
     "data": "Data",
     "data_help": "Export the database to a file, create a timestamped backup, or restore from a previous snapshot. Restoring requires an app restart to take effect.",
     "data_export": "Export database",
@@ -296,6 +294,18 @@
     "currency_body": "Pick the defaults for new invoices. The symbol is what's printed on the PDF.",
     "done_title": "All set",
     "done_body": "You're ready to create your first invoice."
+  },
+  "email_templates": {
+    "title": "Email templates",
+    "initial_contact": "Initial contact",
+    "follow_up": "Follow-up",
+    "name": "Template name",
+    "subject": "Subject",
+    "body": "Body",
+    "set_default": "Set as default",
+    "default_badge": "Default",
+    "none": "No templates.",
+    "placeholders_help": "Available placeholders:"
   },
   "placeholder": {
     "coming_soon": "Available in a later phase."

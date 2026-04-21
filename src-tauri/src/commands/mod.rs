@@ -3,6 +3,7 @@ pub mod catalog_item_commands;
 pub mod client_commands;
 pub mod data_commands;
 pub mod email_commands;
+pub mod email_template_commands;
 pub mod invoice_commands;
 pub mod notebook_commands;
 pub mod payment_commands;
@@ -14,9 +15,10 @@ use std::sync::Arc;
 
 use crate::adapters::sqlite::{
     SqliteAccountingRepository, SqliteCatalogItemRepository, SqliteClientJournalRepository,
-    SqliteClientNotebookRepository, SqliteClientRepository, SqliteInvoiceNumberGenerator,
-    SqliteInvoiceRepository, SqliteNotebookSectionRepository, SqlitePaymentRepository,
-    SqliteSettingsRepository, SqliteTaxRepository, SqliteTemplateRepository,
+    SqliteClientNotebookRepository, SqliteClientRepository, SqliteEmailTemplateRepository,
+    SqliteInvoiceNumberGenerator, SqliteInvoiceRepository, SqliteNotebookSectionRepository,
+    SqlitePaymentRepository, SqliteSettingsRepository, SqliteTaxRepository,
+    SqliteTemplateRepository,
 };
 use crate::adapters::{
     FilesystemDataManagement, FilesystemPdfStorage, KeyringCredentialStore, LettreEmailSender,
@@ -26,6 +28,10 @@ use crate::application::ports::DataManagement;
 use crate::application::accounting_usecases::AccountingService;
 use crate::application::client_usecases::{
     ArchiveClient, CreateClient, GetClientDetail, ListClients, UnarchiveClient, UpdateClient,
+};
+use crate::application::email_template_usecases::{
+    CreateEmailTemplate, DeleteEmailTemplate, ListEmailTemplates, SetDefaultEmailTemplate,
+    UpdateEmailTemplate,
 };
 use crate::application::email_usecases::{
     SendInvoice, TestEmailConnection, UpdateEmailConfig, UpdateEmailPassword,
@@ -102,6 +108,12 @@ pub struct AppState {
     pub test_email_connection: TestEmailConnection,
     pub send_invoice: SendInvoice,
 
+    pub create_email_template: CreateEmailTemplate,
+    pub update_email_template: UpdateEmailTemplate,
+    pub delete_email_template: DeleteEmailTemplate,
+    pub set_default_email_template: SetDefaultEmailTemplate,
+    pub list_email_templates: ListEmailTemplates,
+
     pub record_payment: RecordPayment,
     pub update_payment: UpdatePayment,
     pub delete_payment: DeletePayment,
@@ -148,6 +160,7 @@ impl AppState {
         let notebook_section_repo = Arc::new(SqliteNotebookSectionRepository::new(db.clone()));
         let client_notebook_repo = Arc::new(SqliteClientNotebookRepository::new(db.clone()));
         let client_journal_repo = Arc::new(SqliteClientJournalRepository::new(db.clone()));
+        let email_template_repo = Arc::new(SqliteEmailTemplateRepository::new(db.clone()));
         let number_gen = Arc::new(SqliteInvoiceNumberGenerator::new(db));
         let pdf = Arc::new(TypstPdfGenerator::new());
         let pdf_storage = Arc::new(FilesystemPdfStorage::new(
@@ -233,7 +246,14 @@ impl AppState {
                 settings_repo,
                 credentials,
                 email_sender,
+                email_template_repo.clone(),
             ),
+
+            create_email_template: CreateEmailTemplate::new(email_template_repo.clone()),
+            update_email_template: UpdateEmailTemplate::new(email_template_repo.clone()),
+            delete_email_template: DeleteEmailTemplate::new(email_template_repo.clone()),
+            set_default_email_template: SetDefaultEmailTemplate::new(email_template_repo.clone()),
+            list_email_templates: ListEmailTemplates::new(email_template_repo),
 
             record_payment: RecordPayment::new(payment_repo.clone(), invoice_repo.clone()),
             update_payment: UpdatePayment::new(payment_repo.clone(), invoice_repo.clone()),

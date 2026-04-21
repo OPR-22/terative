@@ -103,21 +103,22 @@ CREATE TABLE invoice_templates (
 );
 
 CREATE TABLE invoices (
-    id          TEXT PRIMARY KEY,
-    number      INTEGER UNIQUE,
-    client_id   TEXT NOT NULL REFERENCES clients(id),
-    template_id TEXT REFERENCES invoice_templates(id),
-    date        TEXT NOT NULL,
-    due_date    TEXT,
-    subtotal    INTEGER NOT NULL,
-    tax_total   INTEGER NOT NULL,
-    total       INTEGER NOT NULL,
-    currency    TEXT NOT NULL DEFAULT 'EUR',
-    status      TEXT NOT NULL DEFAULT 'Draft',
-    pdf_path    TEXT,
-    notes       TEXT,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
+    id                  TEXT PRIMARY KEY,
+    number              INTEGER UNIQUE,
+    client_id           TEXT NOT NULL REFERENCES clients(id),
+    template_id         TEXT REFERENCES invoice_templates(id),
+    date                TEXT NOT NULL,
+    due_date            TEXT,
+    subtotal            INTEGER NOT NULL,
+    tax_total           INTEGER NOT NULL,
+    total               INTEGER NOT NULL,
+    currency            TEXT NOT NULL DEFAULT 'EUR',
+    status              TEXT NOT NULL DEFAULT 'Draft',
+    pdf_path            TEXT,
+    notes               TEXT,
+    emails_sent_count   INTEGER NOT NULL DEFAULT 0,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
 );
 
 CREATE TABLE invoice_line_items (
@@ -171,13 +172,20 @@ CREATE TABLE seller_profile (
 );
 INSERT INTO seller_profile (id) VALUES (1);
 
+CREATE TABLE email_templates (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    template_type   TEXT NOT NULL CHECK (template_type IN ('InitialContact', 'FollowUp')),
+    subject_template TEXT NOT NULL DEFAULT '',
+    body_template   TEXT NOT NULL DEFAULT '',
+    is_default      INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE email_config (
     id                  INTEGER PRIMARY KEY CHECK (id = 1),
     smtp_host           TEXT NOT NULL DEFAULT '',
     smtp_port           INTEGER NOT NULL DEFAULT 587,
-    sender_address      TEXT NOT NULL DEFAULT '',
-    subject_template    TEXT NOT NULL DEFAULT '',
-    body_template       TEXT NOT NULL DEFAULT ''
+    sender_address      TEXT NOT NULL DEFAULT ''
 );
 INSERT INTO email_config (id) VALUES (1);
 

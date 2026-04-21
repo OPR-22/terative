@@ -2,6 +2,7 @@ pub mod accounting_usecases;
 pub mod catalog_item_usecases;
 pub mod client_usecases;
 pub mod dto;
+pub mod email_template_usecases;
 pub mod email_usecases;
 pub mod invoice_usecases;
 pub mod notebook_usecases;
@@ -13,6 +14,7 @@ pub mod template_usecases;
 
 use crate::domain::catalog_item::CatalogItemError;
 use crate::domain::client::ClientError;
+use crate::domain::email_template::EmailTemplateError;
 use crate::domain::invoice::InvoiceError;
 use crate::domain::line_item::LineItemError;
 use crate::domain::money::MoneyError;
@@ -64,6 +66,8 @@ pub enum AppError {
     #[error(transparent)]
     EmailConfig(#[from] EmailConfigError),
     #[error(transparent)]
+    EmailTemplate(#[from] EmailTemplateError),
+    #[error(transparent)]
     Email(#[from] EmailError),
     #[error(transparent)]
     Repo(#[from] RepoError),
@@ -77,6 +81,10 @@ pub enum AppError {
     MissingSmtpPassword,
     #[error("invoice has no pdf to send; finalize it first")]
     MissingInvoicePdf,
+    #[error("no default email template configured for this type")]
+    NoDefaultEmailTemplate,
+    #[error("cannot delete the default email template")]
+    EmailTemplateIsDefault,
     #[error("entity not found")]
     NotFound,
 }
