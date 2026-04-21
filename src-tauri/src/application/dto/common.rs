@@ -43,6 +43,57 @@ impl TryFrom<MoneyDto> for Money {
     }
 }
 
+// ---- PageDto ----
+
+/// Serializable mirror of [`crate::application::ports::Page`] for the IPC boundary.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct PageDto<T: specta::Type> {
+    pub first: u32,
+    pub last: u32,
+    pub previous: Option<u32>,
+    pub next: Option<u32>,
+    pub total: u64,
+    pub data: Vec<T>,
+}
+
+impl<T: specta::Type> From<crate::application::ports::Page<T>> for PageDto<T> {
+    fn from(page: crate::application::ports::Page<T>) -> Self {
+        Self {
+            first: page.first,
+            last: page.last,
+            previous: page.previous,
+            next: page.next,
+            total: page.total,
+            data: page.data,
+        }
+    }
+}
+
+/// Pagination input parameters sent from the frontend.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
+pub struct PaginationParamsDto {
+    #[serde(default)]
+    pub page: Option<u32>,
+    #[serde(default)]
+    pub per_page: Option<u32>,
+}
+
+impl From<PaginationParamsDto> for crate::application::ports::PaginationParams {
+    fn from(dto: PaginationParamsDto) -> Self {
+        let defaults = Self::default();
+        Self {
+            page: dto.page.unwrap_or(defaults.page).max(1),
+            per_page: dto.per_page.unwrap_or(defaults.per_page).clamp(1, 200),
+        }
+    }
+}
+
+impl From<Option<PaginationParamsDto>> for crate::application::ports::PaginationParams {
+    fn from(opt: Option<PaginationParamsDto>) -> Self {
+        opt.unwrap_or_default().into()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

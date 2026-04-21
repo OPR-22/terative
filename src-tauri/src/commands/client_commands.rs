@@ -1,7 +1,7 @@
 use tauri::State;
 use uuid::Uuid;
 
-use crate::application::dto::{ClientDto, ListClientsQueryDto, NewClientDto, UpdateClientDto};
+use crate::application::dto::{ClientDto, ListClientsQueryDto, NewClientDto, PageDto, UpdateClientDto};
 use crate::domain::client::ClientId;
 
 use super::{to_ipc_err, AppState};
@@ -55,12 +55,12 @@ pub fn client_unarchive(state: State<'_, AppState>, id: Uuid) -> Result<(), Stri
 pub fn client_list(
     state: State<'_, AppState>,
     query: Option<ListClientsQueryDto>,
-) -> Result<Vec<ClientDto>, String> {
-    state
+) -> Result<PageDto<ClientDto>, String> {
+    let page = state
         .list_clients
         .execute(query.unwrap_or_default().into())
-        .map(|list| list.iter().map(Into::into).collect())
-        .map_err(to_ipc_err)
+        .map_err(to_ipc_err)?;
+    Ok(page.map(|c| ClientDto::from(&c)).into())
 }
 
 #[tauri::command]

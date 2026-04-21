@@ -8,6 +8,7 @@ import { ClientList } from "./pages/ClientList";
 import { Dashboard } from "./pages/Dashboard";
 import { InvoiceList } from "./pages/InvoiceList";
 import { PaymentList } from "./pages/PaymentList";
+import { EmailTemplates } from "./pages/EmailTemplates";
 import { Settings } from "./pages/Settings";
 import { TaxList } from "./pages/TaxList";
 import { TemplateList } from "./pages/TemplateList";
@@ -26,6 +27,7 @@ function App() {
         <Route path="taxes" element={<TaxList />} />
         <Route path="accounting" element={<Accounting />} />
         <Route path="templates" element={<TemplateList />} />
+        <Route path="email-templates" element={<EmailTemplates />} />
         <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>

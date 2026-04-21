@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 
-use crate::application::ports::{ClientRepository, ListClientsQuery};
+use crate::application::ports::{ClientRepository, ListClientsQuery, Page};
 use crate::application::AppError;
 use crate::domain::client::{Client, ClientId, NewClient, NewContactEntry};
 
@@ -102,7 +102,7 @@ impl ListClients {
         Self { repo }
     }
 
-    pub fn execute(&self, query: ListClientsQuery) -> Result<Vec<Client>, AppError> {
+    pub fn execute(&self, query: ListClientsQuery) -> Result<Page<Client>, AppError> {
         Ok(self.repo.list(query)?)
     }
 }
@@ -135,6 +135,7 @@ fn normalize(s: Option<String>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::ports::PaginationParams;
     use crate::application::RepoError;
     use parking_lot::Mutex;
     use std::collections::HashMap;
@@ -160,7 +161,7 @@ mod tests {
         fn get(&self, id: ClientId) -> Result<Option<Client>, RepoError> {
             Ok(self.inner.lock().get(&id).cloned())
         }
-        fn list(&self, query: ListClientsQuery) -> Result<Vec<Client>, RepoError> {
+        fn list(&self, query: ListClientsQuery) -> Result<Page<Client>, RepoError> {
             let g = self.inner.lock();
             let mut v: Vec<Client> = g
                 .values()
@@ -175,7 +176,8 @@ mod tests {
                 .cloned()
                 .collect();
             v.sort_by(|a, b| a.name.cmp(&b.name));
-            Ok(v)
+            let total = v.len() as u64;
+            Ok(Page::new(v, total, &PaginationParams::default()))
         }
     }
 
@@ -349,16 +351,17 @@ mod tests {
         let list = ListClients::new(repo.clone())
             .execute(ListClientsQuery::default())
             .unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].name, "Beta");
+        assert_eq!(list.data.len(), 1);
+        assert_eq!(list.data[0].name, "Beta");
 
         let all = ListClients::new(repo.clone())
             .execute(ListClientsQuery {
                 include_inactive: true,
                 search: None,
+                ..Default::default()
             })
             .unwrap();
-        assert_eq!(all.len(), 2);
+        assert_eq!(all.data.len(), 2);
     }
 
     #[test]
@@ -381,10 +384,11 @@ mod tests {
             .execute(ListClientsQuery {
                 search: Some("acm".into()),
                 include_inactive: false,
+                ..Default::default()
             })
             .unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].name, "Acme Corp");
+        assert_eq!(list.data.len(), 1);
+        assert_eq!(list.data[0].name, "Acme Corp");
     }
 
     #[test]

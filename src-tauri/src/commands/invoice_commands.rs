@@ -3,7 +3,7 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::application::dto::{
-    InvoiceDto, ListInvoicesQueryDto, NewInvoiceDto, UpdateDraftInvoiceDto,
+    InvoiceDto, ListInvoicesQueryDto, NewInvoiceDto, PageDto, UpdateDraftInvoiceDto,
 };
 use crate::application::AppError;
 use crate::domain::invoice::InvoiceId;
@@ -86,17 +86,15 @@ pub fn invoice_cancel(
 pub fn invoice_list(
     state: State<'_, AppState>,
     query: Option<ListInvoicesQueryDto>,
-) -> Result<Vec<InvoiceDto>, String> {
+) -> Result<PageDto<InvoiceDto>, String> {
     let today = Utc::now().date_naive();
-    state
+    let page = state
         .list_invoices
         .execute(query.unwrap_or_default().into())
-        .map(|list| {
-            list.iter()
-                .map(|(i, paid)| InvoiceDto::from_invoice_enriched(i, *paid, today))
-                .collect()
-        })
-        .map_err(to_ipc_err)
+        .map_err(to_ipc_err)?;
+    Ok(page
+        .map(|(i, paid)| InvoiceDto::from_invoice_enriched(&i, paid, today))
+        .into())
 }
 
 #[tauri::command]

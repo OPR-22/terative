@@ -5,7 +5,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 use uuid::Uuid;
 
 use crate::adapters::sqlite::connection::Db;
-use crate::application::ports::{ClientRepository, ListClientsQuery};
+use crate::application::ports::{ClientRepository, ListClientsQuery, Page};
 use crate::application::RepoError;
 use crate::domain::client::{Client, ClientId, ContactEntry, ContactEntryId};
 
@@ -218,11 +218,10 @@ impl ClientRepository for SqliteClientRepository {
         Ok(client)
     }
 
-    fn list(&self, query: ListClientsQuery) -> Result<Vec<Client>, RepoError> {
+    fn list(&self, query: ListClientsQuery) -> Result<Page<Client>, RepoError> {
         let conn = self.db.lock();
-        let mut sql = String::from(
-            "SELECT id, name, address, notes, referred_by, active, created_at FROM clients",
-        );
+
+        let mut where_clause = String::new();
         let mut clauses: Vec<&str> = Vec::new();
         if !query.include_inactive {
             clauses.push("active = 1");
@@ -235,12 +234,27 @@ impl ClientRepository for SqliteClientRepository {
             clauses.push("LOWER(name) LIKE ?1");
         }
         if !clauses.is_empty() {
-            sql.push_str(" WHERE ");
-            sql.push_str(&clauses.join(" AND "));
+            where_clause = format!(" WHERE {}", clauses.join(" AND "));
         }
-        sql.push_str(" ORDER BY name COLLATE NOCASE ASC");
 
-        let mut stmt = conn.prepare(&sql).map_err(map_err)?;
+        // Count total matching rows.
+        let count_sql = format!("SELECT COUNT(*) FROM clients{where_clause}");
+        let total: u64 = if let Some(ref pat) = search_pattern {
+            conn.query_row(&count_sql, params![pat], |r| r.get::<_, i64>(0))
+        } else {
+            conn.query_row(&count_sql, [], |r| r.get::<_, i64>(0))
+        }
+        .map_err(map_err)? as u64;
+
+        // Fetch the page.
+        let offset = query.pagination.offset();
+        let limit = query.pagination.per_page as u64;
+        let select_sql = format!(
+            "SELECT id, name, address, notes, referred_by, active, created_at FROM clients{where_clause} \
+             ORDER BY name COLLATE NOCASE ASC LIMIT {limit} OFFSET {offset}"
+        );
+
+        let mut stmt = conn.prepare(&select_sql).map_err(map_err)?;
         let rows = if let Some(pat) = search_pattern {
             stmt.query_map(params![pat], row_to_bare_client)
         } else {
@@ -253,7 +267,7 @@ impl ClientRepository for SqliteClientRepository {
         }
         drop(stmt);
         hydrate_contacts(&conn, &mut out)?;
-        Ok(out)
+        Ok(Page::new(out, total, &query.pagination))
     }
 }
 
@@ -381,8 +395,8 @@ mod tests {
         repo.insert(&a).unwrap();
         repo.insert(&b).unwrap();
         let list = repo.list(ListClientsQuery::default()).unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].name, "Beta");
+        assert_eq!(list.data.len(), 1);
+        assert_eq!(list.data[0].name, "Beta");
     }
 
     #[test]
@@ -396,9 +410,10 @@ mod tests {
             .list(ListClientsQuery {
                 include_inactive: true,
                 search: None,
+                ..Default::default()
             })
             .unwrap();
-        assert_eq!(list.len(), 1);
+        assert_eq!(list.data.len(), 1);
     }
 
     #[test]
@@ -411,10 +426,11 @@ mod tests {
             .list(ListClientsQuery {
                 search: Some("ACM".into()),
                 include_inactive: false,
+                ..Default::default()
             })
             .unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].name, "Acme Corp");
+        assert_eq!(list.data.len(), 1);
+        assert_eq!(list.data[0].name, "Acme Corp");
     }
 
     #[test]
@@ -426,7 +442,7 @@ mod tests {
         repo.insert(&make_client("mid")).unwrap();
         let list = repo.list(ListClientsQuery::default()).unwrap();
         assert_eq!(
-            list.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            list.data.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
             vec!["alpha", "mid", "Zeta"]
         );
     }

@@ -4,15 +4,19 @@ import {
   type InvoiceDto,
   type ListInvoicesQueryDto,
   type NewInvoiceDto,
+  type PageDto,
   type UpdateDraftInvoiceDto,
 } from "../ipc";
 
 interface InvoiceState {
   invoices: InvoiceDto[];
+  page: PageDto<InvoiceDto> | null;
   loading: boolean;
   error: string | null;
   query: ListInvoicesQueryDto;
+  currentPage: number;
   setQuery: (q: ListInvoicesQueryDto) => void;
+  setPage: (page: number) => void;
   refresh: () => Promise<void>;
   get: (id: string) => Promise<InvoiceDto>;
   createDraft: (input: NewInvoiceDto) => Promise<InvoiceDto>;
@@ -25,18 +29,32 @@ interface InvoiceState {
 
 export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   invoices: [],
+  page: null,
   loading: false,
   error: null,
   query: {},
+  currentPage: 1,
   setQuery: (query) => {
-    set({ query });
+    set({ query, currentPage: 1 });
+    void get().refresh();
+  },
+  setPage: (currentPage) => {
+    set({ currentPage });
     void get().refresh();
   },
   refresh: async () => {
     set({ loading: true, error: null });
     try {
-      const invoices = await ipc.invoiceList(get().query);
-      set({ invoices, loading: false });
+      const result = await ipc.invoiceList({
+        ...get().query,
+        pagination: { page: get().currentPage },
+      });
+      set({
+        invoices: result.data,
+        page: result,
+        currentPage: result.next ? result.next - 1 : result.last,
+        loading: false,
+      });
     } catch (e) {
       set({ error: String(e), loading: false });
     }

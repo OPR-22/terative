@@ -11,6 +11,7 @@
     "taxes": "Taxes",
     "accounting": "Comptabilité",
     "templates": "Modèles",
+    "email_templates": "E-mails",
     "settings": "Paramètres"
   },
   "common": {
@@ -27,6 +28,7 @@
     "loading": "Chargement…",
     "empty": "Aucun résultat",
     "confirm_delete": "Confirmer la suppression ?",
+    "add": "Ajouter",
     "archive": "Archiver",
     "unarchive": "Désarchiver",
     "confirm_archive": "Confirmer l'archivage ?",
@@ -297,11 +299,16 @@
   },
   "email_templates": {
     "title": "Modèles d'e-mail",
+    "page_desc": "Gérez les modèles d'e-mail utilisés lors de l'envoi de factures. Le modèle par défaut de chaque type est utilisé automatiquement.",
     "initial_contact": "Premier contact",
+    "initial_contact_desc": "Envoyé la première fois que vous envoyez une facture à un client.",
     "follow_up": "Relance",
+    "follow_up_desc": "Envoyé comme rappel lorsque le client n'a pas répondu.",
     "name": "Nom du modèle",
+    "name_placeholder": "ex. Rappel amical",
     "subject": "Objet",
     "body": "Corps",
+    "new_template": "Nouveau modèle",
     "set_default": "Par défaut",
     "default_badge": "Par défaut",
     "none": "Aucun modèle.",

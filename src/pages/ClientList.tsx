@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
+import { Pagination } from "../components/common/Pagination";
 import { ContactListEditor } from "../components/client/ContactListEditor";
 import { useClientStore } from "../stores/clientStore";
 import type { ClientDto, ContactEntryDto, NewClientDto } from "../ipc";
@@ -27,10 +28,13 @@ export function ClientList() {
   const navigate = useNavigate();
   const {
     clients,
+    page,
+    currentPage,
     loading,
     error,
     query,
     setQuery,
+    setPage,
     refresh,
     create,
     archive,
@@ -134,6 +138,18 @@ export function ClientList() {
           </tbody>
         </table>
       )}
+
+      {page ? (
+        <Pagination
+          first={page.first}
+          last={page.last}
+          previous={page.previous}
+          next={page.next}
+          total={page.total}
+          currentPage={currentPage}
+          onPageChange={setPage}
+        />
+      ) : null}
 
       {editor.mode === "create" ? (
         <ClientEditor

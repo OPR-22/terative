@@ -125,6 +125,14 @@ pub struct ListClientsQueryDto {
     pub search: Option<String>,
     #[serde(default)]
     pub include_inactive: bool,
+    #[serde(default)]
+    pub pagination: Option<super::PaginationParamsDto>,
+}
+
+impl ListClientsQueryDto {
+    pub fn pagination_params(&self) -> crate::application::ports::PaginationParams {
+        self.pagination.clone().into()
+    }
 }
 
 impl From<ListClientsQueryDto> for ListClientsQuery {
@@ -132,6 +140,7 @@ impl From<ListClientsQueryDto> for ListClientsQuery {
         ListClientsQuery {
             search: dto.search,
             include_inactive: dto.include_inactive,
+            pagination: dto.pagination.into(),
         }
     }
 }

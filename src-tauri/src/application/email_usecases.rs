@@ -9,7 +9,7 @@ use crate::application::ports::{
 };
 use crate::application::AppError;
 use crate::domain::email_template::EmailTemplateType;
-use crate::domain::invoice::{Invoice, InvoiceId, InvoiceStatus};
+use crate::domain::invoice::{EmailSend, EmailSendId, Invoice, InvoiceId, InvoiceStatus};
 use crate::domain::settings::{CurrencyConfig, SellerProfile};
 
 pub struct UpdateEmailConfig {
@@ -140,7 +140,7 @@ impl SendInvoice {
                 "client has no email address".into(),
             )))?;
 
-        let template_type = if invoice.emails_sent_count == 0 {
+        let template_type = if invoice.email_sends.is_empty() {
             EmailTemplateType::InitialContact
         } else {
             EmailTemplateType::FollowUp
@@ -183,7 +183,16 @@ impl SendInvoice {
             }),
         })?;
 
-        invoice.record_email_sent(Utc::now())?;
+        let now = Utc::now();
+        let send = EmailSend {
+            id: EmailSendId::new(),
+            template_type,
+            template_name: email_template.name.clone(),
+            to_address: to_address.clone(),
+            subject: subject.clone(),
+            sent_at: now,
+        };
+        invoice.record_email_sent(send, now)?;
         self.invoices.update(&invoice)?;
         Ok(invoice)
     }
@@ -222,7 +231,7 @@ pub(crate) fn build_placeholder_vars<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::ports::{EmailError, ListInvoicesQuery};
+    use crate::application::ports::{EmailError, ListInvoicesQuery, Page, PaginationParams};
     use crate::application::RepoError;
     use crate::domain::client::{Client, ClientId, NewClient};
     use crate::domain::email_template::{EmailTemplate, EmailTemplateId, NewEmailTemplate};
@@ -251,8 +260,10 @@ mod tests {
         fn get(&self, id: InvoiceId) -> Result<Option<Invoice>, RepoError> {
             Ok(self.0.lock().get(&id).cloned())
         }
-        fn list(&self, _: ListInvoicesQuery) -> Result<Vec<Invoice>, RepoError> {
-            Ok(self.0.lock().values().cloned().collect())
+        fn list(&self, _: ListInvoicesQuery) -> Result<Page<Invoice>, RepoError> {
+            let items: Vec<Invoice> = self.0.lock().values().cloned().collect();
+            let total = items.len() as u64;
+            Ok(Page::new(items, total, &PaginationParams::default()))
         }
         fn delete(&self, _: InvoiceId) -> Result<(), RepoError> {
             Ok(())
@@ -276,8 +287,8 @@ mod tests {
         fn list(
             &self,
             _: crate::application::ports::ListClientsQuery,
-        ) -> Result<Vec<Client>, RepoError> {
-            Ok(vec![])
+        ) -> Result<Page<Client>, RepoError> {
+            Ok(Page::new(vec![], 0, &PaginationParams::default()))
         }
     }
 
@@ -515,7 +526,7 @@ mod tests {
             status: InvoiceStatus::Finalized,
             pdf_path,
             notes: None,
-            emails_sent_count: 0,
+            email_sends: Vec::new(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

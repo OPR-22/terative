@@ -176,7 +176,7 @@ impl GetPayment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::ports::ListInvoicesQuery;
+    use crate::application::ports::{ListInvoicesQuery, Page, PaginationParams};
     use crate::application::RepoError;
     use crate::domain::client::ClientId;
     use crate::domain::invoice::{Invoice, InvoiceId, InvoiceNumber, NewInvoice};
@@ -277,8 +277,10 @@ mod tests {
         fn get(&self, id: InvoiceId) -> Result<Option<Invoice>, RepoError> {
             Ok(self.invoices.lock().get(&id).cloned())
         }
-        fn list(&self, _: ListInvoicesQuery) -> Result<Vec<Invoice>, RepoError> {
-            Ok(self.invoices.lock().values().cloned().collect())
+        fn list(&self, _: ListInvoicesQuery) -> Result<Page<Invoice>, RepoError> {
+            let items: Vec<Invoice> = self.invoices.lock().values().cloned().collect();
+            let total = items.len() as u64;
+            Ok(Page::new(items, total, &PaginationParams::default()))
         }
         fn delete(&self, _: InvoiceId) -> Result<(), RepoError> {
             Ok(())

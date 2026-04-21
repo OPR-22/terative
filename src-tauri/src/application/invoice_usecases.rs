@@ -3,8 +3,9 @@ use std::sync::Arc;
 use chrono::{NaiveDate, Utc};
 
 use crate::application::ports::{
-    ClientRepository, InvoiceNumberGenerator, InvoiceRepository, ListInvoicesQuery, PaymentRepository,
-    PdfGenerator, PdfRenderInput, PdfStorage, SettingsRepository, TaxRepository, TemplateRepository,
+    ClientRepository, InvoiceNumberGenerator, InvoiceRepository, ListInvoicesQuery, Page,
+    PaymentRepository, PdfGenerator, PdfRenderInput, PdfStorage, SettingsRepository,
+    TaxRepository, TemplateRepository,
 };
 use crate::application::AppError;
 use crate::domain::invoice::{Invoice, InvoiceId, InvoiceStatus, NewInvoice};
@@ -304,20 +305,17 @@ impl ListInvoices {
     pub fn execute(
         &self,
         query: ListInvoicesQuery,
-    ) -> Result<Vec<(Invoice, Money)>, AppError> {
-        let list = self.invoices.list(query)?;
-        let ids: Vec<InvoiceId> = list.iter().map(|i| i.id).collect();
+    ) -> Result<Page<(Invoice, Money)>, AppError> {
+        let page = self.invoices.list(query)?;
+        let ids: Vec<InvoiceId> = page.data.iter().map(|i| i.id).collect();
         let totals = self.payments.allocated_for_invoices(&ids)?;
-        Ok(list
-            .into_iter()
-            .map(|inv| {
-                let paid = totals
-                    .get(&inv.id)
-                    .copied()
-                    .unwrap_or_else(|| Money::new(0, inv.currency));
-                (inv, paid)
-            })
-            .collect())
+        Ok(page.map(|inv| {
+            let paid = totals
+                .get(&inv.id)
+                .copied()
+                .unwrap_or_else(|| Money::new(0, inv.currency));
+            (inv, paid)
+        }))
     }
 }
 
@@ -344,6 +342,7 @@ impl GetInvoice {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::ports::PaginationParams;
     use crate::application::RepoError;
     use crate::domain::client::ClientId;
     use crate::domain::money::{Currency, Money};
@@ -374,7 +373,7 @@ mod tests {
         fn get(&self, id: InvoiceId) -> Result<Option<Invoice>, RepoError> {
             Ok(self.inner.lock().get(&id).cloned())
         }
-        fn list(&self, query: ListInvoicesQuery) -> Result<Vec<Invoice>, RepoError> {
+        fn list(&self, query: ListInvoicesQuery) -> Result<Page<Invoice>, RepoError> {
             let mut v: Vec<Invoice> = self
                 .inner
                 .lock()
@@ -384,7 +383,8 @@ mod tests {
                 .cloned()
                 .collect();
             v.sort_by(|a, b| b.created_at.cmp(&a.created_at));
-            Ok(v)
+            let total = v.len() as u64;
+            Ok(Page::new(v, total, &PaginationParams::default()))
         }
         fn delete(&self, id: InvoiceId) -> Result<(), RepoError> {
             self.inner.lock().remove(&id);
@@ -803,14 +803,14 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
-        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts.data.len(), 1);
         let finalized = ListInvoices::new(inv_repo, stub_payments())
             .execute(ListInvoicesQuery {
                 status: Some(InvoiceStatus::Finalized),
                 ..Default::default()
             })
             .unwrap();
-        assert_eq!(finalized.len(), 1);
+        assert_eq!(finalized.data.len(), 1);
     }
 
     #[test]
@@ -859,8 +859,8 @@ mod tests {
         fn list(
             &self,
             _q: crate::application::ports::ListClientsQuery,
-        ) -> Result<Vec<Client>, RepoError> {
-            Ok(vec![])
+        ) -> Result<Page<Client>, RepoError> {
+            Ok(Page::new(vec![], 0, &PaginationParams::default()))
         }
     }
 

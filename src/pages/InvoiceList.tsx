@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "../components/common/Button";
+import { Pagination } from "../components/common/Pagination";
 import { StatusBadge } from "../components/invoice/StatusBadge";
 import { PaymentStatusBadge } from "../components/invoice/PaymentStatusBadge";
 import { MarkPaidModal } from "../components/invoice/MarkPaidModal";
@@ -22,10 +23,13 @@ export function InvoiceList() {
   const { t } = useTranslation();
   const {
     invoices,
+    page,
+    currentPage,
     loading,
     error,
     query,
     setQuery,
+    setPage,
     refresh,
     finalize,
     duplicate,
@@ -152,7 +156,7 @@ export function InvoiceList() {
                         void send(inv.id).catch((e) => alert(String(e)))
                       }
                     >
-                      {inv.emails_sent_count === 0
+                      {inv.email_sends.length === 0
                         ? t("invoices.send")
                         : t("invoices.send_reminder")}
                     </Button>
@@ -190,6 +194,18 @@ export function InvoiceList() {
           </tbody>
         </table>
       )}
+
+      {page ? (
+        <Pagination
+          first={page.first}
+          last={page.last}
+          previous={page.previous}
+          next={page.next}
+          total={page.total}
+          currentPage={currentPage}
+          onPageChange={setPage}
+        />
+      ) : null}
 
       {payFor ? (
         <MarkPaidModal

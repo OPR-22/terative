@@ -9,8 +9,9 @@ use super::common::MoneyDto;
 use crate::application::invoice_usecases::UpdateDraftInvoiceInput;
 use crate::application::ports::ListInvoicesQuery;
 use crate::domain::client::ClientId;
+use crate::application::dto::email_template::EmailTemplateTypeDto;
 use crate::domain::invoice::{
-    AppliedTax, Invoice, InvoiceId, InvoiceStatus, NewInvoice,
+    AppliedTax, EmailSend, Invoice, InvoiceId, InvoiceStatus, NewInvoice,
 };
 use crate::domain::line_item::{LineItem, NewLineItem};
 #[cfg(test)]
@@ -115,6 +116,31 @@ impl From<&AppliedTax> for AppliedTaxDto {
     }
 }
 
+// ---- EmailSendDto ----
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct EmailSendDto {
+    pub id: Uuid,
+    pub template_type: EmailTemplateTypeDto,
+    pub template_name: String,
+    pub to_address: String,
+    pub subject: String,
+    pub sent_at: DateTime<Utc>,
+}
+
+impl From<&EmailSend> for EmailSendDto {
+    fn from(s: &EmailSend) -> Self {
+        Self {
+            id: s.id.0,
+            template_type: s.template_type.into(),
+            template_name: s.template_name.clone(),
+            to_address: s.to_address.clone(),
+            subject: s.subject.clone(),
+            sent_at: s.sent_at,
+        }
+    }
+}
+
 // ---- InvoiceDto ----
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -139,7 +165,7 @@ pub struct InvoiceDto {
     pub payment_status: Option<DerivedPaymentStatusDto>,
     pub pdf_path: Option<String>,
     pub notes: Option<String>,
-    pub emails_sent_count: u32,
+    pub email_sends: Vec<EmailSendDto>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -187,7 +213,7 @@ impl InvoiceDto {
             payment_status,
             pdf_path: i.pdf_path.clone(),
             notes: i.notes.clone(),
-            emails_sent_count: i.emails_sent_count,
+            email_sends: i.email_sends.iter().map(Into::into).collect(),
             created_at: i.created_at,
             updated_at: i.updated_at,
         }
@@ -274,6 +300,14 @@ pub struct ListInvoicesQueryDto {
     pub client_id: Option<Uuid>,
     #[serde(default)]
     pub search: Option<String>,
+    #[serde(default)]
+    pub pagination: Option<super::PaginationParamsDto>,
+}
+
+impl ListInvoicesQueryDto {
+    pub fn pagination_params(&self) -> crate::application::ports::PaginationParams {
+        self.pagination.clone().into()
+    }
 }
 
 impl From<ListInvoicesQueryDto> for ListInvoicesQuery {
@@ -282,6 +316,7 @@ impl From<ListInvoicesQueryDto> for ListInvoicesQuery {
             status: dto.status.map(Into::into),
             client_id: dto.client_id.map(ClientId),
             search: dto.search,
+            pagination: dto.pagination.into(),
         }
     }
 }
@@ -329,7 +364,7 @@ mod tests {
             status: InvoiceStatus::Finalized,
             pdf_path: None,
             notes: None,
-            emails_sent_count: 0,
+            email_sends: Vec::new(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

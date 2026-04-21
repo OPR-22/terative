@@ -4,15 +4,19 @@ import {
   type ClientDto,
   type ListClientsQueryDto,
   type NewClientDto,
+  type PageDto,
   type UpdateClientDto,
 } from "../ipc";
 
 interface ClientState {
   clients: ClientDto[];
+  page: PageDto<ClientDto> | null;
   loading: boolean;
   error: string | null;
   query: ListClientsQueryDto;
+  currentPage: number;
   setQuery: (q: ListClientsQueryDto) => void;
+  setPage: (page: number) => void;
   refresh: () => Promise<void>;
   create: (input: NewClientDto) => Promise<ClientDto>;
   update: (input: UpdateClientDto) => Promise<ClientDto>;
@@ -22,18 +26,32 @@ interface ClientState {
 
 export const useClientStore = create<ClientState>((set, get) => ({
   clients: [],
+  page: null,
   loading: false,
   error: null,
   query: {},
+  currentPage: 1,
   setQuery: (query) => {
-    set({ query });
+    set({ query, currentPage: 1 });
+    void get().refresh();
+  },
+  setPage: (currentPage) => {
+    set({ currentPage });
     void get().refresh();
   },
   refresh: async () => {
     set({ loading: true, error: null });
     try {
-      const clients = await ipc.clientList(get().query);
-      set({ clients, loading: false });
+      const result = await ipc.clientList({
+        ...get().query,
+        pagination: { page: get().currentPage },
+      });
+      set({
+        clients: result.data,
+        page: result,
+        currentPage: result.next ? result.next - 1 : result.last,
+        loading: false,
+      });
     } catch (e) {
       set({ error: String(e), loading: false });
     }

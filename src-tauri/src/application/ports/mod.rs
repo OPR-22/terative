@@ -1,3 +1,4 @@
+pub mod pagination;
 pub mod accounting_queries;
 pub mod catalog_item_repository;
 pub mod client_journal_repository;
@@ -38,3 +39,4 @@ pub use catalog_item_repository::CatalogItemRepository;
 pub use settings_repository::SettingsRepository;
 pub use tax_repository::TaxRepository;
 pub use template_repository::TemplateRepository;
+pub use pagination::{Page, PaginationParams};

@@ -11,6 +11,7 @@
     "taxes": "Taxes",
     "accounting": "Accounting",
     "templates": "Templates",
+    "email_templates": "Emails",
     "settings": "Settings"
   },
   "common": {
@@ -27,6 +28,7 @@
     "loading": "Loading…",
     "empty": "No results",
     "confirm_delete": "Confirm deletion?",
+    "add": "Add",
     "archive": "Archive",
     "unarchive": "Unarchive",
     "confirm_archive": "Confirm archive?",
@@ -297,11 +299,16 @@
   },
   "email_templates": {
     "title": "Email templates",
+    "page_desc": "Manage the email templates used when sending invoices. The default template for each type is used automatically.",
     "initial_contact": "Initial contact",
+    "initial_contact_desc": "Sent the first time you email an invoice to a client.",
     "follow_up": "Follow-up",
+    "follow_up_desc": "Sent as a reminder when the client hasn't responded.",
     "name": "Template name",
+    "name_placeholder": "e.g. Friendly reminder",
     "subject": "Subject",
     "body": "Body",
+    "new_template": "New template",
     "set_default": "Set as default",
     "default_badge": "Default",
     "none": "No templates.",

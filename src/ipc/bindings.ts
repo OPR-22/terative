@@ -11,7 +11,8 @@ export const commands = {
 	clientList: (query: {
 	search?: string | null,
 	include_inactive?: boolean,
-} | null) => typedError<ClientDto[], string>(__TAURI_INVOKE("client_list", { query })),
+	pagination?: PaginationParamsDto | null,
+} | null) => typedError<PageDto<ClientDto>, string>(__TAURI_INVOKE("client_list", { query })),
 	clientGet: (id: string) => typedError<ClientDto, string>(__TAURI_INVOKE("client_get", { id })),
 	catalogItemCreate: (input: NewCatalogItemDto) => typedError<CatalogItemDto, string>(__TAURI_INVOKE("catalog_item_create", { input })),
 	catalogItemUpdate: (input: UpdateCatalogItemDto) => typedError<CatalogItemDto, string>(__TAURI_INVOKE("catalog_item_update", { input })),
@@ -54,7 +55,8 @@ export const commands = {
 	status?: InvoiceStatusDto | null,
 	client_id?: string | null,
 	search?: string | null,
-} | null) => typedError<InvoiceDto[], string>(__TAURI_INVOKE("invoice_list", { query })),
+	pagination?: PaginationParamsDto | null,
+} | null) => typedError<PageDto<InvoiceDto>, string>(__TAURI_INVOKE("invoice_list", { query })),
 	invoiceGet: (id: string) => typedError<InvoiceDto, string>(__TAURI_INVOKE("invoice_get", { id })),
 	settingsUpdateEmailConfig: (config: EmailConfigDto) => typedError<EmailConfigDto, string>(__TAURI_INVOKE("settings_update_email_config", { config })),
 	settingsUpdateEmailPassword: (password: string) => typedError<null, string>(__TAURI_INVOKE("settings_update_email_password", { password })),
@@ -219,6 +221,15 @@ export type EmailConfigDto = {
 	sender_address: string,
 };
 
+export type EmailSendDto = {
+	id: string,
+	template_type: EmailTemplateTypeDto,
+	template_name: string,
+	to_address: string,
+	subject: string,
+	sent_at: string,
+};
+
 export type EmailTemplateDto = {
 	id: string,
 	name: string,
@@ -255,7 +266,7 @@ export type InvoiceDto = {
 	payment_status: DerivedPaymentStatusDto | null,
 	pdf_path: string | null,
 	notes: string | null,
-	emails_sent_count: number,
+	email_sends: EmailSendDto[],
 	created_at: string,
 	updated_at: string,
 };
@@ -308,12 +319,14 @@ export type LineItemDto = {
 export type ListClientsQueryDto = {
 	search?: string | null,
 	include_inactive?: boolean,
+	pagination?: PaginationParamsDto | null,
 };
 
 export type ListInvoicesQueryDto = {
 	status?: InvoiceStatusDto | null,
 	client_id?: string | null,
 	search?: string | null,
+	pagination?: PaginationParamsDto | null,
 };
 
 export type ListPaymentsQueryDto = {
@@ -425,6 +438,22 @@ export type NotebookSectionDto = {
 	id: string,
 	name: string,
 	sort_order: number,
+};
+
+// Serializable mirror of [`crate::application::ports::Page`] for the IPC boundary.
+export type PageDto<T> = {
+	first: number,
+	last: number,
+	previous: number | null,
+	next: number | null,
+	total: number,
+	data: T[],
+};
+
+// Pagination input parameters sent from the frontend.
+export type PaginationParamsDto = {
+	page?: number | null,
+	per_page?: number | null,
 };
 
 export type PaymentAllocationDto = {

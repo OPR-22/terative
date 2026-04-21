@@ -20,6 +20,7 @@ export function Sidebar() {
     { to: "/taxes", label: t("nav.taxes") },
     { to: "/accounting", label: t("nav.accounting") },
     { to: "/templates", label: t("nav.templates") },
+    { to: "/email-templates", label: t("nav.email_templates") },
     { to: "/settings", label: t("nav.settings") },
   ];
   return (

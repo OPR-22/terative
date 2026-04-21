@@ -31,12 +31,12 @@ pub use accounting::{
 pub use client::{
     ClientDto, ContactEntryDto, ListClientsQueryDto, NewClientDto, UpdateClientDto,
 };
-pub use common::MoneyDto;
+pub use common::{MoneyDto, PageDto, PaginationParamsDto};
 pub use email_template::{
     EmailTemplateDto, EmailTemplateTypeDto, NewEmailTemplateDto, UpdateEmailTemplateDto,
 };
 pub use invoice::{
-    AppliedTaxDto, InvoiceDto, InvoiceStatusDto, LineItemDto, ListInvoicesQueryDto,
+    AppliedTaxDto, EmailSendDto, InvoiceDto, InvoiceStatusDto, LineItemDto, ListInvoicesQueryDto,
     NewInvoiceDto, NewLineItemDto, UpdateDraftInvoiceDto,
 };
 pub use notebook::{

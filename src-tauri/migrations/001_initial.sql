@@ -116,7 +116,6 @@ CREATE TABLE invoices (
     status              TEXT NOT NULL DEFAULT 'Draft',
     pdf_path            TEXT,
     notes               TEXT,
-    emails_sent_count   INTEGER NOT NULL DEFAULT 0,
     created_at          TEXT NOT NULL,
     updated_at          TEXT NOT NULL
 );
@@ -219,6 +218,18 @@ CREATE INDEX idx_alloc_payment        ON payment_allocations(payment_id);
 CREATE INDEX idx_alloc_invoice        ON payment_allocations(invoice_id);
 CREATE INDEX idx_line_items_invoice   ON invoice_line_items(invoice_id);
 CREATE INDEX idx_invoice_taxes_inv    ON invoice_taxes(invoice_id);
+
+CREATE TABLE invoice_email_sends (
+    id              TEXT PRIMARY KEY,
+    invoice_id      TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    template_type   TEXT NOT NULL,
+    template_name   TEXT NOT NULL,
+    to_address      TEXT NOT NULL,
+    subject         TEXT NOT NULL,
+    sent_at         TEXT NOT NULL
+);
+
+CREATE INDEX idx_email_sends_invoice ON invoice_email_sends(invoice_id);
 
 CREATE VIEW v_invoice_payment_status AS
 SELECT

@@ -1,3 +1,4 @@
 - file picker (Logo, signature, output path, etc.)
-- Modern / Minimal Typst layouts are stubs delegating to Classic.
--Adding recharts or similar is a polish graphs for dashboard
+- Adding recharts or similar is a polish graphs for dashboard
+- add 'bookmarked website' > pinned website so single app centralized all management you want (ex: your calendar, your square page etc.)
+- Redo design, its ugly af.
