@@ -30,11 +30,13 @@ export function ClientList() {
     clients,
     page,
     currentPage,
+    perPage,
     loading,
     error,
     query,
     setQuery,
     setPage,
+    setPerPage,
     refresh,
     create,
     archive,
@@ -147,7 +149,9 @@ export function ClientList() {
           next={page.next}
           total={page.total}
           currentPage={currentPage}
+          perPage={perPage}
           onPageChange={setPage}
+          onPerPageChange={setPerPage}
         />
       ) : null}
 

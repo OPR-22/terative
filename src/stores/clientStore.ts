@@ -15,8 +15,10 @@ interface ClientState {
   error: string | null;
   query: ListClientsQueryDto;
   currentPage: number;
+  perPage: number;
   setQuery: (q: ListClientsQueryDto) => void;
   setPage: (page: number) => void;
+  setPerPage: (perPage: number) => void;
   refresh: () => Promise<void>;
   create: (input: NewClientDto) => Promise<ClientDto>;
   update: (input: UpdateClientDto) => Promise<ClientDto>;
@@ -31,6 +33,7 @@ export const useClientStore = create<ClientState>((set, get) => ({
   error: null,
   query: {},
   currentPage: 1,
+  perPage: 25,
   setQuery: (query) => {
     set({ query, currentPage: 1 });
     void get().refresh();
@@ -39,12 +42,16 @@ export const useClientStore = create<ClientState>((set, get) => ({
     set({ currentPage });
     void get().refresh();
   },
+  setPerPage: (perPage) => {
+    set({ perPage, currentPage: 1 });
+    void get().refresh();
+  },
   refresh: async () => {
     set({ loading: true, error: null });
     try {
       const result = await ipc.clientList({
         ...get().query,
-        pagination: { page: get().currentPage },
+        pagination: { page: get().currentPage, per_page: get().perPage },
       });
       set({
         clients: result.data,

@@ -15,8 +15,10 @@ interface InvoiceState {
   error: string | null;
   query: ListInvoicesQueryDto;
   currentPage: number;
+  perPage: number;
   setQuery: (q: ListInvoicesQueryDto) => void;
   setPage: (page: number) => void;
+  setPerPage: (perPage: number) => void;
   refresh: () => Promise<void>;
   get: (id: string) => Promise<InvoiceDto>;
   createDraft: (input: NewInvoiceDto) => Promise<InvoiceDto>;
@@ -34,6 +36,7 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   error: null,
   query: {},
   currentPage: 1,
+  perPage: 25,
   setQuery: (query) => {
     set({ query, currentPage: 1 });
     void get().refresh();
@@ -42,12 +45,16 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
     set({ currentPage });
     void get().refresh();
   },
+  setPerPage: (perPage) => {
+    set({ perPage, currentPage: 1 });
+    void get().refresh();
+  },
   refresh: async () => {
     set({ loading: true, error: null });
     try {
       const result = await ipc.invoiceList({
         ...get().query,
-        pagination: { page: get().currentPage },
+        pagination: { page: get().currentPage, per_page: get().perPage },
       });
       set({
         invoices: result.data,

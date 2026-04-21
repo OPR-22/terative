@@ -25,11 +25,13 @@ export function InvoiceList() {
     invoices,
     page,
     currentPage,
+    perPage,
     loading,
     error,
     query,
     setQuery,
     setPage,
+    setPerPage,
     refresh,
     finalize,
     duplicate,
@@ -203,7 +205,9 @@ export function InvoiceList() {
           next={page.next}
           total={page.total}
           currentPage={currentPage}
+          perPage={perPage}
           onPageChange={setPage}
+          onPerPageChange={setPerPage}
         />
       ) : null}
 

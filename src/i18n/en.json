@@ -318,7 +318,8 @@
     "total": "{{count}} results",
     "previous": "Previous",
     "next": "Next",
-    "page_of": "Page {{page}} of {{last}}"
+    "page_of": "Page {{page}} of {{last}}",
+    "per_page": "Per page"
   },
   "placeholder": {
     "coming_soon": "Available in a later phase."
