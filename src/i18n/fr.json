@@ -314,6 +314,12 @@
     "none": "Aucun modèle.",
     "placeholders_help": "Variables disponibles :"
   },
+  "pagination": {
+    "total": "{{count}} résultats",
+    "previous": "Précédent",
+    "next": "Suivant",
+    "page_of": "Page {{page}} sur {{last}}"
+  },
   "placeholder": {
     "coming_soon": "Disponible dans une phase ultérieure."
   }
