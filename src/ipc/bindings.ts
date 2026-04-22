@@ -84,9 +84,11 @@ export const commands = {
 	accountingAgingReport: () => typedError<AgingRowDto[], string>(__TAURI_INVOKE("accounting_aging_report")),
 	accountingDashboardSummary: () => typedError<DashboardSummaryDto, string>(__TAURI_INVOKE("accounting_dashboard_summary")),
 	dataExport: (destination: string) => typedError<string, string>(__TAURI_INVOKE("data_export", { destination })),
-	dataBackup: (backupDir: string | null) => typedError<string, string>(__TAURI_INVOKE("data_backup", { backupDir })),
+	dataBackup: () => typedError<string, string>(__TAURI_INVOKE("data_backup")),
 	dataRestore: (source: string) => typedError<null, string>(__TAURI_INVOKE("data_restore", { source })),
-	dataDefaultBackupDir: () => typedError<string, string>(__TAURI_INVOKE("data_default_backup_dir")),
+	dataListBackups: () => typedError<BackupDto[], string>(__TAURI_INVOKE("data_list_backups")),
+	dataDeleteBackup: (path: string) => typedError<null, string>(__TAURI_INVOKE("data_delete_backup", { path })),
+	dataUserBackupDir: () => typedError<string, string>(__TAURI_INVOKE("data_user_backup_dir")),
 	notebookSectionCreate: (name: string) => typedError<NotebookSectionDto, string>(__TAURI_INVOKE("notebook_section_create", { name })),
 	notebookSectionRename: (input: RenameNotebookSectionDto) => typedError<NotebookSectionDto, string>(__TAURI_INVOKE("notebook_section_rename", { input })),
 	notebookSectionDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("notebook_section_delete", { id })),
@@ -120,6 +122,11 @@ export type AppPreferencesDto = {
 	theme: ThemeDto,
 	language: LanguageDto,
 	pdf_output_dir: string,
+	user_backup_dir: string,
+	auto_backup_enabled: boolean,
+	auto_backup_interval_hours: number,
+	retention_mode: RetentionModeDto,
+	retention_count: number,
 };
 
 export type AppliedTaxDto = {
@@ -129,6 +136,18 @@ export type AppliedTaxDto = {
 	tax_id_number: string | null,
 	computed_amount: MoneyDto,
 };
+
+export type BackupDto = {
+	path: string,
+	timestamp: string,
+	kind: BackupKindDto,
+	scope: BackupScopeDto,
+	size_bytes: number,
+};
+
+export type BackupKindDto = "Manual" | "Auto" | "PreRestore" | "PreMigration";
+
+export type BackupScopeDto = "User" | "System";
 
 export type CatalogItemDto = {
 	id: string,
@@ -484,6 +503,8 @@ export type RenameNotebookSectionDto = {
 	id: string,
 	name: string,
 };
+
+export type RetentionModeDto = "All" | "KeepLast";
 
 export type RevenueBucketDto = {
 	bucket_start: string,

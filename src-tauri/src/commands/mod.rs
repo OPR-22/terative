@@ -123,7 +123,8 @@ pub struct AppState {
     pub accounting: AccountingService,
 
     pub data_management: Arc<dyn DataManagement>,
-    pub default_backup_dir: std::path::PathBuf,
+    pub user_backup_dir: std::path::PathBuf,
+    pub system_backup_dir: std::path::PathBuf,
 
     pub create_notebook_section: CreateNotebookSection,
     pub rename_notebook_section: RenameNotebookSection,
@@ -147,7 +148,8 @@ impl AppState {
         db: crate::adapters::sqlite::Db,
         db_path: std::path::PathBuf,
         default_pdf_dir: std::path::PathBuf,
-        default_backup_dir: std::path::PathBuf,
+        user_backup_dir: std::path::PathBuf,
+        system_backup_dir: std::path::PathBuf,
     ) -> Self {
         let client_repo = Arc::new(SqliteClientRepository::new(db.clone()));
         let catalog_item_repo = Arc::new(SqliteCatalogItemRepository::new(db.clone()));
@@ -161,7 +163,7 @@ impl AppState {
         let client_notebook_repo = Arc::new(SqliteClientNotebookRepository::new(db.clone()));
         let client_journal_repo = Arc::new(SqliteClientJournalRepository::new(db.clone()));
         let email_template_repo = Arc::new(SqliteEmailTemplateRepository::new(db.clone()));
-        let number_gen = Arc::new(SqliteInvoiceNumberGenerator::new(db));
+        let number_gen = Arc::new(SqliteInvoiceNumberGenerator::new(db.clone()));
         let pdf = Arc::new(TypstPdfGenerator::new());
         let pdf_storage = Arc::new(FilesystemPdfStorage::new(
             settings_repo.clone(),
@@ -169,8 +171,13 @@ impl AppState {
         ));
         let credentials = Arc::new(KeyringCredentialStore::new("terative", "smtp"));
         let email_sender = Arc::new(LettreEmailSender::new());
-        let data_management: Arc<dyn DataManagement> =
-            Arc::new(FilesystemDataManagement::new(db_path));
+        let data_management: Arc<dyn DataManagement> = Arc::new(FilesystemDataManagement::new(
+            db.clone(),
+            db_path,
+            settings_repo.clone(),
+            user_backup_dir.clone(),
+            system_backup_dir.clone(),
+        ));
 
         Self {
             create_client: CreateClient::new(client_repo.clone()),
@@ -264,7 +271,8 @@ impl AppState {
             accounting: AccountingService::new(accounting_repo),
 
             data_management,
-            default_backup_dir,
+            user_backup_dir,
+            system_backup_dir,
 
             create_notebook_section: CreateNotebookSection::new(notebook_section_repo.clone()),
             rename_notebook_section: RenameNotebookSection::new(notebook_section_repo.clone()),

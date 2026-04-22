@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "../components/common/Button";
+import { ImageUploader } from "../components/common/ImageUploader";
 import { Input } from "../components/common/Input";
 import { PdfPreview, useDebounced } from "../components/template/PdfPreview";
 import { useTemplateStore } from "../stores/templateStore";
@@ -183,6 +184,12 @@ export function TemplateEditor({ initial, onClose }: Props) {
                 ))}
               </div>
             </fieldset>
+
+            <ImageUploader
+              label={t("templates.logo") ?? ""}
+              value={form.logo_image}
+              onChange={(bytes) => updateField("logo_image", bytes)}
+            />
 
             <div className="flex items-end gap-3">
               <Input

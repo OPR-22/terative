@@ -176,11 +176,63 @@ impl Language {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// Controls which auto backups survive the retention sweep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetentionMode {
+    /// Never prune auto backups.
+    All,
+    /// Keep the N most recent; the rest are deleted.
+    KeepLast,
+}
+
+impl Default for RetentionMode {
+    fn default() -> Self {
+        RetentionMode::KeepLast
+    }
+}
+
+impl RetentionMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RetentionMode::All => "All",
+            RetentionMode::KeepLast => "KeepLast",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "All" => Some(RetentionMode::All),
+            "KeepLast" => Some(RetentionMode::KeepLast),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppPreferences {
     pub theme: Theme,
     pub language: Language,
     pub pdf_output_dir: String,
+    pub user_backup_dir: String,
+    pub auto_backup_enabled: bool,
+    pub auto_backup_interval_hours: u32,
+    pub retention_mode: RetentionMode,
+    pub retention_count: u32,
+}
+
+impl Default for AppPreferences {
+    fn default() -> Self {
+        Self {
+            theme: Theme::default(),
+            language: Language::default(),
+            pdf_output_dir: String::new(),
+            user_backup_dir: String::new(),
+            auto_backup_enabled: true,
+            auto_backup_interval_hours: 24,
+            retention_mode: RetentionMode::default(),
+            retention_count: 30,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use crate::adapters::sqlite::connection::Db;
 use crate::application::ports::SettingsRepository;
 use crate::application::RepoError;
 use crate::domain::settings::{
-    AppPreferences, CurrencyConfig, EmailConfig, Language, SellerProfile, Theme,
+    AppPreferences, CurrencyConfig, EmailConfig, Language, RetentionMode, SellerProfile, Theme,
 };
 
 pub struct SqliteSettingsRepository {
@@ -91,15 +91,24 @@ impl SettingsRepository for SqliteSettingsRepository {
     fn get_app_preferences(&self) -> Result<AppPreferences, RepoError> {
         let conn = self.db.lock();
         conn.query_row(
-            "SELECT theme, language, pdf_output_dir FROM app_preferences WHERE id = 1",
+            "SELECT theme, language, pdf_output_dir, user_backup_dir,
+                    auto_backup_enabled, auto_backup_interval_hours,
+                    retention_mode, retention_count
+             FROM app_preferences WHERE id = 1",
             [],
             |row| {
                 let theme_s: String = row.get(0)?;
                 let lang_s: String = row.get(1)?;
+                let retention_s: String = row.get(6)?;
                 Ok(AppPreferences {
                     theme: Theme::parse(&theme_s).unwrap_or_default(),
                     language: Language::parse(&lang_s).unwrap_or_default(),
                     pdf_output_dir: row.get(2)?,
+                    user_backup_dir: row.get(3)?,
+                    auto_backup_enabled: row.get::<_, i64>(4)? != 0,
+                    auto_backup_interval_hours: row.get::<_, i64>(5)? as u32,
+                    retention_mode: RetentionMode::parse(&retention_s).unwrap_or_default(),
+                    retention_count: row.get::<_, i64>(7)? as u32,
                 })
             },
         )
@@ -110,9 +119,20 @@ impl SettingsRepository for SqliteSettingsRepository {
         let conn = self.db.lock();
         conn.execute(
             "UPDATE app_preferences
-             SET theme = ?1, language = ?2, pdf_output_dir = ?3
+             SET theme = ?1, language = ?2, pdf_output_dir = ?3, user_backup_dir = ?4,
+                 auto_backup_enabled = ?5, auto_backup_interval_hours = ?6,
+                 retention_mode = ?7, retention_count = ?8
              WHERE id = 1",
-            params![p.theme.as_str(), p.language.as_str(), p.pdf_output_dir],
+            params![
+                p.theme.as_str(),
+                p.language.as_str(),
+                p.pdf_output_dir,
+                p.user_backup_dir,
+                p.auto_backup_enabled as i64,
+                p.auto_backup_interval_hours as i64,
+                p.retention_mode.as_str(),
+                p.retention_count as i64,
+            ],
         )
         .map_err(map_err)?;
         Ok(())
@@ -206,10 +226,20 @@ mod tests {
             theme: Theme::Dark,
             language: Language::En,
             pdf_output_dir: "/tmp/pdfs".into(),
+            user_backup_dir: "/tmp/backups".into(),
+            ..Default::default()
         };
         repo.set_app_preferences(&p).unwrap();
         let loaded = repo.get_app_preferences().unwrap();
         assert_eq!(loaded, p);
+    }
+
+    #[test]
+    fn app_preferences_default_user_backup_dir_is_empty() {
+        let db = open_memory();
+        let repo = SqliteSettingsRepository::new(db);
+        let loaded = repo.get_app_preferences().unwrap();
+        assert_eq!(loaded.user_backup_dir, "");
     }
 
     #[test]

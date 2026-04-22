@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-dialog";
 
 import { Button } from "../components/common/Button";
+import { ImageUploader } from "../components/common/ImageUploader";
 import { Input } from "../components/common/Input";
 import { Money } from "../lib/money";
 import { useCurrencyCatalogStore } from "../stores/currencyCatalogStore";
@@ -12,6 +13,9 @@ import { useSettingsStore } from "../stores/settingsStore";
 import {
   ipc,
   type AppPreferencesDto,
+  type BackupDto,
+  type BackupKindDto,
+  type BackupScopeDto,
   type CurrencyConfigDto,
   type EmailConfigDto,
   type LanguageDto,
@@ -81,7 +85,8 @@ function DataSection() {
     | { kind: "ok"; message: string }
     | { kind: "err"; message: string }
   >({ kind: "idle" });
-  const [busy, setBusy] = useState<"export" | "backup" | "restore" | null>(null);
+  const [busy, setBusy] = useState<"backup" | "restore" | "delete" | null>(null);
+  const [backups, setBackups] = useState<BackupDto[]>([]);
 
   const flash = (kind: "ok" | "err", message: string) => {
     setStatus({ kind, message });
@@ -90,33 +95,24 @@ function DataSection() {
     }
   };
 
-  const runExport = async () => {
-    setBusy("export");
+  const loadBackups = async () => {
     try {
-      const stamp = new Date().toISOString().slice(0, 10);
-      const destination = await save({
-        title: t("settings.data_export"),
-        defaultPath: `terative-${stamp}.sqlite`,
-        filters: [{ name: "SQLite", extensions: ["sqlite"] }],
-      });
-      if (!destination) {
-        setBusy(null);
-        return;
-      }
-      const written = await ipc.dataExport(destination);
-      flash("ok", t("settings.data_exported_to", { path: written }));
+      setBackups(await ipc.dataListBackups());
     } catch (e) {
       flash("err", String(e));
-    } finally {
-      setBusy(null);
     }
   };
+
+  useEffect(() => {
+    void loadBackups();
+  }, []);
 
   const runBackup = async () => {
     setBusy("backup");
     try {
-      const path = await ipc.dataBackup(null);
+      const path = await ipc.dataBackup();
       flash("ok", t("settings.data_backed_up_to", { path }));
+      await loadBackups();
     } catch (e) {
       flash("err", String(e));
     } finally {
@@ -124,25 +120,36 @@ function DataSection() {
     }
   };
 
-  const runRestore = async () => {
+  const runRestoreFromPath = async (source: string) => {
+    if (!confirm(t("settings.data_restore_warning"))) return;
     setBusy("restore");
     try {
-      const source = await open({
-        title: t("settings.data_restore"),
-        multiple: false,
-        directory: false,
-        filters: [{ name: "SQLite", extensions: ["sqlite"] }],
-      });
-      if (!source || Array.isArray(source)) {
-        setBusy(null);
-        return;
-      }
-      if (!confirm(t("settings.data_restore_warning"))) {
-        setBusy(null);
-        return;
-      }
       await ipc.dataRestore(source);
-      flash("ok", t("settings.data_restored"));
+      // App restarts on success, so nothing else to do here.
+    } catch (e) {
+      flash("err", String(e));
+      setBusy(null);
+    }
+  };
+
+  const runRestoreFromPicker = async () => {
+    const source = await open({
+      title: t("settings.data_restore"),
+      multiple: false,
+      directory: false,
+      filters: [{ name: "SQLite", extensions: ["sqlite"] }],
+    });
+    if (!source || Array.isArray(source)) return;
+    await runRestoreFromPath(source);
+  };
+
+  const runDelete = async (path: string) => {
+    if (!confirm(t("settings.backup_delete_confirm"))) return;
+    setBusy("delete");
+    try {
+      await ipc.dataDeleteBackup(path);
+      flash("ok", t("settings.backup_deleted"));
+      await loadBackups();
     } catch (e) {
       flash("err", String(e));
     } finally {
@@ -157,13 +164,14 @@ function DataSection() {
       </h2>
       <p className="mb-3 text-sm text-fg-muted">{t("settings.data_help")}</p>
       <div className="flex flex-wrap gap-2">
-        <Button onClick={runExport} disabled={busy !== null}>
-          {t("settings.data_export")}
-        </Button>
-        <Button variant="secondary" onClick={runBackup} disabled={busy !== null}>
+        <Button onClick={runBackup} disabled={busy !== null}>
           {t("settings.data_backup")}
         </Button>
-        <Button variant="secondary" onClick={runRestore} disabled={busy !== null}>
+        <Button
+          variant="secondary"
+          onClick={runRestoreFromPicker}
+          disabled={busy !== null}
+        >
           {t("settings.data_restore")}
         </Button>
       </div>
@@ -173,8 +181,103 @@ function DataSection() {
       {status.kind === "err" ? (
         <p className="mt-3 text-sm text-danger break-all">{status.message}</p>
       ) : null}
+
+      <BackupHistory
+        backups={backups}
+        busy={busy !== null}
+        onRestore={runRestoreFromPath}
+        onDelete={runDelete}
+      />
     </section>
   );
+}
+
+interface BackupHistoryProps {
+  backups: BackupDto[];
+  busy: boolean;
+  onRestore: (path: string) => void | Promise<void>;
+  onDelete: (path: string) => void | Promise<void>;
+}
+
+function BackupHistory({ backups, busy, onRestore, onDelete }: BackupHistoryProps) {
+  const { t, i18n } = useTranslation();
+  if (backups.length === 0) {
+    return (
+      <p className="mt-6 text-sm text-fg-muted">{t("settings.backups_none")}</p>
+    );
+  }
+  const dateFmt = new Intl.DateTimeFormat(i18n.language, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  const kindLabel = (k: BackupKindDto): string =>
+    t(`settings.backup_kind_${k.toLowerCase()}`);
+  const scopeLabel = (s: BackupScopeDto): string =>
+    t(`settings.backup_scope_${s.toLowerCase()}`);
+  return (
+    <div className="mt-6">
+      <h3 className="mb-2 text-sm font-semibold text-fg">
+        {t("settings.backup_history")}
+      </h3>
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-border text-left text-fg-muted">
+            <th className="py-2 pr-3 font-medium">{t("settings.backup_when")}</th>
+            <th className="py-2 pr-3 font-medium">{t("settings.backup_kind")}</th>
+            <th className="py-2 pr-3 font-medium">{t("settings.backup_scope")}</th>
+            <th className="py-2 pr-3 font-medium">{t("settings.backup_size")}</th>
+            <th className="py-2 pr-3 font-medium"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {backups.map((b) => (
+            <tr key={b.path} className="border-b border-border">
+              <td className="py-2 pr-3 text-fg" title={b.path}>
+                {dateFmt.format(new Date(b.timestamp))}
+              </td>
+              <td className="py-2 pr-3 text-fg-muted">{kindLabel(b.kind)}</td>
+              <td className="py-2 pr-3 text-fg-muted">{scopeLabel(b.scope)}</td>
+              <td className="py-2 pr-3 text-fg-muted">
+                {formatBytes(b.size_bytes)}
+              </td>
+              <td className="flex justify-end gap-2 py-2 pr-3">
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => void onRestore(b.path)}
+                >
+                  {t("settings.backup_restore_this")}
+                </Button>
+                {b.scope === "User" ? (
+                  <Button
+                    variant="danger"
+                    disabled={busy}
+                    onClick={() => void onDelete(b.path)}
+                  >
+                    {t("common.delete")}
+                  </Button>
+                ) : (
+                  <span
+                    className="text-xs text-fg-muted"
+                    title={t("settings.backup_system_tooltip") ?? ""}
+                  >
+                    {t("settings.backup_system_locked")}
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 interface SellerProps {
@@ -240,6 +343,13 @@ function SellerSection({ seller, onSave }: SellerProps) {
           value={form.address ?? ""}
           onChange={(e) => update("address", e.target.value || null)}
         />
+        <div className="sm:col-span-2">
+          <ImageUploader
+            label={t("settings.seller_signature") ?? ""}
+            value={form.signature_image}
+            onChange={(bytes) => update("signature_image", bytes)}
+          />
+        </div>
         <div className="sm:col-span-2 flex items-center gap-3">
           <Button type="submit">{t("common.save")}</Button>
           {saved ? (
@@ -383,6 +493,13 @@ function PreferencesSection({ prefs, onSave }: PreferencesProps) {
           label={t("settings.pdf_output_dir") ?? ""}
           value={form.pdf_output_dir}
           onChange={(e) => setForm({ ...form, pdf_output_dir: e.target.value })}
+          className="sm:col-span-2"
+        />
+        <Input
+          label={t("settings.user_backup_dir") ?? ""}
+          value={form.user_backup_dir}
+          onChange={(e) => setForm({ ...form, user_backup_dir: e.target.value })}
+          placeholder={t("settings.user_backup_dir_placeholder") ?? ""}
           className="sm:col-span-2"
         />
         <div className="sm:col-span-2 flex items-center gap-3">

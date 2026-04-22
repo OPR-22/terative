@@ -1,6 +1,10 @@
 -- Terative initial schema.
 -- Money stored as INTEGER cents, dates as ISO 8601 TEXT, IDs as UUID v4 TEXT.
 
+-- "TERA" in hex — identifies this file as a Terative database.
+-- See adapters::sqlite::connection::APPLICATION_ID.
+PRAGMA application_id = 0x54455241;
+
 CREATE TABLE clients (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,
@@ -195,10 +199,15 @@ CREATE TABLE currency_config (
 INSERT INTO currency_config (id) VALUES (1);
 
 CREATE TABLE app_preferences (
-    id                  INTEGER PRIMARY KEY CHECK (id = 1),
-    theme               TEXT NOT NULL DEFAULT 'Light',
-    language            TEXT NOT NULL DEFAULT 'fr',
-    pdf_output_dir      TEXT NOT NULL DEFAULT ''
+    id                          INTEGER PRIMARY KEY CHECK (id = 1),
+    theme                       TEXT NOT NULL DEFAULT 'Light',
+    language                    TEXT NOT NULL DEFAULT 'fr',
+    pdf_output_dir              TEXT NOT NULL DEFAULT '',
+    user_backup_dir             TEXT NOT NULL DEFAULT '',
+    auto_backup_enabled         INTEGER NOT NULL DEFAULT 1,
+    auto_backup_interval_hours  INTEGER NOT NULL DEFAULT 24,
+    retention_mode              TEXT NOT NULL DEFAULT 'KeepLast' CHECK (retention_mode IN ('All', 'KeepLast')),
+    retention_count             INTEGER NOT NULL DEFAULT 30
 );
 INSERT INTO app_preferences (id) VALUES (1);
 

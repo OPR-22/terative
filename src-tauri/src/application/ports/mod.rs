@@ -27,7 +27,7 @@ pub use client_notebook_repository::ClientNotebookRepository;
 pub use client_repository::{ClientRepository, ListClientsQuery};
 pub use notebook_section_repository::NotebookSectionRepository;
 pub use credential_store::CredentialStore;
-pub use data_management::DataManagement;
+pub use data_management::{BackupKind, BackupMetadata, BackupScope, DataManagement};
 pub use email_sender::{EmailAttachment, EmailError, EmailSender, OutboundEmail};
 pub use email_template_repository::EmailTemplateRepository;
 pub use invoice_number_generator::InvoiceNumberGenerator;

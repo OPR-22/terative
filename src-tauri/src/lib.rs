@@ -15,7 +15,10 @@ use commands::{
     client_commands::{
         client_archive, client_create, client_get, client_list, client_unarchive, client_update,
     },
-    data_commands::{data_backup, data_default_backup_dir, data_export, data_restore},
+    data_commands::{
+        data_backup, data_delete_backup, data_export, data_list_backups, data_restore,
+        data_user_backup_dir,
+    },
     email_commands::{
         email_test_connection, invoice_send, settings_update_email_config,
         settings_update_email_password,
@@ -190,7 +193,9 @@ fn build_specta() -> Builder<tauri::Wry> {
         data_export,
         data_backup,
         data_restore,
-        data_default_backup_dir,
+        data_list_backups,
+        data_delete_backup,
+        data_user_backup_dir,
         notebook_section_create,
         notebook_section_rename,
         notebook_section_delete,
@@ -228,23 +233,64 @@ pub fn run() {
         .setup(move |app| {
             let data_dir = resolve_app_data_dir(app.handle());
             let db_path = data_dir.join("terative.sqlite");
+            let default_pdf_dir = data_dir.join("invoices");
+            let backups_root = data_dir.join("backups");
+            let user_backup_dir = backups_root.join("user");
+            let system_backup_dir = backups_root.join("system");
+
+            // Snapshot BEFORE opening: if migrations are pending, the open()
+            // below will apply them in-place, so the pre-migration state has
+            // to be captured first.
+            match adapters::sqlite::snapshot_pre_migration_if_pending(
+                &db_path,
+                &system_backup_dir,
+            ) {
+                Ok(Some(path)) => {
+                    eprintln!("pre-migration backup written to {}", path.display());
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    panic!("pre-migration backup failed at {db_path:?}: {e}");
+                }
+            }
+
             let db = adapters::sqlite::open(&db_path)
                 .unwrap_or_else(|e| panic!("open sqlite at {db_path:?}: {e}"));
             seed_default_template_if_empty(&db);
             seed_default_email_templates_if_empty(&db);
-            let default_pdf_dir = data_dir.join("invoices");
-            let default_backup_dir = data_dir.join("backups");
             app.manage(AppState::new(
                 db,
                 db_path,
                 default_pdf_dir,
-                default_backup_dir,
+                user_backup_dir,
+                system_backup_dir,
             ));
             builder.mount_events(app);
+            spawn_auto_backup_ticker(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Fires an initial `auto_backup_if_due` check and then re-checks every 15
+/// minutes while the app is running. The 15-min tick is deliberately shorter
+/// than the configurable auto-backup interval so users who leave the app
+/// open for days (common on macOS) still get their daily backups, and a
+/// post-sleep tick catches up without needing to fire at the exact moment.
+/// A plain std thread avoids pulling tokio in as a direct dependency.
+fn spawn_auto_backup_ticker(app: tauri::AppHandle) {
+    use std::time::Duration;
+    use tauri::Manager;
+    const TICK: Duration = Duration::from_secs(15 * 60);
+
+    std::thread::spawn(move || loop {
+        let dm = app.state::<commands::AppState>().data_management.clone();
+        if let Err(e) = dm.auto_backup_if_due() {
+            eprintln!("auto-backup check failed: {e}");
+        }
+        std::thread::sleep(TICK);
+    });
 }
 
 #[cfg(test)]

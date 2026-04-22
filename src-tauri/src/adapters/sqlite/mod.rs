@@ -18,7 +18,7 @@ pub use catalog_item_repo::SqliteCatalogItemRepository;
 pub use client_journal_repo::SqliteClientJournalRepository;
 pub use client_notebook_repo::SqliteClientNotebookRepository;
 pub use client_repo::SqliteClientRepository;
-pub use connection::{open, Db};
+pub use connection::{open, snapshot_pre_migration_if_pending, Db};
 pub use email_template_repo::SqliteEmailTemplateRepository;
 pub use invoice_repo::SqliteInvoiceRepository;
 pub use notebook_section_repo::SqliteNotebookSectionRepository;

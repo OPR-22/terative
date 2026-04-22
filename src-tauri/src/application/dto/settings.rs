@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::application::settings_usecases::SettingsSnapshot;
 use crate::domain::settings::{
-    AppPreferences, CurrencyConfig, EmailConfig, Language, SellerProfile, Theme,
+    AppPreferences, CurrencyConfig, EmailConfig, Language, RetentionMode, SellerProfile, Theme,
 };
 
 // ---- SellerProfileDto ----
@@ -149,20 +149,72 @@ impl From<LanguageDto> for Language {
 
 // ---- AppPreferencesDto ----
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub enum RetentionModeDto {
+    All,
+    KeepLast,
+}
+
+impl Default for RetentionModeDto {
+    fn default() -> Self {
+        RetentionModeDto::KeepLast
+    }
+}
+
+impl From<RetentionMode> for RetentionModeDto {
+    fn from(value: RetentionMode) -> Self {
+        match value {
+            RetentionMode::All => RetentionModeDto::All,
+            RetentionMode::KeepLast => RetentionModeDto::KeepLast,
+        }
+    }
+}
+
+impl From<RetentionModeDto> for RetentionMode {
+    fn from(value: RetentionModeDto) -> Self {
+        match value {
+            RetentionModeDto::All => RetentionMode::All,
+            RetentionModeDto::KeepLast => RetentionMode::KeepLast,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct AppPreferencesDto {
     pub theme: ThemeDto,
     pub language: LanguageDto,
     pub pdf_output_dir: String,
+    pub user_backup_dir: String,
+    pub auto_backup_enabled: bool,
+    pub auto_backup_interval_hours: u32,
+    pub retention_mode: RetentionModeDto,
+    pub retention_count: u32,
+}
+
+impl Default for AppPreferencesDto {
+    fn default() -> Self {
+        AppPreferences::default().into_dto()
+    }
+}
+
+impl AppPreferences {
+    fn into_dto(self) -> AppPreferencesDto {
+        AppPreferencesDto {
+            theme: self.theme.into(),
+            language: self.language.into(),
+            pdf_output_dir: self.pdf_output_dir,
+            user_backup_dir: self.user_backup_dir,
+            auto_backup_enabled: self.auto_backup_enabled,
+            auto_backup_interval_hours: self.auto_backup_interval_hours,
+            retention_mode: self.retention_mode.into(),
+            retention_count: self.retention_count,
+        }
+    }
 }
 
 impl From<&AppPreferences> for AppPreferencesDto {
     fn from(p: &AppPreferences) -> Self {
-        Self {
-            theme: p.theme.into(),
-            language: p.language.into(),
-            pdf_output_dir: p.pdf_output_dir.clone(),
-        }
+        p.clone().into_dto()
     }
 }
 
@@ -172,6 +224,11 @@ impl From<AppPreferencesDto> for AppPreferences {
             theme: dto.theme.into(),
             language: dto.language.into(),
             pdf_output_dir: dto.pdf_output_dir,
+            user_backup_dir: dto.user_backup_dir,
+            auto_backup_enabled: dto.auto_backup_enabled,
+            auto_backup_interval_hours: dto.auto_backup_interval_hours,
+            retention_mode: dto.retention_mode.into(),
+            retention_count: dto.retention_count,
         }
     }
 }

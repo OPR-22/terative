@@ -200,6 +200,8 @@ mod tests {
             theme: Theme::Dark,
             language: Language::En,
             pdf_output_dir: "/tmp/pdfs".into(),
+            user_backup_dir: "/tmp/backups".into(),
+            ..Default::default()
         };
         UpdateAppPreferences::new(r.clone())
             .execute(prefs.clone())
