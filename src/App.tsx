@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import { Shell } from "./components/layout/Shell";
 import { Accounting } from "./pages/Accounting";
+import { BookmarkView } from "./pages/BookmarkView";
 import { CatalogList } from "./pages/CatalogList";
 import { ClientDetail } from "./pages/ClientDetail";
 import { ClientList } from "./pages/ClientList";
@@ -28,6 +29,7 @@ function App() {
         <Route path="accounting" element={<Accounting />} />
         <Route path="templates" element={<TemplateList />} />
         <Route path="email-templates" element={<EmailTemplates />} />
+        <Route path="bookmarks/:id" element={<BookmarkView />} />
         <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>

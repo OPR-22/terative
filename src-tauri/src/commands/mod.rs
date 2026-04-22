@@ -1,4 +1,5 @@
 pub mod accounting_commands;
+pub mod bookmark_commands;
 pub mod catalog_item_commands;
 pub mod client_commands;
 pub mod data_commands;

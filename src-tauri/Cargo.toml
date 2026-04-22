@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["unstable"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
@@ -36,6 +36,11 @@ lettre = { version = "0.11", default-features = false, features = ["smtp-transpo
 specta = { version = "=2.0.0-rc.24", features = ["derive", "chrono", "uuid", "rust_decimal"] }
 specta-typescript = "0.0.11"
 tauri-specta = { version = "=2.0.0-rc.24", features = ["derive", "typescript"] }
+
+# Linux-only: direct GTK access so we can flip the main window's default
+# vbox to horizontal orientation for the bookmark sister-pane layout.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
 
 [dev-dependencies]
 tempfile = "3"

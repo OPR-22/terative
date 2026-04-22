@@ -5787,6 +5787,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "directories",
+ "gtk",
  "keyring",
  "lettre",
  "parking_lot",

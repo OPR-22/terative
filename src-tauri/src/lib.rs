@@ -15,6 +15,7 @@ use commands::{
     client_commands::{
         client_archive, client_create, client_get, client_list, client_unarchive, client_update,
     },
+    bookmark_commands::{bookmark_hide, bookmark_open, bookmark_set_bounds},
     data_commands::{
         data_backup, data_delete_backup, data_export, data_list_backups, data_restore,
         data_user_backup_dir,
@@ -196,6 +197,9 @@ fn build_specta() -> Builder<tauri::Wry> {
         data_list_backups,
         data_delete_backup,
         data_user_backup_dir,
+        bookmark_open,
+        bookmark_set_bounds,
+        bookmark_hide,
         notebook_section_create,
         notebook_section_rename,
         notebook_section_delete,
@@ -267,6 +271,8 @@ pub fn run() {
             ));
             builder.mount_events(app);
             spawn_auto_backup_ticker(app.handle().clone());
+            #[cfg(target_os = "linux")]
+            wrap_main_webview_in_gtk_fixed(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -290,6 +296,105 @@ fn spawn_auto_backup_ticker(app: tauri::AppHandle) {
             eprintln!("auto-backup check failed: {e}");
         }
         std::thread::sleep(TICK);
+    });
+}
+
+/// On Linux, `GtkBox` packing fights the webkit2gtk widget's natural sizing —
+/// we can't reliably constrain the main webview to a fixed width when sharing
+/// a box with a bookmark child webview. The wry-recommended workaround is to
+/// host both webviews inside a `GtkFixed` container that uses absolute
+/// positioning. This function reparents the main webview from the default
+/// vbox into a `GtkFixed`; subsequent webviews (bookmarks) get placed in the
+/// same `GtkFixed` via their own `build_gtk` calls.
+///
+/// Called once at app setup, before any child webview is created.
+#[cfg(target_os = "linux")]
+fn wrap_main_webview_in_gtk_fixed(app: &tauri::AppHandle) {
+    use gtk::prelude::{BoxExt, ContainerExt, FixedExt, ObjectExt, WidgetExt};
+    use tauri::Manager;
+
+    let Some(main) = app.get_webview_window("main") else {
+        eprintln!("[fixed-setup] main window not found");
+        return;
+    };
+    let vbox = match main.as_ref().window().default_vbox() {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("[fixed-setup] default_vbox err: {e}");
+            return;
+        }
+    };
+
+    // Locate the main webview widget among the vbox's children.
+    let main_widget = vbox
+        .children()
+        .into_iter()
+        .find(|w| w.type_().name() == "WebKitWebView");
+    let Some(main_widget) = main_widget else {
+        eprintln!("[fixed-setup] main webview widget not found in vbox");
+        return;
+    };
+
+    let fixed = gtk::Fixed::new();
+    fixed.show();
+
+    // Reparent: keep a strong ref so the widget survives between remove + add.
+    let widget_ref = main_widget.clone();
+    vbox.remove(&main_widget);
+    fixed.put(&widget_ref, 0, 0);
+
+    // The fixed container expands to fill the vbox; its children are sized
+    // explicitly via set_size_request (wry's gtk_multiwebview example pattern).
+    vbox.pack_start(&fixed, true, true, 0);
+
+    // Initial main-webview size: use the window's physical inner dimensions.
+    // GTK size_allocate operates in physical px here; converting to logical
+    // would undersize the widget on fractional-DPI displays.
+    let (win_w, win_h) = main.as_ref().window().inner_size().map(|s| {
+        (s.width as i32, s.height as i32)
+    }).unwrap_or((800, 600));
+    widget_ref.size_allocate(&gtk::Allocation::new(0, 0, win_w, win_h));
+
+    eprintln!("[fixed-setup] reparented main webview into GtkFixed ({win_w}x{win_h})");
+
+    // Keep webview sizes in sync with the window. GTK signal callbacks run on
+    // the main thread, so capturing gtk widgets is safe (no Send needed).
+    // SIDEBAR_WIDTH_CSS must match the `w-56` Tailwind class on the React
+    // sidebar (14 rem * 16 px = 224 CSS px).
+    const SIDEBAR_WIDTH_CSS: f64 = 224.0;
+    let Ok(gtk_window) = main.as_ref().window().gtk_window() else { return };
+    let fixed_for_resize = fixed.clone();
+    let main_widget_for_resize = widget_ref.clone();
+    gtk_window.connect_size_allocate(move |_win, alloc| {
+        use gtk::prelude::{Cast, ContainerExt, WidgetExt};
+        let w = alloc.width();
+        let h = alloc.height();
+        let scale = commands::bookmark_commands::current_dpr();
+        let sidebar_px = (SIDEBAR_WIDTH_CSS * scale).round() as i32;
+        // Only VISIBLE children count: a hidden bookmark child still lives
+        // in the fixed, but we want main to reclaim its space in that case.
+        let children = fixed_for_resize.children();
+        let bookmark_visible = children.iter().any(|c| {
+            c != main_widget_for_resize.upcast_ref::<gtk::Widget>() && c.get_visible()
+        });
+        if bookmark_visible {
+            let bookmark_w = (w - sidebar_px).max(1);
+            main_widget_for_resize
+                .size_allocate(&gtk::Allocation::new(0, 0, sidebar_px, h));
+            for child in &children {
+                if child != main_widget_for_resize.upcast_ref::<gtk::Widget>() {
+                    child.size_allocate(&gtk::Allocation::new(
+                        sidebar_px,
+                        0,
+                        bookmark_w,
+                        h,
+                    ));
+                    break;
+                }
+            }
+        } else {
+            main_widget_for_resize.size_allocate(&gtk::Allocation::new(0, 0, w, h));
+        }
     });
 }
 

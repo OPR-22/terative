@@ -9,6 +9,9 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
       : "text-fg-muted hover:bg-surface-muted",
   ].join(" ");
 
+// Hardcoded bookmarks for MVP. Keep in sync with `BOOKMARKS` in BookmarkView.
+const BOOKMARKS = [{ id: "example", label: "Google" }];
+
 export function Sidebar() {
   const { t } = useTranslation();
   const items = [
@@ -37,6 +40,24 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
+      {BOOKMARKS.length > 0 ? (
+        <div className="mt-6">
+          <h2 className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+            {t("nav.bookmarks")}
+          </h2>
+          <nav className="flex flex-col gap-1">
+            {BOOKMARKS.map((b) => (
+              <NavLink
+                key={b.id}
+                to={`/bookmarks/${b.id}`}
+                className={linkClass}
+              >
+                {b.label}
+              </NavLink>
+            ))}
+          </nav>
+        </div>
+      ) : null}
     </aside>
   );
 }

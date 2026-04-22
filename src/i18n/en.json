@@ -12,7 +12,14 @@
     "accounting": "Accounting",
     "templates": "Templates",
     "email_templates": "Emails",
-    "settings": "Settings"
+    "settings": "Settings",
+    "bookmarks": "Bookmarks"
+  },
+  "bookmarks": {
+    "unknown": "Unknown bookmark.",
+    "open_externally": "Open in browser",
+    "blocked_title": "This site doesn't allow embedding.",
+    "blocked_hint": "Some sites (banks, Google, etc.) block being loaded in another app for security. Open it in your system browser instead."
   },
   "common": {
     "save": "Save",

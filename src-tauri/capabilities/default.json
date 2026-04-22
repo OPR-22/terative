@@ -1,8 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Capability for the main app webview. The bookmark child webview (label `bookmark`) is deliberately omitted so external URLs cannot reach Tauri IPC.",
   "windows": ["main"],
+  "webviews": ["main"],
   "permissions": [
     "core:default",
     "opener:default",

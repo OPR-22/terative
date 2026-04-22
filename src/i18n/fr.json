@@ -12,7 +12,14 @@
     "accounting": "Comptabilité",
     "templates": "Modèles",
     "email_templates": "E-mails",
-    "settings": "Paramètres"
+    "settings": "Paramètres",
+    "bookmarks": "Favoris"
+  },
+  "bookmarks": {
+    "unknown": "Favori inconnu.",
+    "open_externally": "Ouvrir dans le navigateur",
+    "blocked_title": "Ce site n’autorise pas l’intégration.",
+    "blocked_hint": "Certains sites (banques, Google, etc.) empêchent leur chargement dans une autre application pour des raisons de sécurité. Ouvrez-le dans votre navigateur système."
   },
   "common": {
     "save": "Enregistrer",
