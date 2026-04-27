@@ -133,6 +133,20 @@ body {
     color var(--duration-medium) var(--ease-standard);
 }
 
+/* Tailwind v4 preflight applies `appearance: button` to <button> elements,
+   which on macOS WKWebView triggers native button chrome (gradient fill,
+   subtle border) that paints over our background/border-radius utilities.
+   Linux webkit2gtk renders `appearance: button` as a no-op so the bug is
+   invisible there. Reset it here so custom-styled buttons render the same
+   on every platform. */
+button,
+input[type="button"],
+input[type="reset"],
+input[type="submit"] {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
 /* Respect reduced-motion: collapse all transitions to near-zero so
    animations don't make users sick. */
 @media (prefers-reduced-motion: reduce) {

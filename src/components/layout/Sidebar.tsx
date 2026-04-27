@@ -4,7 +4,6 @@ import {
   BookOpen,
   Bookmark,
   FileText,
-  Home,
   LayoutDashboard,
   LayoutTemplate,
   Mail,
@@ -19,7 +18,6 @@ import {
 } from "lucide-react";
 
 import { BOOKMARKS } from "../../bookmarks";
-import { ipc } from "../../ipc";
 import { useSidebarStore } from "../../stores/sidebarStore";
 
 interface NavItem {
@@ -118,42 +116,25 @@ export function Sidebar() {
           )}
           <nav className="flex flex-col gap-1">
             {BOOKMARKS.map((b) => (
-              <div
+              <NavLink
                 key={b.id}
-                className={
-                  collapsed ? "flex justify-center" : "flex items-center gap-1"
+                to={`/bookmarks/${b.id}`}
+                title={collapsed ? b.label : undefined}
+                className={({ isActive }) =>
+                  [
+                    "flex items-center rounded-field text-sm font-medium transition-colors",
+                    collapsed
+                      ? "h-10 w-10 justify-center"
+                      : "gap-3 truncate px-3 py-2",
+                    isActive
+                      ? "bg-brand text-brand-fg"
+                      : "text-fg-muted hover:bg-surface-muted",
+                  ].join(" ")
                 }
               >
-                <NavLink
-                  to={`/bookmarks/${b.id}`}
-                  title={collapsed ? b.label : undefined}
-                  className={({ isActive }) =>
-                    [
-                      "flex items-center rounded-field text-sm font-medium transition-colors",
-                      collapsed
-                        ? "h-10 w-10 justify-center"
-                        : "flex-1 gap-3 truncate px-3 py-2",
-                      isActive
-                        ? "bg-brand text-brand-fg"
-                        : "text-fg-muted hover:bg-surface-muted",
-                    ].join(" ")
-                  }
-                >
-                  <Bookmark className="h-5 w-5 shrink-0" />
-                  {collapsed ? null : <span className="truncate">{b.label}</span>}
-                </NavLink>
-                {collapsed ? null : (
-                  <button
-                    type="button"
-                    title={t("bookmarks.home") ?? ""}
-                    aria-label={t("bookmarks.home") ?? ""}
-                    onClick={() => void ipc.bookmarkNavigate(b.id, b.url)}
-                    className="rounded-field p-2 text-fg-muted transition-colors hover:bg-surface-muted hover:text-fg"
-                  >
-                    <Home className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
+                <Bookmark className="h-5 w-5 shrink-0" />
+                {collapsed ? null : <span className="truncate">{b.label}</span>}
+              </NavLink>
             ))}
           </nav>
         </div>

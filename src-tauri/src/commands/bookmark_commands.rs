@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::Mutex;
 use tauri::webview::WebviewBuilder;
-use tauri::{LogicalPosition, LogicalSize, Manager, Url, WebviewUrl};
+use tauri::{LogicalPosition, LogicalSize, Manager, Rect, Url, WebviewUrl};
 
 /// Last-known device-pixel ratio. Tauri's `window.scale_factor()` reports
 /// integer-only on some Wayland setups where the compositor does fractional
@@ -210,13 +210,21 @@ fn apply_bookmark_layout(app: &tauri::AppHandle, bookmark_label: &str) {
 
 #[cfg(not(target_os = "linux"))]
 fn apply_bookmark_layout(app: &tauri::AppHandle, bookmark_label: &str) {
-    let Some(main_window) = app.get_webview_window("main") else {
+    // We can't use `get_webview_window("main")` here: that only returns Some
+    // when every webview in the window shares the window's label, which stops
+    // being true the moment we `add_child` the bookmark/toolbar webviews. Go
+    // through the main webview and pull its window instead.
+    let Some(main_webview) = app.get_webview("main") else {
+        eprintln!("[bookmark-layout] main webview missing");
         return;
     };
+    let main_window = main_webview.window();
     let Ok(scale) = main_window.scale_factor() else {
+        eprintln!("[bookmark-layout] scale_factor query failed");
         return;
     };
     let Ok(physical) = main_window.inner_size() else {
+        eprintln!("[bookmark-layout] inner_size query failed");
         return;
     };
     let logical: tauri::LogicalSize<f64> = physical.to_logical(scale);
@@ -224,22 +232,43 @@ fn apply_bookmark_layout(app: &tauri::AppHandle, bookmark_label: &str) {
     let win_h = logical.height;
 
     let Some(sidebar) = current_sidebar_width_css() else {
+        eprintln!("[bookmark-layout] sidebar width not yet set by frontend");
         return;
     };
     let Some(toolbar_h) = current_toolbar_height_css() else {
+        eprintln!("[bookmark-layout] toolbar height not yet set by frontend");
         return;
     };
 
     let right_w = (win_w - sidebar).max(1.0);
     let bookmark_h = (win_h - toolbar_h).max(1.0);
 
+    // Use `set_bounds` for an atomic position+size update. Calling
+    // `set_position` then `set_size` separately routes through two IPC
+    // messages and produces a transient frame at the wrong size, which on
+    // macOS WKWebView can leave the child webview in a stale layout.
+    let toolbar_rect = Rect {
+        position: LogicalPosition::new(sidebar, 0.0).into(),
+        size: LogicalSize::new(right_w, toolbar_h).into(),
+    };
+    let bookmark_rect = Rect {
+        position: LogicalPosition::new(sidebar, toolbar_h).into(),
+        size: LogicalSize::new(right_w, bookmark_h).into(),
+    };
+
     if let Some(toolbar) = app.get_webview(TOOLBAR_LABEL) {
-        let _ = toolbar.set_position(LogicalPosition::new(sidebar, 0.0));
-        let _ = toolbar.set_size(LogicalSize::new(right_w, toolbar_h));
+        if let Err(e) = toolbar.set_bounds(toolbar_rect) {
+            eprintln!("[bookmark-layout] toolbar set_bounds failed: {e}");
+        }
+    } else {
+        eprintln!("[bookmark-layout] toolbar webview not found");
     }
     if let Some(bookmark) = app.get_webview(bookmark_label) {
-        let _ = bookmark.set_position(LogicalPosition::new(sidebar, toolbar_h));
-        let _ = bookmark.set_size(LogicalSize::new(right_w, bookmark_h));
+        if let Err(e) = bookmark.set_bounds(bookmark_rect) {
+            eprintln!("[bookmark-layout] bookmark set_bounds failed: {e}");
+        }
+    } else {
+        eprintln!("[bookmark-layout] bookmark webview '{bookmark_label}' not found");
     }
 }
 
