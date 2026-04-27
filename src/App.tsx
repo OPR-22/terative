@@ -1,7 +1,9 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { Shell } from "./components/layout/Shell";
+import { useBookmarksLayoutBootstrap } from "./hooks/useBookmarksLayoutBootstrap";
 import { Accounting } from "./pages/Accounting";
+import { BookmarkToolbar } from "./pages/BookmarkToolbar";
 import { BookmarkView } from "./pages/BookmarkView";
 import { CatalogList } from "./pages/CatalogList";
 import { ClientDetail } from "./pages/ClientDetail";
@@ -15,8 +17,13 @@ import { TaxList } from "./pages/TaxList";
 import { TemplateList } from "./pages/TemplateList";
 
 function App() {
+  useBookmarksLayoutBootstrap();
   return (
     <Routes>
+      {/* Toolbar route is loaded by the dedicated `bookmark-toolbar` webview
+          that lives next to the bookmark on the right side of the window.
+          No Shell — just the toolbar UI. */}
+      <Route path="bookmark-toolbar/:id" element={<BookmarkToolbar />} />
       <Route element={<Shell />}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />

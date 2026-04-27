@@ -13,13 +13,19 @@
     "templates": "Templates",
     "email_templates": "Emails",
     "settings": "Settings",
-    "bookmarks": "Bookmarks"
+    "bookmarks": "Bookmarks",
+    "collapse_sidebar": "Collapse sidebar",
+    "expand_sidebar": "Expand sidebar"
   },
   "bookmarks": {
     "unknown": "Unknown bookmark.",
     "open_externally": "Open in browser",
     "blocked_title": "This site doesn't allow embedding.",
-    "blocked_hint": "Some sites (banks, Google, etc.) block being loaded in another app for security. Open it in your system browser instead."
+    "blocked_hint": "Some sites (banks, Google, etc.) block being loaded in another app for security. Open it in your system browser instead.",
+    "back": "Back",
+    "forward": "Forward",
+    "reload": "Reload",
+    "home": "Go to home page"
   },
   "common": {
     "save": "Save",

@@ -89,9 +89,36 @@ export const commands = {
 	dataListBackups: () => typedError<BackupDto[], string>(__TAURI_INVOKE("data_list_backups")),
 	dataDeleteBackup: (path: string) => typedError<null, string>(__TAURI_INVOKE("data_delete_backup", { path })),
 	dataUserBackupDir: () => typedError<string, string>(__TAURI_INVOKE("data_user_backup_dir")),
-	bookmarkOpen: (url: string, x: number, y: number, width: number, height: number, dpr: number) => typedError<null, string>(__TAURI_INVOKE("bookmark_open", { url, x, y, width, height, dpr })),
-	bookmarkSetBounds: (x: number, y: number, width: number, height: number) => typedError<null, string>(__TAURI_INVOKE("bookmark_set_bounds", { x, y, width, height })),
+	bookmarkOpen: (id: string, url: string, x: number, y: number, width: number, height: number, dpr: number) => typedError<null, string>(__TAURI_INVOKE("bookmark_open", { id, url, x, y, width, height, dpr })),
+	bookmarkSetBounds: (id: string, x: number, y: number, width: number, height: number, dpr: number) => typedError<null, string>(__TAURI_INVOKE("bookmark_set_bounds", { id, x, y, width, height, dpr })),
 	bookmarkHide: () => typedError<null, string>(__TAURI_INVOKE("bookmark_hide")),
+	/**
+	 *  Force the bookmark to navigate to a URL (typically the home URL via the
+	 *  refresh button in the sidebar).
+	 */
+	bookmarkNavigate: (id: string, url: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_navigate", { id, url })),
+	// Reload the bookmark's current page (toolbar reload button).
+	bookmarkReload: (id: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_reload", { id })),
+	/**
+	 *  Step the bookmark's session history backward (toolbar back button).
+	 *  Tauri's Webview doesn't expose `go_back` directly, so we evaluate the
+	 *  standard `history.back()` JS API in the bookmark's webview.
+	 */
+	bookmarkBack: (id: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_back", { id })),
+	bookmarkForward: (id: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_forward", { id })),
+	/**
+	 *  React-side notification of the sidebar's current width (CSS px). React is
+	 *  the source of truth — it tells us on app boot and again whenever the
+	 *  sidebar collapses/expands. We cache the value and, if a bookmark is
+	 *  currently shown, re-run layout so the bookmark reclaims/yields space.
+	 */
+	setSidebarWidth: (width: number) => typedError<null, string>(__TAURI_INVOKE("set_sidebar_width", { width })),
+	/**
+	 *  React-side notification of the toolbar's measured height (CSS px). The
+	 *  bookmark-toolbar webview measures itself after mount and reports here.
+	 *  Triggers a re-layout if a bookmark is active.
+	 */
+	setToolbarHeight: (height: number) => typedError<null, string>(__TAURI_INVOKE("set_toolbar_height", { height })),
 	notebookSectionCreate: (name: string) => typedError<NotebookSectionDto, string>(__TAURI_INVOKE("notebook_section_create", { name })),
 	notebookSectionRename: (input: RenameNotebookSectionDto) => typedError<NotebookSectionDto, string>(__TAURI_INVOKE("notebook_section_rename", { input })),
 	notebookSectionDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("notebook_section_delete", { id })),

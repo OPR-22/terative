@@ -15,7 +15,10 @@ use commands::{
     client_commands::{
         client_archive, client_create, client_get, client_list, client_unarchive, client_update,
     },
-    bookmark_commands::{bookmark_hide, bookmark_open, bookmark_set_bounds},
+    bookmark_commands::{
+        bookmark_back, bookmark_forward, bookmark_hide, bookmark_navigate, bookmark_open,
+        bookmark_reload, bookmark_set_bounds, set_sidebar_width, set_toolbar_height,
+    },
     data_commands::{
         data_backup, data_delete_backup, data_export, data_list_backups, data_restore,
         data_user_backup_dir,
@@ -200,6 +203,12 @@ fn build_specta() -> Builder<tauri::Wry> {
         bookmark_open,
         bookmark_set_bounds,
         bookmark_hide,
+        bookmark_navigate,
+        bookmark_reload,
+        bookmark_back,
+        bookmark_forward,
+        set_sidebar_width,
+        set_toolbar_height,
         notebook_section_create,
         notebook_section_rename,
         notebook_section_delete,
@@ -355,13 +364,10 @@ fn wrap_main_webview_in_gtk_fixed(app: &tauri::AppHandle) {
     }).unwrap_or((800, 600));
     widget_ref.size_allocate(&gtk::Allocation::new(0, 0, win_w, win_h));
 
-    eprintln!("[fixed-setup] reparented main webview into GtkFixed ({win_w}x{win_h})");
-
-    // Keep webview sizes in sync with the window. GTK signal callbacks run on
-    // the main thread, so capturing gtk widgets is safe (no Send needed).
-    // SIDEBAR_WIDTH_CSS must match the `w-56` Tailwind class on the React
-    // sidebar (14 rem * 16 px = 224 CSS px).
-    const SIDEBAR_WIDTH_CSS: f64 = 224.0;
+    // Keep webview sizes in sync with the window. GTK signal callbacks run
+    // on the main thread, so capturing gtk widgets is safe (no Send needed).
+    // The sidebar's CSS width is owned by React (it can collapse/expand) and
+    // pulled live from the cached value.
     let Ok(gtk_window) = main.as_ref().window().gtk_window() else { return };
     let fixed_for_resize = fixed.clone();
     let main_widget_for_resize = widget_ref.clone();
@@ -370,28 +376,45 @@ fn wrap_main_webview_in_gtk_fixed(app: &tauri::AppHandle) {
         let w = alloc.width();
         let h = alloc.height();
         let scale = commands::bookmark_commands::current_dpr();
-        let sidebar_px = (SIDEBAR_WIDTH_CSS * scale).round() as i32;
-        // Only VISIBLE children count: a hidden bookmark child still lives
-        // in the fixed, but we want main to reclaim its space in that case.
-        let children = fixed_for_resize.children();
-        let bookmark_visible = children.iter().any(|c| {
-            c != main_widget_for_resize.upcast_ref::<gtk::Widget>() && c.get_visible()
+        // Both sidebar width and toolbar height come from React. Until both
+        // are known we just size main to the full window.
+        let (Some(sidebar_css), Some(toolbar_css)) = (
+            commands::bookmark_commands::current_sidebar_width_css(),
+            commands::bookmark_commands::current_toolbar_height_css(),
+        ) else {
+            main_widget_for_resize.size_allocate(&gtk::Allocation::new(0, 0, w, h));
+            return;
+        };
+        let sidebar_px = (sidebar_css * scale).round() as i32;
+        let toolbar_px = (toolbar_css * scale).round() as i32;
+        let main_w = main_widget_for_resize.upcast_ref::<gtk::Widget>();
+        // Find a visible widget tagged `bookmark:<id>` (active bookmark page).
+        let visible_bookmark = fixed_for_resize.children().into_iter().find(|c| {
+            c != main_w
+                && c.get_visible()
+                && c.widget_name().as_str().starts_with("bookmark:")
         });
-        if bookmark_visible {
-            let bookmark_w = (w - sidebar_px).max(1);
+        if let Some(bookmark) = visible_bookmark {
+            let right_w = (w - sidebar_px).max(1);
+            let bookmark_h = (h - toolbar_px).max(1);
             main_widget_for_resize
                 .size_allocate(&gtk::Allocation::new(0, 0, sidebar_px, h));
-            for child in &children {
-                if child != main_widget_for_resize.upcast_ref::<gtk::Widget>() {
-                    child.size_allocate(&gtk::Allocation::new(
-                        sidebar_px,
-                        0,
-                        bookmark_w,
-                        h,
-                    ));
-                    break;
-                }
+            // Toolbar widget tagged `bookmark-toolbar`.
+            if let Some(toolbar) = fixed_for_resize
+                .children()
+                .into_iter()
+                .find(|c| c.widget_name().as_str() == "bookmark-toolbar")
+            {
+                toolbar.size_allocate(&gtk::Allocation::new(
+                    sidebar_px, 0, right_w, toolbar_px,
+                ));
             }
+            bookmark.size_allocate(&gtk::Allocation::new(
+                sidebar_px,
+                toolbar_px,
+                right_w,
+                bookmark_h,
+            ));
         } else {
             main_widget_for_resize.size_allocate(&gtk::Allocation::new(0, 0, w, h));
         }
