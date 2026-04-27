@@ -25,7 +25,15 @@
     "back": "Back",
     "forward": "Forward",
     "reload": "Reload",
-    "home": "Go to home page"
+    "home": "Go to home page",
+    "label": "Label",
+    "url": "URL",
+    "label_placeholder": "e.g. Google",
+    "url_placeholder": "https://example.com",
+    "add": "Add bookmark",
+    "edit": "Edit bookmark",
+    "delete_confirm": "Delete this bookmark?",
+    "none": "No bookmarks yet — add one above to pin a website to the sidebar."
   },
   "common": {
     "save": "Save",
@@ -243,6 +251,8 @@
     "backup_system_tooltip": "System backups are safety rails kept by the app and can't be deleted from here. The app prunes them automatically.",
     "data_restored": "Database restored.",
     "data_restore_warning": "Restore will overwrite your current database and restart the app. Your current database will be backed up first. Continue?",
+    "bookmarks": "Sidebar bookmarks",
+    "bookmarks_help": "Pin websites to the sidebar. Each bookmark opens a child webview inside the app — reorder with the arrows.",
     "notebook_sections": "Notebook sections",
     "notebook_sections_help": "Define the sections shown in every client's notebook tab. Reorder with the arrows. Deleting a section removes its content from every client.",
     "new_section": "New section",

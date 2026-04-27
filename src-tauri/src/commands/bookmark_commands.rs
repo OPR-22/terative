@@ -329,7 +329,7 @@ fn ensure_toolbar_webview(
 
 #[tauri::command]
 #[specta::specta]
-pub fn bookmark_open(
+pub fn bookmark_nav_open(
     app: tauri::AppHandle,
     id: String,
     url: String,
@@ -396,7 +396,7 @@ pub fn bookmark_open(
 
 #[tauri::command]
 #[specta::specta]
-pub fn bookmark_set_bounds(
+pub fn bookmark_layout_set_bounds(
     app: tauri::AppHandle,
     id: String,
     x: f64,
@@ -421,7 +421,7 @@ pub fn bookmark_set_bounds(
 /// refresh button in the sidebar).
 #[tauri::command]
 #[specta::specta]
-pub fn bookmark_navigate(
+pub fn bookmark_nav_to(
     app: tauri::AppHandle,
     id: String,
     url: String,
@@ -439,7 +439,7 @@ pub fn bookmark_navigate(
 /// Reload the bookmark's current page (toolbar reload button).
 #[tauri::command]
 #[specta::specta]
-pub fn bookmark_reload(app: tauri::AppHandle, id: String) -> Result<(), String> {
+pub fn bookmark_nav_reload(app: tauri::AppHandle, id: String) -> Result<(), String> {
     if let Some(webview) = app.get_webview(&label_for(&id)) {
         webview
             .reload()
@@ -453,7 +453,7 @@ pub fn bookmark_reload(app: tauri::AppHandle, id: String) -> Result<(), String> 
 /// standard `history.back()` JS API in the bookmark's webview.
 #[tauri::command]
 #[specta::specta]
-pub fn bookmark_back(app: tauri::AppHandle, id: String) -> Result<(), String> {
+pub fn bookmark_nav_back(app: tauri::AppHandle, id: String) -> Result<(), String> {
     if let Some(webview) = app.get_webview(&label_for(&id)) {
         webview
             .eval("history.back()")
@@ -464,7 +464,7 @@ pub fn bookmark_back(app: tauri::AppHandle, id: String) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub fn bookmark_forward(app: tauri::AppHandle, id: String) -> Result<(), String> {
+pub fn bookmark_nav_forward(app: tauri::AppHandle, id: String) -> Result<(), String> {
     if let Some(webview) = app.get_webview(&label_for(&id)) {
         webview
             .eval("history.forward()")
@@ -479,7 +479,10 @@ pub fn bookmark_forward(app: tauri::AppHandle, id: String) -> Result<(), String>
 /// currently shown, re-run layout so the bookmark reclaims/yields space.
 #[tauri::command]
 #[specta::specta]
-pub fn set_sidebar_width(app: tauri::AppHandle, width: f64) -> Result<(), String> {
+pub fn bookmark_layout_set_sidebar_width(
+    app: tauri::AppHandle,
+    width: f64,
+) -> Result<(), String> {
     *SIDEBAR_WIDTH_CSS.lock() = Some(width);
     apply_active_bookmark_layout(&app);
     Ok(())
@@ -490,7 +493,10 @@ pub fn set_sidebar_width(app: tauri::AppHandle, width: f64) -> Result<(), String
 /// Triggers a re-layout if a bookmark is active.
 #[tauri::command]
 #[specta::specta]
-pub fn set_toolbar_height(app: tauri::AppHandle, height: f64) -> Result<(), String> {
+pub fn bookmark_layout_set_toolbar_height(
+    app: tauri::AppHandle,
+    height: f64,
+) -> Result<(), String> {
     *TOOLBAR_HEIGHT_CSS.lock() = Some(height);
     apply_active_bookmark_layout(&app);
     Ok(())
@@ -498,7 +504,7 @@ pub fn set_toolbar_height(app: tauri::AppHandle, height: f64) -> Result<(), Stri
 
 #[tauri::command]
 #[specta::specta]
-pub fn bookmark_hide(app: tauri::AppHandle) -> Result<(), String> {
+pub fn bookmark_nav_hide(app: tauri::AppHandle) -> Result<(), String> {
     hide_other_bookmarks(&app, "");
     if let Some(toolbar) = app.get_webview(TOOLBAR_LABEL) {
         toolbar
@@ -507,4 +513,73 @@ pub fn bookmark_hide(app: tauri::AppHandle) -> Result<(), String> {
     }
     *ACTIVE_BOOKMARK.lock() = None;
     Ok(())
+}
+
+// ---- CRUD over the bookmarks list (manageable in Settings) ----
+
+use crate::application::dto::{BookmarkDto, NewBookmarkDto, UpdateBookmarkDto};
+use crate::domain::bookmark::BookmarkId;
+use tauri::State;
+use uuid::Uuid;
+
+#[tauri::command]
+#[specta::specta]
+pub fn bookmark_list(
+    state: State<'_, super::AppState>,
+) -> Result<Vec<BookmarkDto>, String> {
+    state
+        .list_bookmarks
+        .execute()
+        .map(|list| list.iter().map(Into::into).collect())
+        .map_err(super::to_ipc_err)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn bookmark_create(
+    state: State<'_, super::AppState>,
+    input: NewBookmarkDto,
+) -> Result<BookmarkDto, String> {
+    state
+        .create_bookmark
+        .execute(input.into())
+        .map(|b| (&b).into())
+        .map_err(super::to_ipc_err)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn bookmark_update(
+    state: State<'_, super::AppState>,
+    input: UpdateBookmarkDto,
+) -> Result<BookmarkDto, String> {
+    state
+        .update_bookmark
+        .execute(input.into())
+        .map(|b| (&b).into())
+        .map_err(super::to_ipc_err)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn bookmark_delete(
+    state: State<'_, super::AppState>,
+    id: Uuid,
+) -> Result<(), String> {
+    state
+        .delete_bookmark
+        .execute(BookmarkId(id))
+        .map_err(super::to_ipc_err)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn bookmark_reorder(
+    state: State<'_, super::AppState>,
+    ordered_ids: Vec<Uuid>,
+) -> Result<(), String> {
+    state
+        .reorder_bookmarks
+        .execute(ordered_ids.into_iter().map(BookmarkId).collect())
+        .map_err(super::to_ipc_err)
 }

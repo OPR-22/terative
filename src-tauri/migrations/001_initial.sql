@@ -87,6 +87,15 @@ CREATE TABLE tax_definitions (
     active          INTEGER NOT NULL DEFAULT 1
 );
 
+CREATE TABLE bookmarks (
+    id          TEXT PRIMARY KEY,
+    label       TEXT NOT NULL,
+    url         TEXT NOT NULL,
+    sort_order  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_bookmarks_sort ON bookmarks(sort_order);
+
 CREATE TABLE invoice_templates (
     id                  TEXT PRIMARY KEY,
     name                TEXT NOT NULL,

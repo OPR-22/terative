@@ -89,36 +89,41 @@ export const commands = {
 	dataListBackups: () => typedError<BackupDto[], string>(__TAURI_INVOKE("data_list_backups")),
 	dataDeleteBackup: (path: string) => typedError<null, string>(__TAURI_INVOKE("data_delete_backup", { path })),
 	dataUserBackupDir: () => typedError<string, string>(__TAURI_INVOKE("data_user_backup_dir")),
-	bookmarkOpen: (id: string, url: string, x: number, y: number, width: number, height: number, dpr: number) => typedError<null, string>(__TAURI_INVOKE("bookmark_open", { id, url, x, y, width, height, dpr })),
-	bookmarkSetBounds: (id: string, x: number, y: number, width: number, height: number, dpr: number) => typedError<null, string>(__TAURI_INVOKE("bookmark_set_bounds", { id, x, y, width, height, dpr })),
-	bookmarkHide: () => typedError<null, string>(__TAURI_INVOKE("bookmark_hide")),
+	bookmarkNavOpen: (id: string, url: string, x: number, y: number, width: number, height: number, dpr: number) => typedError<null, string>(__TAURI_INVOKE("bookmark_nav_open", { id, url, x, y, width, height, dpr })),
+	bookmarkNavHide: () => typedError<null, string>(__TAURI_INVOKE("bookmark_nav_hide")),
 	/**
 	 *  Force the bookmark to navigate to a URL (typically the home URL via the
 	 *  refresh button in the sidebar).
 	 */
-	bookmarkNavigate: (id: string, url: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_navigate", { id, url })),
+	bookmarkNavTo: (id: string, url: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_nav_to", { id, url })),
 	// Reload the bookmark's current page (toolbar reload button).
-	bookmarkReload: (id: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_reload", { id })),
+	bookmarkNavReload: (id: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_nav_reload", { id })),
 	/**
 	 *  Step the bookmark's session history backward (toolbar back button).
 	 *  Tauri's Webview doesn't expose `go_back` directly, so we evaluate the
 	 *  standard `history.back()` JS API in the bookmark's webview.
 	 */
-	bookmarkBack: (id: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_back", { id })),
-	bookmarkForward: (id: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_forward", { id })),
+	bookmarkNavBack: (id: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_nav_back", { id })),
+	bookmarkNavForward: (id: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_nav_forward", { id })),
+	bookmarkLayoutSetBounds: (id: string, x: number, y: number, width: number, height: number, dpr: number) => typedError<null, string>(__TAURI_INVOKE("bookmark_layout_set_bounds", { id, x, y, width, height, dpr })),
 	/**
 	 *  React-side notification of the sidebar's current width (CSS px). React is
 	 *  the source of truth — it tells us on app boot and again whenever the
 	 *  sidebar collapses/expands. We cache the value and, if a bookmark is
 	 *  currently shown, re-run layout so the bookmark reclaims/yields space.
 	 */
-	setSidebarWidth: (width: number) => typedError<null, string>(__TAURI_INVOKE("set_sidebar_width", { width })),
+	bookmarkLayoutSetSidebarWidth: (width: number) => typedError<null, string>(__TAURI_INVOKE("bookmark_layout_set_sidebar_width", { width })),
 	/**
 	 *  React-side notification of the toolbar's measured height (CSS px). The
 	 *  bookmark-toolbar webview measures itself after mount and reports here.
 	 *  Triggers a re-layout if a bookmark is active.
 	 */
-	setToolbarHeight: (height: number) => typedError<null, string>(__TAURI_INVOKE("set_toolbar_height", { height })),
+	bookmarkLayoutSetToolbarHeight: (height: number) => typedError<null, string>(__TAURI_INVOKE("bookmark_layout_set_toolbar_height", { height })),
+	bookmarkList: () => typedError<BookmarkDto[], string>(__TAURI_INVOKE("bookmark_list")),
+	bookmarkCreate: (input: NewBookmarkDto) => typedError<BookmarkDto, string>(__TAURI_INVOKE("bookmark_create", { input })),
+	bookmarkUpdate: (input: UpdateBookmarkDto) => typedError<BookmarkDto, string>(__TAURI_INVOKE("bookmark_update", { input })),
+	bookmarkDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_delete", { id })),
+	bookmarkReorder: (orderedIds: string[]) => typedError<null, string>(__TAURI_INVOKE("bookmark_reorder", { orderedIds })),
 	notebookSectionCreate: (name: string) => typedError<NotebookSectionDto, string>(__TAURI_INVOKE("notebook_section_create", { name })),
 	notebookSectionRename: (input: RenameNotebookSectionDto) => typedError<NotebookSectionDto, string>(__TAURI_INVOKE("notebook_section_rename", { input })),
 	notebookSectionDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("notebook_section_delete", { id })),
@@ -178,6 +183,13 @@ export type BackupDto = {
 export type BackupKindDto = "Manual" | "Auto" | "PreRestore" | "PreMigration";
 
 export type BackupScopeDto = "User" | "System";
+
+export type BookmarkDto = {
+	id: string,
+	label: string,
+	url: string,
+	sort_order: number,
+};
 
 export type CatalogItemDto = {
 	id: string,
@@ -391,6 +403,11 @@ export type ListPaymentsQueryDto = {
 export type MoneyDto = {
 	amount_minor: number,
 	currency: string,
+};
+
+export type NewBookmarkDto = {
+	label: string,
+	url: string,
 };
 
 export type NewCatalogItemDto = {
@@ -612,6 +629,12 @@ export type TemplateOverrideDto = {
 };
 
 export type ThemeDto = "Light" | "Dark";
+
+export type UpdateBookmarkDto = {
+	id: string,
+	label: string,
+	url: string,
+};
 
 export type UpdateCatalogItemDto = {
 	id: string,

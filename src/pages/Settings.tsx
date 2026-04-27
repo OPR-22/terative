@@ -7,6 +7,7 @@ import { Button } from "../components/common/Button";
 import { ImageUploader } from "../components/common/ImageUploader";
 import { Input } from "../components/common/Input";
 import { Money } from "../lib/money";
+import { useBookmarkStore } from "../stores/bookmarkStore";
 import { useCurrencyCatalogStore } from "../stores/currencyCatalogStore";
 import { useNotebookSectionStore } from "../stores/notebookSectionStore";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -65,6 +66,7 @@ export function Settings() {
         onSavePassword={saveEmailPassword}
         onTest={testEmailConnection}
       />
+      <BookmarksSection />
       <NotebookSectionsSection />
       <PreferencesSection
         prefs={snapshot.preferences}
@@ -867,6 +869,230 @@ function NotebookSectionsSection() {
         />
         <Button onClick={onCreate} disabled={busy || newName.trim() === ""}>
           {t("common.create")}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function BookmarksSection() {
+  const { t } = useTranslation();
+  const { bookmarks, loading, error, refresh, create, update, remove, reorder } =
+    useBookmarkStore();
+  const [newLabel, setNewLabel] = useState("");
+  const [newUrl, setNewUrl] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editUrl, setEditUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [localErr, setLocalErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const onCreate = async () => {
+    const label = newLabel.trim();
+    const url = newUrl.trim();
+    if (!label || !url) return;
+    setBusy(true);
+    setLocalErr(null);
+    try {
+      await create({ label, url });
+      setNewLabel("");
+      setNewUrl("");
+    } catch (e) {
+      setLocalErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onStartEdit = (id: string, label: string, url: string) => {
+    setEditingId(id);
+    setEditLabel(label);
+    setEditUrl(url);
+  };
+
+  const onCommitEdit = async () => {
+    if (!editingId) return;
+    const label = editLabel.trim();
+    const url = editUrl.trim();
+    if (!label || !url) {
+      setEditingId(null);
+      return;
+    }
+    setBusy(true);
+    setLocalErr(null);
+    try {
+      await update({ id: editingId, label, url });
+      setEditingId(null);
+    } catch (e) {
+      setLocalErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onDelete = async (id: string) => {
+    if (!confirm(t("bookmarks.delete_confirm"))) return;
+    setBusy(true);
+    setLocalErr(null);
+    try {
+      await remove(id);
+    } catch (e) {
+      setLocalErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const move = async (index: number, delta: -1 | 1) => {
+    const target = index + delta;
+    if (target < 0 || target >= bookmarks.length) return;
+    const ordered = bookmarks.map((b) => b.id);
+    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+    setBusy(true);
+    setLocalErr(null);
+    try {
+      await reorder(ordered);
+    } catch (e) {
+      setLocalErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-semibold text-fg">
+        {t("settings.bookmarks")}
+      </h2>
+      <p className="mb-3 text-sm text-fg-muted">
+        {t("settings.bookmarks_help")}
+      </p>
+
+      {error ? <p className="mb-3 text-sm text-danger">{error}</p> : null}
+      {localErr ? <p className="mb-3 text-sm text-danger">{localErr}</p> : null}
+
+      {loading && bookmarks.length === 0 ? (
+        <p className="text-sm text-fg-muted">{t("common.loading")}</p>
+      ) : bookmarks.length === 0 ? (
+        <p className="mb-3 text-sm text-fg-muted">{t("bookmarks.none")}</p>
+      ) : (
+        <ul className="mb-3 flex flex-col gap-2">
+          {bookmarks.map((b, i) => (
+            <li
+              key={b.id}
+              className="flex items-center gap-2 rounded-field border border-border bg-surface p-2"
+            >
+              <div className="flex flex-col">
+                <button
+                  type="button"
+                  onClick={() => move(i, -1)}
+                  disabled={busy || i === 0}
+                  className="text-xs text-fg-muted hover:text-fg disabled:opacity-30"
+                  aria-label={t("settings.move_up") ?? ""}
+                >
+                  ▲
+                </button>
+                <button
+                  type="button"
+                  onClick={() => move(i, 1)}
+                  disabled={busy || i === bookmarks.length - 1}
+                  className="text-xs text-fg-muted hover:text-fg disabled:opacity-30"
+                  aria-label={t("settings.move_down") ?? ""}
+                >
+                  ▼
+                </button>
+              </div>
+              {editingId === b.id ? (
+                <div className="flex flex-1 gap-2">
+                  <input
+                    className="w-1/3 rounded-field border border-border bg-surface px-2 py-1 text-sm text-fg"
+                    value={editLabel}
+                    onChange={(e) => setEditLabel(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void onCommitEdit();
+                      if (e.key === "Escape") setEditingId(null);
+                    }}
+                    placeholder={t("bookmarks.label_placeholder") ?? ""}
+                    autoFocus
+                  />
+                  <input
+                    className="flex-1 rounded-field border border-border bg-surface px-2 py-1 text-sm text-fg"
+                    value={editUrl}
+                    onChange={(e) => setEditUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void onCommitEdit();
+                      if (e.key === "Escape") setEditingId(null);
+                    }}
+                    placeholder={t("bookmarks.url_placeholder") ?? ""}
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => void onCommitEdit()}
+                    disabled={busy}
+                  >
+                    {t("common.save")}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    onClick={() => setEditingId(null)}
+                  >
+                    {t("common.cancel")}
+                  </Button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onStartEdit(b.id, b.label, b.url)}
+                  className="flex flex-1 flex-col items-start gap-0.5 text-left"
+                >
+                  <span className="text-sm font-medium text-fg">{b.label}</span>
+                  <span className="truncate text-xs text-fg-muted">
+                    {b.url}
+                  </span>
+                </button>
+              )}
+              {editingId === b.id ? null : (
+                <Button
+                  variant="danger"
+                  onClick={() => void onDelete(b.id)}
+                  disabled={busy}
+                >
+                  {t("common.delete")}
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="flex items-end gap-2">
+        <Input
+          label={t("bookmarks.label") ?? ""}
+          value={newLabel}
+          onChange={(e) => setNewLabel(e.target.value)}
+          placeholder={t("bookmarks.label_placeholder") ?? ""}
+          className="w-1/3"
+        />
+        <Input
+          label={t("bookmarks.url") ?? ""}
+          value={newUrl}
+          onChange={(e) => setNewUrl(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void onCreate();
+          }}
+          placeholder={t("bookmarks.url_placeholder") ?? ""}
+          className="flex-1"
+        />
+        <Button
+          onClick={onCreate}
+          disabled={busy || newLabel.trim() === "" || newUrl.trim() === ""}
+        >
+          {t("bookmarks.add")}
         </Button>
       </div>
     </section>

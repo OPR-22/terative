@@ -1,4 +1,5 @@
 pub mod accounting_repo;
+pub mod bookmark_repo;
 pub mod catalog_item_repo;
 pub mod client_journal_repo;
 pub mod client_notebook_repo;
@@ -14,6 +15,7 @@ pub mod tax_repo;
 pub mod template_repo;
 
 pub use accounting_repo::SqliteAccountingRepository;
+pub use bookmark_repo::SqliteBookmarkRepository;
 pub use catalog_item_repo::SqliteCatalogItemRepository;
 pub use client_journal_repo::SqliteClientJournalRepository;
 pub use client_notebook_repo::SqliteClientNotebookRepository;

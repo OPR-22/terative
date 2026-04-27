@@ -36,6 +36,7 @@ lettre = { version = "0.11", default-features = false, features = ["smtp-transpo
 specta = { version = "=2.0.0-rc.24", features = ["derive", "chrono", "uuid", "rust_decimal"] }
 specta-typescript = "0.0.11"
 tauri-specta = { version = "=2.0.0-rc.24", features = ["derive", "typescript"] }
+url = "2"
 
 # Linux-only: direct GTK access so we can flip the main window's default
 # vbox to horizontal orientation for the bookmark sister-pane layout.

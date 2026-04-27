@@ -25,7 +25,15 @@
     "back": "Précédent",
     "forward": "Suivant",
     "reload": "Recharger",
-    "home": "Page d’accueil"
+    "home": "Page d’accueil",
+    "label": "Libellé",
+    "url": "URL",
+    "label_placeholder": "ex. Google",
+    "url_placeholder": "https://exemple.com",
+    "add": "Ajouter un favori",
+    "edit": "Modifier le favori",
+    "delete_confirm": "Supprimer ce favori ?",
+    "none": "Aucun favori — ajoutez-en un ci-dessus pour épingler un site à la barre latérale."
   },
   "common": {
     "save": "Enregistrer",
@@ -243,6 +251,8 @@
     "backup_system_tooltip": "Les sauvegardes système sont des protections maintenues par l’application et ne peuvent pas être supprimées ici. L’application les nettoie automatiquement.",
     "data_restored": "Base de donnée restaurée.",
     "data_restore_warning": "La restauration écrasera votre base de donnée actuelle et redémarrera l’application. Votre base de donnée actuelle sera sauvegardée au préalable. Continuer ?",
+    "bookmarks": "Favoris de la barre latérale",
+    "bookmarks_help": "Épinglez des sites web à la barre latérale. Chaque favori s’ouvre dans une vue interne — réorganisez avec les flèches.",
     "notebook_sections": "Sections du carnet",
     "notebook_sections_help": "Définissez les sections affichées dans l’onglet Carnet de chaque client. Réorganisez avec les flèches. La suppression d’une section retire son contenu de tous les clients.",
     "new_section": "Nouvelle section",

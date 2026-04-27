@@ -2,8 +2,8 @@ import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-import { BOOKMARKS_BY_ID } from "../bookmarks";
 import { ipc } from "../ipc";
+import { useBookmarkStore } from "../stores/bookmarkStore";
 import { currentSidebarWidth } from "../stores/sidebarStore";
 
 function computeBounds() {
@@ -20,7 +20,15 @@ export function BookmarkView() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
 
-  const bookmark = id ? BOOKMARKS_BY_ID[id] : undefined;
+  const loaded = useBookmarkStore((s) => s.loaded);
+  const ensureLoaded = useBookmarkStore((s) => s.ensureLoaded);
+  const bookmark = useBookmarkStore((s) =>
+    id ? s.byId(id) : undefined,
+  );
+
+  useEffect(() => {
+    void ensureLoaded();
+  }, [ensureLoaded]);
 
   useEffect(() => {
     if (!bookmark) return;
@@ -28,7 +36,7 @@ export function BookmarkView() {
     const open = async () => {
       const b = computeBounds();
       try {
-        await ipc.bookmarkOpen(
+        await ipc.bookmarkNavOpen(
           bookmark.id,
           bookmark.url,
           b.x,
@@ -45,10 +53,13 @@ export function BookmarkView() {
     void open();
 
     return () => {
-      void ipc.bookmarkHide();
+      void ipc.bookmarkNavHide();
     };
   }, [bookmark]);
 
+  if (!loaded) {
+    return null;
+  }
   if (!bookmark) {
     return <p className="text-sm text-danger">{t("bookmarks.unknown")}</p>;
   }

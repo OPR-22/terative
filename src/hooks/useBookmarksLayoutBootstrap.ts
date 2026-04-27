@@ -14,7 +14,7 @@ export const TOOLBAR_HEIGHT = 50;
 /// change originates.
 export function useBookmarksLayoutBootstrap(): void {
   useEffect(() => {
-    void ipc.setSidebarWidth(currentSidebarWidth());
-    void ipc.setToolbarHeight(TOOLBAR_HEIGHT);
+    void ipc.bookmarkLayoutSetSidebarWidth(currentSidebarWidth());
+    void ipc.bookmarkLayoutSetToolbarHeight(TOOLBAR_HEIGHT);
   }, []);
 }

@@ -15,11 +15,11 @@ pub mod template_commands;
 use std::sync::Arc;
 
 use crate::adapters::sqlite::{
-    SqliteAccountingRepository, SqliteCatalogItemRepository, SqliteClientJournalRepository,
-    SqliteClientNotebookRepository, SqliteClientRepository, SqliteEmailTemplateRepository,
-    SqliteInvoiceNumberGenerator, SqliteInvoiceRepository, SqliteNotebookSectionRepository,
-    SqlitePaymentRepository, SqliteSettingsRepository, SqliteTaxRepository,
-    SqliteTemplateRepository,
+    SqliteAccountingRepository, SqliteBookmarkRepository, SqliteCatalogItemRepository,
+    SqliteClientJournalRepository, SqliteClientNotebookRepository, SqliteClientRepository,
+    SqliteEmailTemplateRepository, SqliteInvoiceNumberGenerator, SqliteInvoiceRepository,
+    SqliteNotebookSectionRepository, SqlitePaymentRepository, SqliteSettingsRepository,
+    SqliteTaxRepository, SqliteTemplateRepository,
 };
 use crate::adapters::{
     FilesystemDataManagement, FilesystemPdfStorage, KeyringCredentialStore, LettreEmailSender,
@@ -27,6 +27,9 @@ use crate::adapters::{
 };
 use crate::application::ports::DataManagement;
 use crate::application::accounting_usecases::AccountingService;
+use crate::application::bookmark_usecases::{
+    CreateBookmark, DeleteBookmark, ListBookmarks, ReorderBookmarks, UpdateBookmark,
+};
 use crate::application::client_usecases::{
     ArchiveClient, CreateClient, GetClientDetail, ListClients, UnarchiveClient, UpdateClient,
 };
@@ -87,6 +90,12 @@ pub struct AppState {
     pub archive_tax: ArchiveTax,
     pub unarchive_tax: UnarchiveTax,
     pub list_taxes: ListTaxes,
+
+    pub create_bookmark: CreateBookmark,
+    pub update_bookmark: UpdateBookmark,
+    pub delete_bookmark: DeleteBookmark,
+    pub list_bookmarks: ListBookmarks,
+    pub reorder_bookmarks: ReorderBookmarks,
 
     pub create_template: CreateTemplate,
     pub update_template: UpdateTemplate,
@@ -156,6 +165,7 @@ impl AppState {
         let catalog_item_repo = Arc::new(SqliteCatalogItemRepository::new(db.clone()));
         let settings_repo = Arc::new(SqliteSettingsRepository::new(db.clone()));
         let tax_repo = Arc::new(SqliteTaxRepository::new(db.clone()));
+        let bookmark_repo = Arc::new(SqliteBookmarkRepository::new(db.clone()));
         let template_repo = Arc::new(SqliteTemplateRepository::new(db.clone()));
         let invoice_repo = Arc::new(SqliteInvoiceRepository::new(db.clone()));
         let payment_repo = Arc::new(SqlitePaymentRepository::new(db.clone()));
@@ -204,6 +214,12 @@ impl AppState {
             archive_tax: ArchiveTax::new(tax_repo.clone()),
             unarchive_tax: UnarchiveTax::new(tax_repo.clone()),
             list_taxes: ListTaxes::new(tax_repo.clone()),
+
+            create_bookmark: CreateBookmark::new(bookmark_repo.clone()),
+            update_bookmark: UpdateBookmark::new(bookmark_repo.clone()),
+            delete_bookmark: DeleteBookmark::new(bookmark_repo.clone()),
+            list_bookmarks: ListBookmarks::new(bookmark_repo.clone()),
+            reorder_bookmarks: ReorderBookmarks::new(bookmark_repo),
 
             create_template: CreateTemplate::new(template_repo.clone()),
             update_template: UpdateTemplate::new(template_repo.clone()),

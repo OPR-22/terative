@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -17,7 +18,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { BOOKMARKS } from "../../bookmarks";
+import { useBookmarkStore } from "../../stores/bookmarkStore";
 import { useSidebarStore } from "../../stores/sidebarStore";
 
 interface NavItem {
@@ -31,6 +32,12 @@ export function Sidebar() {
   const { t } = useTranslation();
   const collapsed = useSidebarStore((s) => s.collapsed);
   const toggle = useSidebarStore((s) => s.toggle);
+  const bookmarks = useBookmarkStore((s) => s.bookmarks);
+  const ensureLoaded = useBookmarkStore((s) => s.ensureLoaded);
+
+  useEffect(() => {
+    void ensureLoaded();
+  }, [ensureLoaded]);
 
   const items: NavItem[] = [
     { to: "/", label: t("nav.dashboard"), end: true, icon: LayoutDashboard },
@@ -107,7 +114,7 @@ export function Sidebar() {
           );
         })}
       </nav>
-      {BOOKMARKS.length > 0 ? (
+      {bookmarks.length > 0 ? (
         <div className="mt-6">
           {collapsed ? null : (
             <h2 className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide text-fg-muted">
@@ -115,7 +122,7 @@ export function Sidebar() {
             </h2>
           )}
           <nav className="flex flex-col gap-1">
-            {BOOKMARKS.map((b) => (
+            {bookmarks.map((b) => (
               <NavLink
                 key={b.id}
                 to={`/bookmarks/${b.id}`}

@@ -1,4 +1,5 @@
 pub mod accounting_usecases;
+pub mod bookmark_usecases;
 pub mod catalog_item_usecases;
 pub mod client_usecases;
 pub mod dto;
@@ -12,6 +13,7 @@ pub mod settings_usecases;
 pub mod tax_usecases;
 pub mod template_usecases;
 
+use crate::domain::bookmark::BookmarkError;
 use crate::domain::catalog_item::CatalogItemError;
 use crate::domain::client::ClientError;
 use crate::domain::email_template::EmailTemplateError;
@@ -39,6 +41,8 @@ pub enum RepoError {
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
+    #[error(transparent)]
+    Bookmark(#[from] BookmarkError),
     #[error(transparent)]
     CatalogItem(#[from] CatalogItemError),
     #[error(transparent)]

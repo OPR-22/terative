@@ -12,6 +12,7 @@
 //!   Use cases stay pure domain.
 
 pub mod accounting;
+pub mod bookmark;
 pub mod catalog_item;
 pub mod client;
 pub mod common;
@@ -48,6 +49,7 @@ pub use payment::{
     ListPaymentsQueryDto, NewPaymentAllocationDto, NewPaymentDto, PaymentAllocationDto,
     PaymentDto, PaymentMethodDto, UpdatePaymentDto,
 };
+pub use bookmark::{BookmarkDto, NewBookmarkDto, UpdateBookmarkDto};
 pub use catalog_item::{
     CatalogItemDto, CatalogItemKindDto, NewCatalogItemDto, UpdateCatalogItemDto,
 };

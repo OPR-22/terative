@@ -1,5 +1,6 @@
 pub mod pagination;
 pub mod accounting_queries;
+pub mod bookmark_repository;
 pub mod catalog_item_repository;
 pub mod client_journal_repository;
 pub mod client_notebook_repository;
@@ -35,6 +36,7 @@ pub use invoice_repository::{InvoiceRepository, ListInvoicesQuery};
 pub use payment_repository::{ListPaymentsQuery, PaymentRepository};
 pub use pdf_generator::{PdfError, PdfGenerator, PdfRenderInput};
 pub use pdf_storage::PdfStorage;
+pub use bookmark_repository::BookmarkRepository;
 pub use catalog_item_repository::CatalogItemRepository;
 pub use settings_repository::SettingsRepository;
 pub use tax_repository::TaxRepository;

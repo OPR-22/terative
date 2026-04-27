@@ -1,3 +1,4 @@
+pub mod bookmark;
 pub mod catalog_item;
 pub mod client;
 pub mod email_template;

@@ -32,7 +32,7 @@ export const useSidebarStore = create<SidebarState>((set, get) => ({
     } catch {
       // noop — storage unavailable, runtime state is still correct
     }
-    void ipc.setSidebarWidth(
+    void ipc.bookmarkLayoutSetSidebarWidth(
       next ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED,
     );
   },

@@ -1,10 +1,10 @@
 import { ArrowLeft, ArrowRight, Home, RotateCw, type LucideIcon } from "lucide-react";
-import type { MouseEventHandler } from "react";
+import { useEffect, type MouseEventHandler } from "react";
 import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-import { BOOKMARKS_BY_ID } from "../bookmarks";
 import { ipc } from "../ipc";
+import { useBookmarkStore } from "../stores/bookmarkStore";
 
 interface ToolbarIconButtonProps {
   icon: LucideIcon;
@@ -33,8 +33,19 @@ function ToolbarIconButton({ icon: Icon, label, onClick }: ToolbarIconButtonProp
 export function BookmarkToolbar() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
-  const bookmark = id ? BOOKMARKS_BY_ID[id] : undefined;
+  const loaded = useBookmarkStore((s) => s.loaded);
+  const ensureLoaded = useBookmarkStore((s) => s.ensureLoaded);
+  const bookmark = useBookmarkStore((s) =>
+    id ? s.byId(id) : undefined,
+  );
 
+  useEffect(() => {
+    void ensureLoaded();
+  }, [ensureLoaded]);
+
+  if (!loaded) {
+    return null;
+  }
   if (!bookmark) {
     return (
       <div className="flex h-full items-center bg-surface px-3 text-sm text-fg-muted">
@@ -48,22 +59,22 @@ export function BookmarkToolbar() {
       <ToolbarIconButton
         icon={ArrowLeft}
         label={t("bookmarks.back") ?? ""}
-        onClick={() => void ipc.bookmarkBack(bookmark.id)}
+        onClick={() => void ipc.bookmarkNavBack(bookmark.id)}
       />
       <ToolbarIconButton
         icon={ArrowRight}
         label={t("bookmarks.forward") ?? ""}
-        onClick={() => void ipc.bookmarkForward(bookmark.id)}
+        onClick={() => void ipc.bookmarkNavForward(bookmark.id)}
       />
       <ToolbarIconButton
         icon={RotateCw}
         label={t("bookmarks.reload") ?? ""}
-        onClick={() => void ipc.bookmarkReload(bookmark.id)}
+        onClick={() => void ipc.bookmarkNavReload(bookmark.id)}
       />
       <ToolbarIconButton
         icon={Home}
         label={t("bookmarks.home") ?? ""}
-        onClick={() => void ipc.bookmarkNavigate(bookmark.id, bookmark.url)}
+        onClick={() => void ipc.bookmarkNavTo(bookmark.id, bookmark.url)}
       />
       <span className="ml-2 truncate text-sm text-fg-muted" title={bookmark.url}>
         {new URL(bookmark.url).hostname}
