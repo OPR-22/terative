@@ -282,6 +282,8 @@ pub fn run() {
             spawn_auto_backup_ticker(app.handle().clone());
             #[cfg(target_os = "linux")]
             wrap_main_webview_in_gtk_fixed(app.handle());
+            #[cfg(not(target_os = "linux"))]
+            register_main_window_resize_handler(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -417,6 +419,25 @@ fn wrap_main_webview_in_gtk_fixed(app: &tauri::AppHandle) {
             ));
         } else {
             main_widget_for_resize.size_allocate(&gtk::Allocation::new(0, 0, w, h));
+        }
+    });
+}
+
+/// macOS/Windows equivalent of the Linux GTK `size_allocate` handler. Tauri's
+/// child webviews (the bookmark toolbar + bookmark page) are absolute-
+/// positioned overlays that don't auto-resize with the window, so we re-apply
+/// the bookmark layout on every `WindowEvent::Resized`. No-op when no
+/// bookmark is currently active (the overlays are hidden in that case).
+#[cfg(not(target_os = "linux"))]
+fn register_main_window_resize_handler(app: &tauri::AppHandle) {
+    let Some(main) = app.get_webview_window("main") else {
+        eprintln!("[resize-handler] main window not found");
+        return;
+    };
+    let app_handle = app.clone();
+    main.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Resized(_)) {
+            commands::bookmark_commands::apply_active_bookmark_layout(&app_handle);
         }
     });
 }

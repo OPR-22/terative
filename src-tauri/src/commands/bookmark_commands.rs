@@ -1,3 +1,4 @@
+#[cfg(target_os = "linux")]
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::Mutex;
@@ -43,8 +44,8 @@ fn current_toolbar_height_css_required() -> Result<f64, String> {
 
 /// Label of the currently-shown bookmark, if any. Updated on `bookmark_open`
 /// and cleared on `bookmark_hide`. Used by `set_sidebar_width` /
-/// `set_toolbar_height` to know which bookmark to re-layout.
-#[cfg(target_os = "linux")]
+/// `set_toolbar_height` and the window-resize handler to know which bookmark
+/// to re-layout.
 static ACTIVE_BOOKMARK: Mutex<Option<String>> = Mutex::new(None);
 
 /// Each bookmark gets its own webview, labelled `bookmark:<id>`. The webview
@@ -75,18 +76,18 @@ fn parse_url(s: &str) -> Result<Url, String> {
     }
 }
 
-/// Linux-only: lay out [main | toolbar | bookmark] inside the GtkFixed.
+/// Lay out the toolbar and active bookmark webviews from the cached sidebar
+/// width + toolbar height + current window size. Idempotent — safe to call
+/// from any code path that changes one of those inputs (sidebar collapse,
+/// toolbar re-measure, window resize, bookmark open).
 ///
-/// - main webview: left strip, sidebar width, full height.
-/// - toolbar webview: top-right strip, full remaining width × TOOLBAR_HEIGHT.
-/// - bookmark webview: bottom-right, full remaining width × remaining height.
+/// Layout: `[main | toolbar]` over `[main | bookmark]`, with the main webview
+/// hosting the React sidebar in its left strip.
 ///
-/// All three are non-overlapping rectangles inside the fixed. The toolbar
-/// and bookmark widgets are reparented from Tauri's default vbox into the
-/// fixed on first use, then tagged with their labels via `widget_name` so
-/// subsequent calls find them.
+/// Linux uses GTK widget reparenting into a `GtkFixed`; macOS/Windows use
+/// Tauri's native `set_position`/`set_size` on the overlay child webviews.
 #[cfg(target_os = "linux")]
-fn place_bookmark_in_fixed(app: &tauri::AppHandle, bookmark_label: &str) {
+fn apply_bookmark_layout(app: &tauri::AppHandle, bookmark_label: &str) {
     eprintln!("[place] entry for {bookmark_label}");
     let Some(main_webview) = app.get_webview("main") else {
         eprintln!("[place] main webview missing");
@@ -208,7 +209,49 @@ fn place_bookmark_in_fixed(app: &tauri::AppHandle, bookmark_label: &str) {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn place_bookmark_in_fixed(_app: &tauri::AppHandle, _bookmark_label: &str) {}
+fn apply_bookmark_layout(app: &tauri::AppHandle, bookmark_label: &str) {
+    let Some(main_window) = app.get_webview_window("main") else {
+        return;
+    };
+    let Ok(scale) = main_window.scale_factor() else {
+        return;
+    };
+    let Ok(physical) = main_window.inner_size() else {
+        return;
+    };
+    let logical: tauri::LogicalSize<f64> = physical.to_logical(scale);
+    let win_w = logical.width;
+    let win_h = logical.height;
+
+    let Some(sidebar) = current_sidebar_width_css() else {
+        return;
+    };
+    let Some(toolbar_h) = current_toolbar_height_css() else {
+        return;
+    };
+
+    let right_w = (win_w - sidebar).max(1.0);
+    let bookmark_h = (win_h - toolbar_h).max(1.0);
+
+    if let Some(toolbar) = app.get_webview(TOOLBAR_LABEL) {
+        let _ = toolbar.set_position(LogicalPosition::new(sidebar, 0.0));
+        let _ = toolbar.set_size(LogicalSize::new(right_w, toolbar_h));
+    }
+    if let Some(bookmark) = app.get_webview(bookmark_label) {
+        let _ = bookmark.set_position(LogicalPosition::new(sidebar, toolbar_h));
+        let _ = bookmark.set_size(LogicalSize::new(right_w, bookmark_h));
+    }
+}
+
+/// Re-applies layout for whichever bookmark is currently visible (if any).
+/// No-op when no bookmark is shown — the toolbar and bookmark webviews are
+/// hidden in that case and don't need positioning.
+pub fn apply_active_bookmark_layout(app: &tauri::AppHandle) {
+    let Some(label) = ACTIVE_BOOKMARK.lock().clone() else {
+        return;
+    };
+    apply_bookmark_layout(app, &label);
+}
 
 /// Hides every bookmark webview except the one with `keep_label` (pass an
 /// empty str to hide them all). Used to ensure only one bookmark is visible
@@ -270,10 +313,10 @@ pub fn bookmark_open(
     let parsed = parse_url(&url)?;
     let label = label_for(&id);
     hide_other_bookmarks(&app, &label);
+    *ACTIVE_BOOKMARK.lock() = Some(label.clone());
     #[cfg(target_os = "linux")]
     {
         DPR_BITS.store(dpr.to_bits(), Ordering::Relaxed);
-        *ACTIVE_BOOKMARK.lock() = Some(label.clone());
     }
     #[cfg(not(target_os = "linux"))]
     let _ = dpr;
@@ -298,17 +341,7 @@ pub fn bookmark_open(
         existing
             .show()
             .map_err(|e: tauri::Error| e.to_string())?;
-        #[cfg(target_os = "linux")]
-        place_bookmark_in_fixed(&app, &label);
-        #[cfg(not(target_os = "linux"))]
-        {
-            existing
-                .set_position(LogicalPosition::new(x, bookmark_y))
-                .map_err(|e: tauri::Error| e.to_string())?;
-            existing
-                .set_size(LogicalSize::new(width, bookmark_h))
-                .map_err(|e: tauri::Error| e.to_string())?;
-        }
+        apply_bookmark_layout(&app, &label);
         return Ok(());
     }
 
@@ -328,8 +361,7 @@ pub fn bookmark_open(
         .show()
         .map_err(|e: tauri::Error| e.to_string())?;
 
-    #[cfg(target_os = "linux")]
-    place_bookmark_in_fixed(&app, &label);
+    apply_bookmark_layout(&app, &label);
     Ok(())
 }
 
@@ -345,23 +377,14 @@ pub fn bookmark_set_bounds(
     dpr: f64,
 ) -> Result<(), String> {
     let label = label_for(&id);
+    let _ = (x, y, width, height); // bounds are derived from the cached sidebar/toolbar/window dims
     #[cfg(target_os = "linux")]
     {
-        let _ = (x, y, width, height); // bookmark position is derived from sidebar width on Linux
         DPR_BITS.store(dpr.to_bits(), Ordering::Relaxed);
-        place_bookmark_in_fixed(&app, &label);
     }
     #[cfg(not(target_os = "linux"))]
-    {
-        let _ = dpr;
-        let Some(webview) = app.get_webview(&label) else { return Ok(()) };
-        webview
-            .set_position(LogicalPosition::new(x, y))
-            .map_err(|e: tauri::Error| e.to_string())?;
-        webview
-            .set_size(LogicalSize::new(width, height))
-            .map_err(|e: tauri::Error| e.to_string())?;
-    }
+    let _ = dpr;
+    apply_bookmark_layout(&app, &label);
     Ok(())
 }
 
@@ -429,12 +452,7 @@ pub fn bookmark_forward(app: tauri::AppHandle, id: String) -> Result<(), String>
 #[specta::specta]
 pub fn set_sidebar_width(app: tauri::AppHandle, width: f64) -> Result<(), String> {
     *SIDEBAR_WIDTH_CSS.lock() = Some(width);
-    #[cfg(target_os = "linux")]
-    if let Some(label) = ACTIVE_BOOKMARK.lock().clone() {
-        place_bookmark_in_fixed(&app, &label);
-    }
-    #[cfg(not(target_os = "linux"))]
-    let _ = app;
+    apply_active_bookmark_layout(&app);
     Ok(())
 }
 
@@ -445,12 +463,7 @@ pub fn set_sidebar_width(app: tauri::AppHandle, width: f64) -> Result<(), String
 #[specta::specta]
 pub fn set_toolbar_height(app: tauri::AppHandle, height: f64) -> Result<(), String> {
     *TOOLBAR_HEIGHT_CSS.lock() = Some(height);
-    #[cfg(target_os = "linux")]
-    if let Some(label) = ACTIVE_BOOKMARK.lock().clone() {
-        place_bookmark_in_fixed(&app, &label);
-    }
-    #[cfg(not(target_os = "linux"))]
-    let _ = app;
+    apply_active_bookmark_layout(&app);
     Ok(())
 }
 
@@ -463,9 +476,6 @@ pub fn bookmark_hide(app: tauri::AppHandle) -> Result<(), String> {
             .hide()
             .map_err(|e: tauri::Error| e.to_string())?;
     }
-    #[cfg(target_os = "linux")]
-    {
-        *ACTIVE_BOOKMARK.lock() = None;
-    }
+    *ACTIVE_BOOKMARK.lock() = None;
     Ok(())
 }
