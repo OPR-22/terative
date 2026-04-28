@@ -1,22 +1,23 @@
 import type { InputHTMLAttributes } from "react";
 
+import { Field, Input as UiInput } from "../ui/Input";
+
 interface Props extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
 }
 
-const inputClass =
-  "block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm placeholder:text-fg-subtle focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand";
-
-export function Input({ label, className = "", id, ...rest }: Props) {
+/**
+ * Legacy Input kept as a shim around the new design-system Field+Input.
+ * Prefer importing `Input` and `Field` from `components/ui` in new code.
+ */
+export function Input({ label, id, ...rest }: Props) {
   const inputId = id ?? rest.name;
-  return (
-    <div className="flex flex-col gap-1">
-      {label ? (
-        <label htmlFor={inputId} className="text-sm font-medium text-fg-muted">
-          {label}
-        </label>
-      ) : null}
-      <input id={inputId} className={`${inputClass} ${className}`} {...rest} />
-    </div>
-  );
+  if (label) {
+    return (
+      <Field label={label} htmlFor={inputId}>
+        <UiInput id={inputId} {...rest} />
+      </Field>
+    );
+  }
+  return <UiInput id={inputId} {...rest} />;
 }

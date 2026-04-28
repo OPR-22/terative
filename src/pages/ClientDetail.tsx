@@ -1,11 +1,20 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Edit, Plus, Trash2 } from "lucide-react";
 
-import { Button } from "../components/common/Button";
-import { Input } from "../components/common/Input";
-import { ClientAttributeDatalists } from "../components/client/ClientAttributeDatalists";
+import { Page } from "../components/layout/Page";
+import { Avatar } from "../components/ui/Avatar";
+import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
+import { Card, CardBody, CardHead } from "../components/ui/Card";
+import { EmptyState } from "../components/ui/EmptyState";
+import { Field, Input, Select, Textarea } from "../components/ui/Input";
+import { Modal } from "../components/ui/Modal";
+import { StatusDot } from "../components/ui/StatusDot";
+import { Tabs, type TabOption } from "../components/ui/Tabs";
 import { ContactListEditor } from "../components/client/ContactListEditor";
+import { ClientAttributeDatalists } from "../components/client/ClientAttributeDatalists";
 import { useClientStore } from "../stores/clientStore";
 import {
   ipc,
@@ -19,6 +28,26 @@ import {
 } from "../ipc";
 
 type Tab = "info" | "notebook" | "journal";
+
+function computeAgeLabel(
+  dob: string | null,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string | null {
+  if (!dob) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dob);
+  if (!m) return null;
+  const birthY = Number(m[1]);
+  const birthM = Number(m[2]);
+  const birthD = Number(m[3]);
+  const today = new Date();
+  let age = today.getFullYear() - birthY;
+  const monthDiff = today.getMonth() + 1 - birthM;
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthD)) {
+    age -= 1;
+  }
+  if (age < 0) return null;
+  return t("clients.age_years", { count: age });
+}
 
 export function ClientDetail() {
   const { t } = useTranslation();
@@ -47,104 +76,83 @@ export function ClientDetail() {
   if (!id) return null;
   if (error) {
     return (
-      <div className="max-w-5xl">
-        <p className="text-sm text-danger">{error}</p>
-        <Button variant="secondary" onClick={() => navigate("/clients")}>
-          {t("common.back")}
-        </Button>
-      </div>
+      <Page crumbs={["Cabinet Lemaire", t("clients.title")]} title="—">
+        <p className="text-[13px] text-danger">{error}</p>
+      </Page>
     );
   }
   if (!client) {
     return (
-      <p className="text-sm text-fg-muted">{t("common.loading")}</p>
+      <Page crumbs={["Cabinet Lemaire", t("clients.title")]} title="—">
+        <EmptyState description={t("common.loading")} />
+      </Page>
     );
   }
 
+  const ageLabel = computeAgeLabel(client.date_of_birth, t);
+  const tabOptions: TabOption<Tab>[] = [
+    { id: "info", label: t("clients.tab_info") },
+    { id: "notebook", label: t("clients.tab_notebook") },
+    { id: "journal", label: t("clients.tab_journal") },
+  ];
+
   return (
-    <div className="max-w-5xl">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="secondary" onClick={() => navigate("/clients")}>
-            ← {t("common.back")}
+    <Page
+      crumbs={["Cabinet Lemaire", t("clients.title"), client.name]}
+      title={
+        <span className="inline-flex items-center gap-3">
+          <Avatar name={client.name} size={32} />
+          {client.name}
+        </span>
+      }
+      subtitle={
+        <span className="inline-flex items-center gap-2">
+          {client.language ? (
+            <Badge kind="outline">{client.language.toUpperCase()}</Badge>
+          ) : null}
+          <span className="text-ink-3">
+            {[ageLabel, client.occupation].filter(Boolean).join(" · ") ||
+              "—"}
+          </span>
+        </span>
+      }
+      actions={
+        <>
+          <Button
+            leadingIcon={<ArrowLeft size={13} strokeWidth={1.5} />}
+            onClick={() => navigate("/clients")}
+          >
+            {t("common.back")}
           </Button>
-          <h1 className="text-2xl font-bold text-fg">{client.name}</h1>
-        </div>
-      </div>
+          <Button
+            leadingIcon={<Plus size={13} strokeWidth={1.5} />}
+            onClick={() => navigate("/payments/create")}
+          >
+            {t("payments.new")}
+          </Button>
+          <Button
+            variant="primary"
+            leadingIcon={<Plus size={13} strokeWidth={1.5} />}
+            onClick={() => navigate("/invoices/create")}
+          >
+            {t("invoices.new")}
+          </Button>
+        </>
+      }
+    >
+      <Tabs<Tab>
+        value={tab}
+        onChange={setTab}
+        options={tabOptions}
+        className="mb-5"
+      />
 
-      <div className="mb-4 flex gap-2 border-b border-border">
-        <TabButton active={tab === "info"} onClick={() => setTab("info")}>
-          {t("clients.tab_info")}
-        </TabButton>
-        <TabButton
-          active={tab === "notebook"}
-          onClick={() => setTab("notebook")}
-        >
-          {t("clients.tab_notebook")}
-        </TabButton>
-        <TabButton active={tab === "journal"} onClick={() => setTab("journal")}>
-          {t("clients.tab_journal")}
-        </TabButton>
-      </div>
-
-      {tab === "info" ? (
-        <InfoTab client={client} onSaved={setClient} />
-      ) : null}
+      {tab === "info" ? <InfoTab client={client} onSaved={setClient} /> : null}
       {tab === "notebook" ? <NotebookTab clientId={client.id} /> : null}
       {tab === "journal" ? <JournalTab clientId={client.id} /> : null}
-    </div>
+    </Page>
   );
 }
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        "border-b-2 px-4 py-2 text-sm font-medium transition-colors",
-        active
-          ? "border-brand text-fg"
-          : "border-transparent text-fg-muted hover:text-fg",
-      ].join(" ")}
-    >
-      {children}
-    </button>
-  );
-}
-
-/// Returns a localized "X years old" string for the given DOB, or null if
-/// no DOB or the date doesn't parse. Calendar-correct (rolls back a year
-/// if the birthday hasn't happened yet this year).
-function computeAgeLabel(
-  dob: string | null,
-  t: (key: string, opts?: Record<string, unknown>) => string,
-): string | null {
-  if (!dob) return null;
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dob);
-  if (!m) return null;
-  const birthY = Number(m[1]);
-  const birthM = Number(m[2]);
-  const birthD = Number(m[3]);
-  const today = new Date();
-  let age = today.getFullYear() - birthY;
-  const monthDiff = today.getMonth() + 1 - birthM;
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthD)) {
-    age -= 1;
-  }
-  if (age < 0) return null;
-  return t("clients.age_years", { count: age });
-}
-
-// ---- Info tab ----
 
 function InfoTab({
   client,
@@ -165,9 +173,7 @@ function InfoTab({
   const [phones, setPhones] = useState<ContactEntryDto[]>(client.phones);
   const [address, setAddress] = useState(client.address ?? "");
   const [notes, setNotes] = useState(client.notes ?? "");
-  const [referredBy, setReferredBy] = useState<string | null>(
-    client.referred_by,
-  );
+  const [referredBy, setReferredBy] = useState<string | null>(client.referred_by);
   const [dateOfBirth, setDateOfBirth] = useState(client.date_of_birth ?? "");
   const [sex, setSex] = useState(client.sex ?? "");
   const [gender, setGender] = useState(client.gender ?? "");
@@ -180,11 +186,8 @@ function InfoTab({
 
   useEffect(() => {
     if (clients.length === 0) void refreshClients();
-  }, [clients.length, refreshClients]);
-
-  useEffect(() => {
     void refreshAttributeValues();
-  }, [refreshAttributeValues]);
+  }, [clients.length, refreshClients, refreshAttributeValues]);
 
   useEffect(() => {
     setName(client.name);
@@ -232,144 +235,137 @@ function InfoTab({
     }
   };
 
-  const ageLabel = computeAgeLabel(client.date_of_birth, t);
-
   const referrerOptions = clients.filter((c) => c.id !== client.id);
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="flex flex-col gap-4 rounded-card border border-border bg-surface p-5 shadow-card"
-    >
-      <Input
-        label={t("common.name") ?? ""}
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        required
-      />
-
-      <ContactListEditor
-        title={t("clients.emails")}
-        value={emails}
-        onChange={setEmails}
-        type="email"
-        addLabel={t("clients.add_email")}
-        emptyLabel={t("clients.no_emails")}
-      />
-
-      <ContactListEditor
-        title={t("clients.phones")}
-        value={phones}
-        onChange={setPhones}
-        type="tel"
-        addLabel={t("clients.add_phone")}
-        emptyLabel={t("clients.no_phones")}
-      />
-
-      <Input
-        label={t("common.address") ?? ""}
-        value={address}
-        onChange={(e) => setAddress(e.target.value)}
-      />
-      <Input
-        label={t("common.notes") ?? ""}
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-      />
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="flex flex-col gap-1">
-          <Input
-            type="date"
-            label={t("clients.date_of_birth") ?? ""}
-            value={dateOfBirth}
-            onChange={(e) => setDateOfBirth(e.target.value)}
+    <form onSubmit={onSubmit}>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <Card>
+          <CardHead
+            title="Identité"
+            actions={
+              saved ? (
+                <span className="inline-flex items-center gap-1.5 text-[12px] text-ok-ink">
+                  <StatusDot status="ok" /> Enregistré
+                </span>
+              ) : null
+            }
           />
-          {ageLabel ? (
-            <span className="text-xs text-fg-subtle">{ageLabel}</span>
-          ) : null}
-        </div>
-        <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
-          {t("clients.sex")}
-          <select
-            className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
-            value={sex}
-            onChange={(e) => setSex(e.target.value)}
-          >
-            <option value="">{t("clients.no_sex")}</option>
-            <option value="female">{t("clients.sex_female")}</option>
-            <option value="male">{t("clients.sex_male")}</option>
-            <option value="intersex">{t("clients.sex_intersex")}</option>
-          </select>
-        </label>
-        <Input
-          label={t("clients.gender") ?? ""}
-          value={gender}
-          onChange={(e) => setGender(e.target.value)}
-          placeholder={t("clients.gender_placeholder") ?? ""}
-          list="gender-suggestions"
-        />
-        <Input
-          label={t("clients.pronouns") ?? ""}
-          value={pronouns}
-          onChange={(e) => setPronouns(e.target.value)}
-          placeholder={t("clients.pronouns_placeholder") ?? ""}
-          list="pronouns-suggestions"
-        />
-        <Input
-          label={t("clients.occupation") ?? ""}
-          value={occupation}
-          onChange={(e) => setOccupation(e.target.value)}
-          list="occupation-suggestions"
-        />
-        <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
-          {t("clients.language")}
-          <select
-            className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-          >
-            <option value="">{t("clients.no_language")}</option>
-            <option value="fr">Français</option>
-            <option value="en">English</option>
-            <option value="nl">Nederlands</option>
-            <option value="de">Deutsch</option>
-          </select>
-        </label>
-      </div>
+          <CardBody>
+            <div className="flex flex-col gap-3.5">
+              <Field label={t("common.name")}>
+                <Input value={name} onChange={(e) => setName(e.target.value)} required />
+              </Field>
+              <ContactListEditor
+                title={t("clients.emails")}
+                value={emails}
+                onChange={setEmails}
+                type="email"
+                addLabel={t("clients.add_email")}
+                emptyLabel={t("clients.no_emails")}
+              />
+              <ContactListEditor
+                title={t("clients.phones")}
+                value={phones}
+                onChange={setPhones}
+                type="tel"
+                addLabel={t("clients.add_phone")}
+                emptyLabel={t("clients.no_phones")}
+              />
+              <Field label={t("common.address")}>
+                <Input value={address} onChange={(e) => setAddress(e.target.value)} />
+              </Field>
+              <Field label={t("common.notes")}>
+                <Textarea
+                  rows={2}
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                />
+              </Field>
+            </div>
+          </CardBody>
+        </Card>
 
-      <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
-        {t("clients.referred_by")}
-        <select
-          className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
-          value={referredBy ?? ""}
-          onChange={(e) => setReferredBy(e.target.value || null)}
-        >
-          <option value="">{t("clients.no_referrer")}</option>
-          {referrerOptions.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-              {c.archived_at ? ` (${t("clients.archived")})` : ""}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      {err ? <p className="text-sm text-danger">{err}</p> : null}
-      <div className="flex items-center gap-3">
-        <Button type="submit" disabled={busy}>
-          {t("common.save")}
-        </Button>
-        {saved ? (
-          <span className="text-sm text-success">{t("settings.saved")}</span>
-        ) : null}
+        <Card>
+          <CardHead title="Démographie" />
+          <CardBody>
+            <div className="grid grid-cols-2 gap-3.5">
+              <Field label={t("clients.date_of_birth")}>
+                <Input
+                  mono
+                  type="date"
+                  value={dateOfBirth}
+                  onChange={(e) => setDateOfBirth(e.target.value)}
+                />
+              </Field>
+              <Field label={t("clients.sex")}>
+                <Select value={sex} onChange={(e) => setSex(e.target.value)}>
+                  <option value="">{t("clients.no_sex")}</option>
+                  <option value="female">{t("clients.sex_female")}</option>
+                  <option value="male">{t("clients.sex_male")}</option>
+                  <option value="intersex">{t("clients.sex_intersex")}</option>
+                </Select>
+              </Field>
+              <Field label={t("clients.gender")}>
+                <Input
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value)}
+                  placeholder={t("clients.gender_placeholder") ?? ""}
+                  list="gender-suggestions"
+                />
+              </Field>
+              <Field label={t("clients.pronouns")}>
+                <Input
+                  value={pronouns}
+                  onChange={(e) => setPronouns(e.target.value)}
+                  placeholder={t("clients.pronouns_placeholder") ?? ""}
+                  list="pronouns-suggestions"
+                />
+              </Field>
+              <Field label={t("clients.occupation")}>
+                <Input
+                  value={occupation}
+                  onChange={(e) => setOccupation(e.target.value)}
+                  list="occupation-suggestions"
+                />
+              </Field>
+              <Field label={t("clients.language")}>
+                <Select value={language} onChange={(e) => setLanguage(e.target.value)}>
+                  <option value="">{t("clients.no_language")}</option>
+                  <option value="fr">Français</option>
+                  <option value="en">English</option>
+                  <option value="nl">Nederlands</option>
+                  <option value="de">Deutsch</option>
+                </Select>
+              </Field>
+              <Field label={t("clients.referred_by")} className="col-span-2">
+                <Select
+                  value={referredBy ?? ""}
+                  onChange={(e) => setReferredBy(e.target.value || null)}
+                >
+                  <option value="">{t("clients.no_referrer")}</option>
+                  {referrerOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                      {c.archived_at ? ` (${t("clients.archived")})` : ""}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            {err ? <p className="mt-3 text-[13px] text-danger">{err}</p> : null}
+            <div className="mt-5 flex justify-end">
+              <Button type="submit" variant="primary" disabled={busy}>
+                {t("common.save")}
+              </Button>
+            </div>
+          </CardBody>
+        </Card>
       </div>
       <ClientAttributeDatalists values={attributeValues} />
     </form>
   );
 }
-
-// ---- Notebook tab ----
 
 function NotebookTab({ clientId }: { clientId: string }) {
   const { t } = useTranslation();
@@ -428,53 +424,50 @@ function NotebookTab({ clientId }: { clientId: string }) {
 
   if (!view) {
     return err ? (
-      <p className="text-sm text-danger">{err}</p>
+      <p className="text-[13px] text-danger">{err}</p>
     ) : (
-      <p className="text-sm text-fg-muted">{t("common.loading")}</p>
+      <EmptyState description={t("common.loading")} />
     );
   }
 
   if (view.sections.length === 0) {
     return (
-      <div className="rounded-card border border-border bg-surface p-5 text-sm text-fg-muted shadow-card">
-        {t("clients.notebook_no_sections")}
-      </div>
+      <Card>
+        <EmptyState description={t("clients.notebook_no_sections")} />
+      </Card>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-end gap-3">
-        {err ? <p className="text-sm text-danger">{err}</p> : null}
+        {err ? <p className="text-[13px] text-danger">{err}</p> : null}
         {saved ? (
-          <span className="text-sm text-success">{t("settings.saved")}</span>
+          <span className="inline-flex items-center gap-1.5 text-[12px] text-ok-ink">
+            <StatusDot status="ok" /> {t("settings.saved")}
+          </span>
         ) : null}
-        <Button onClick={onSave} disabled={!dirty || busy}>
+        <Button onClick={onSave} variant="primary" disabled={!dirty || busy}>
           {t("common.save")}
         </Button>
       </div>
 
       {view.sections.map((s) => (
-        <section
-          key={s.section.id}
-          className="rounded-card border border-border bg-surface p-5 shadow-card"
-        >
-          <h2 className="mb-2 text-sm font-semibold text-fg-muted">
-            {s.section.name}
-          </h2>
-          <textarea
-            className="block min-h-32 w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
-            value={contents[s.section.id] ?? ""}
-            onChange={(e) => updateContent(s.section.id, e.target.value)}
-            placeholder={t("clients.notebook_placeholder") ?? ""}
-          />
-        </section>
+        <Card key={s.section.id}>
+          <CardHead title={s.section.name} />
+          <CardBody>
+            <Textarea
+              rows={6}
+              value={contents[s.section.id] ?? ""}
+              onChange={(e) => updateContent(s.section.id, e.target.value)}
+              placeholder={t("clients.notebook_placeholder") ?? ""}
+            />
+          </CardBody>
+        </Card>
       ))}
     </div>
   );
 }
-
-// ---- Journal tab ----
 
 type JournalEditorState =
   | { mode: "closed" }
@@ -517,79 +510,95 @@ function JournalTab({ clientId }: { clientId: string }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-end">
-        <Button onClick={() => setEditor({ mode: "create" })}>
+        <Button
+          variant="primary"
+          leadingIcon={<Plus size={13} strokeWidth={1.5} />}
+          onClick={() => setEditor({ mode: "create" })}
+        >
           {t("clients.journal_new")}
         </Button>
       </div>
 
-      {err ? <p className="text-sm text-danger">{err}</p> : null}
+      {err ? <p className="text-[13px] text-danger">{err}</p> : null}
 
       {entries.length === 0 ? (
-        <div className="rounded-card border border-border bg-surface p-5 text-sm text-fg-muted shadow-card">
-          {t("clients.journal_none")}
-        </div>
+        <Card>
+          <EmptyState description={t("clients.journal_none")} />
+        </Card>
       ) : (
         <ul className="flex flex-col gap-3">
           {entries.map((entry) => (
-            <li
-              key={entry.id}
-              className="rounded-card border border-border bg-surface p-5 shadow-card"
-            >
-              <div className="mb-2 flex items-start justify-between">
-                <span className="text-sm font-semibold text-fg">
-                  {entry.entry_date}
-                </span>
-                <div className="flex gap-2">
-                  <Button
-                    variant="secondary"
-                    onClick={() => setEditor({ mode: "edit", entry })}
-                  >
-                    {t("common.edit")}
-                  </Button>
-                  <Button
-                    variant="danger"
-                    onClick={() => void onDelete(entry.id)}
-                  >
-                    {t("common.delete")}
-                  </Button>
-                </div>
-              </div>
-              <p className="whitespace-pre-wrap text-sm text-fg">
-                {entry.content}
-              </p>
+            <li key={entry.id}>
+              <Card>
+                <CardBody>
+                  <div className="flex items-start justify-between mb-2">
+                    <span className="font-mono tabular text-[12px] text-ink-3">
+                      {entry.entry_date}
+                    </span>
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        iconOnly
+                        aria-label={t("common.edit")}
+                        onClick={() => setEditor({ mode: "edit", entry })}
+                      >
+                        <Edit size={11} strokeWidth={1.5} />
+                      </Button>
+                      <Button
+                        size="sm"
+                        iconOnly
+                        variant="danger"
+                        aria-label={t("common.delete")}
+                        onClick={() => void onDelete(entry.id)}
+                      >
+                        <Trash2 size={11} strokeWidth={1.5} />
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="whitespace-pre-wrap text-[13px] text-ink">
+                    {entry.content}
+                  </p>
+                </CardBody>
+              </Card>
             </li>
           ))}
         </ul>
       )}
 
-      {editor.mode !== "closed" ? (
-        <JournalEntryModal
-          clientId={clientId}
-          initial={editor.mode === "edit" ? editor.entry : null}
-          onClose={() => {
-            setEditor({ mode: "closed" });
-            refresh();
-          }}
-        />
-      ) : null}
+      <JournalEntryModal
+        clientId={clientId}
+        editor={editor}
+        onClose={() => {
+          setEditor({ mode: "closed" });
+          refresh();
+        }}
+      />
     </div>
   );
 }
 
 function JournalEntryModal({
   clientId,
-  initial,
+  editor,
   onClose,
 }: {
   clientId: string;
-  initial: ClientJournalEntryDto | null;
+  editor: JournalEditorState;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const initial = editor.mode === "edit" ? editor.entry : null;
   const [date, setDate] = useState(initial?.entry_date ?? todayIso());
   const [content, setContent] = useState(initial?.content ?? "");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (editor.mode === "closed") return;
+    setDate(editor.mode === "edit" ? editor.entry.entry_date : todayIso());
+    setContent(editor.mode === "edit" ? editor.entry.content : "");
+    setErr(null);
+  }, [editor]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -600,9 +609,9 @@ function JournalEntryModal({
     setBusy(true);
     setErr(null);
     try {
-      if (initial) {
+      if (editor.mode === "edit") {
         const payload: UpdateJournalEntryDto = {
-          id: initial.id,
+          id: editor.entry.id,
           entry_date: date,
           content,
         };
@@ -624,42 +633,42 @@ function JournalEntryModal({
   };
 
   return (
-    <div className="fixed inset-0 z-10 flex items-start justify-center overflow-y-auto bg-overlay p-4">
-      <form
-        className="my-8 w-full max-w-lg rounded-card bg-surface p-6 shadow-card"
-        onSubmit={submit}
-      >
-        <h2 className="mb-4 text-lg font-bold text-fg">
-          {initial ? t("clients.journal_edit") : t("clients.journal_new")}
-        </h2>
-        <div className="flex flex-col gap-3">
+    <Modal
+      open={editor.mode !== "closed"}
+      onClose={onClose}
+      title={initial ? t("clients.journal_edit") : t("clients.journal_new")}
+      width={520}
+      footer={
+        <>
+          <Button type="button" onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button type="submit" form="journal-form" variant="primary" disabled={busy}>
+            {t("common.save")}
+          </Button>
+        </>
+      }
+    >
+      <form id="journal-form" onSubmit={submit} className="flex flex-col gap-3">
+        <Field label={t("common.date")}>
           <Input
+            mono
             type="date"
-            label={t("common.date") ?? ""}
             value={date}
             onChange={(e) => setDate(e.target.value)}
             required
           />
-          <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
-            {t("clients.journal_content")}
-            <textarea
-              className="block min-h-40 w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              autoFocus
-            />
-          </label>
-        </div>
-        {err ? <p className="mt-3 text-sm text-danger">{err}</p> : null}
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" type="button" onClick={onClose}>
-            {t("common.cancel")}
-          </Button>
-          <Button type="submit" disabled={busy}>
-            {t("common.save")}
-          </Button>
-        </div>
+        </Field>
+        <Field label={t("clients.journal_content")}>
+          <Textarea
+            rows={8}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            autoFocus
+          />
+        </Field>
+        {err ? <p className="text-[13px] text-danger">{err}</p> : null}
       </form>
-    </div>
+    </Modal>
   );
 }

@@ -1,119 +1,129 @@
 @import "tailwindcss";
 
 /*
-  Centralized design tokens. Edit here, everything inherits.
-  Tailwind v4 auto-generates utility classes from every token below:
-    --color-brand       → bg-brand, text-brand, border-brand, ring-brand
-    --color-surface     → bg-surface, text-surface
-    --radius-card       → rounded-card
-    --font-sans         → font-sans
-    --ease-out          → ease-out (via arbitrary variant fallback)
-  Components must consume these semantic tokens, never raw palette colors.
+  ─────────────────────────────────────────────────────────────────
+  Terative — design tokens (single source of truth)
+  ─────────────────────────────────────────────────────────────────
+  Direction: Sobre · Lato · Papier froid · Terracotta.
 
-  Dark mode: override the values under [data-theme="dark"] below. The
-  generated utility classes reference the CSS variables, so swapping
-  the variable remaps every consumer.
+  Tailwind v4 reads `@theme` and auto-generates utility classes
+  from every token below:
+
+    --color-paper        → bg-paper, text-paper, border-paper, ring-paper
+    --color-paper-2      → bg-paper-2, …
+    --color-ink-3        → text-ink-3, …
+    --color-accent-soft  → bg-accent-soft, …
+    --radius-card        → rounded-card
+    --font-sans          → font-sans
+
+  Components consume these semantic tokens, never raw colors.
 */
 
 @theme {
-  /* Brand — primary actions, focus rings, active nav state. */
-  --color-brand: #2563eb;
-  --color-brand-hover: #1d4ed8;
-  --color-brand-fg: #ffffff;
+  /* PAPER — backgrounds (cool white, slight blue undertone). */
+  --color-paper: oklch(0.985 0.004 240);
+  --color-paper-2: oklch(0.97 0.0048 240);
+  --color-paper-3: oklch(0.945 0.006 240);
 
-  /* Surfaces — page background, cards, modals. */
-  --color-surface: #ffffff;
-  --color-surface-muted: #f4f4f5;
-  --color-surface-sunken: #fafafa;
-  --color-overlay: rgba(0, 0, 0, 0.4);
+  /* LINES — borders, dividers. */
+  --color-line: oklch(0.88 0.008 240);
+  --color-line-soft: oklch(0.93 0.0064 240);
 
-  /* Borders and subtle dividers. */
-  --color-border: #e4e4e7;
-  --color-border-strong: #d4d4d8;
+  /* INK — text. */
+  --color-ink: oklch(0.22 0.015 60);
+  --color-ink-2: oklch(0.38 0.015 60);
+  --color-ink-3: oklch(0.55 0.015 60);
+  --color-ink-4: oklch(0.72 0.012 65);
 
-  /* Text — primary, secondary (labels), tertiary (placeholders, captions). */
-  --color-fg: #18181b;
-  --color-fg-muted: #52525b;
-  --color-fg-subtle: #71717a;
-  --color-fg-inverse: #ffffff;
+  /* ACCENT — terracotta. */
+  --color-accent: oklch(0.62 0.13 40);
+  --color-accent-soft: oklch(0.94 0.052 40);
+  --color-accent-ink: oklch(0.42 0.1235 40);
 
-  /* Semantic accents. */
-  --color-danger: #dc2626;
-  --color-danger-hover: #b91c1c;
-  --color-danger-fg: #ffffff;
-  --color-success: #16a34a;
-  --color-warning: #ca8a04;
+  /* SEMANTIC — status pills / dots. */
+  --color-ok: oklch(0.58 0.11 155);
+  --color-ok-soft: oklch(0.94 0.05 155);
+  --color-ok-ink: oklch(0.42 0.1 155);
+  --color-warn: oklch(0.68 0.14 70);
+  --color-warn-soft: oklch(0.95 0.06 75);
+  --color-warn-ink: oklch(0.45 0.13 60);
+  --color-danger: oklch(0.55 0.17 25);
+  --color-danger-soft: oklch(0.94 0.05 25);
+  --color-danger-ink: oklch(0.45 0.15 25);
+  --color-info: oklch(0.55 0.1 240);
+  --color-info-soft: oklch(0.94 0.04 240);
+  --color-info-ink: oklch(0.42 0.1 240);
 
-  /* Status badges for invoices. */
-  --color-status-draft-bg: #f4f4f5;
-  --color-status-draft-fg: #52525b;
-  --color-status-finalized-bg: #dbeafe;
-  --color-status-finalized-fg: #1e40af;
-  --color-status-sent-bg: #dcfce7;
-  --color-status-sent-fg: #166534;
-  --color-status-cancelled-bg: #fee2e2;
-  --color-status-cancelled-fg: #991b1b;
+  /* Geometry — Sobre uses tight 2–3 px corners, no shadows. */
+  --radius-sm: 2px;       /* buttons, inputs, pills, badges */
+  --radius-card: 3px;     /* cards, KPIs */
+  --radius-pill: 9999px;
 
-  /* Radii. */
-  --radius-field: 0.375rem;   /* inputs, buttons */
-  --radius-card: 0.5rem;      /* modals, panels */
-  --radius-pill: 9999px;      /* badges */
+  /* Subtle elevations (rarely used — Sobre relies on borders). */
+  --shadow-sm: 0 1px 0 oklch(0.2 0 0 / 0.04);
+  --shadow-card: 0 1px 2px oklch(0.2 0 0 / 0.04), 0 4px 12px oklch(0.2 0 0 / 0.04);
 
-  /* Shadows. */
-  --shadow-card: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  /* Typography. */
+  --font-sans: "Lato", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  /* Typography — the sans scale is the app default; serif/mono are available
-     for emphasis. Keep the font stack grounded in system fonts so the UI
-     inherits platform defaults. */
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-serif: ui-serif, Georgia, "Times New Roman", serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-
-  /* Motion — unified transition durations + easing for hover, focus, theme
-     swap. Consumers should use `transition-colors`, `duration-fast`, etc. */
+  /* Motion. */
   --duration-instant: 80ms;
   --duration-fast: 150ms;
   --duration-medium: 250ms;
-  --duration-slow: 400ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
+
+  /*
+    Backwards-compat aliases — keep older pages compiling against the new
+    palette while the redesign migration is in progress. Each one maps an
+    old semantic name onto the new token. The single source of truth is
+    still this file; pages can use either name.
+  */
+  --color-surface: var(--color-paper);
+  --color-surface-muted: var(--color-paper-2);
+  --color-surface-sunken: var(--color-paper-2);
+  --color-fg: var(--color-ink);
+  --color-fg-muted: var(--color-ink-2);
+  --color-fg-subtle: var(--color-ink-3);
+  --color-fg-inverse: var(--color-paper);
+  --color-brand: var(--color-accent);
+  --color-brand-fg: #ffffff;
+  --color-brand-hover: var(--color-accent-ink);
+  --color-border: var(--color-line);
+  --color-border-strong: var(--color-line);
+  --color-success: var(--color-ok);
+  --color-warning: var(--color-warn);
+  --color-danger-hover: var(--color-danger-ink);
+  --color-danger-fg: #ffffff;
+  --color-overlay: oklch(0.22 0.015 60 / 0.35);
+  --color-status-draft-bg: var(--color-paper-3);
+  --color-status-draft-fg: var(--color-ink-3);
+  --color-status-finalized-bg: var(--color-info-soft);
+  --color-status-finalized-fg: var(--color-info-ink);
+  --color-status-sent-bg: var(--color-ok-soft);
+  --color-status-sent-fg: var(--color-ok-ink);
+  --color-status-cancelled-bg: var(--color-danger-soft);
+  --color-status-cancelled-fg: var(--color-danger);
+  --radius-field: 2px;
+  --radius-pill: 9999px;
+  --shadow-card: 0 1px 2px oklch(0.2 0 0 / 0.04), 0 4px 12px oklch(0.2 0 0 / 0.04);
+  --font-serif: var(--font-sans);
 }
 
 /* Dark theme — same variable names, different values. */
 [data-theme="dark"] {
-  --color-brand: #3b82f6;
-  --color-brand-hover: #60a5fa;
-  --color-brand-fg: #0b1220;
-
-  --color-surface: #0b0b0f;
-  --color-surface-muted: #17171c;
-  --color-surface-sunken: #111116;
-  --color-overlay: rgba(0, 0, 0, 0.6);
-
-  --color-border: #27272a;
-  --color-border-strong: #3f3f46;
-
-  --color-fg: #f4f4f5;
-  --color-fg-muted: #a1a1aa;
-  --color-fg-subtle: #71717a;
-  --color-fg-inverse: #0b0b0f;
-
-  --color-danger: #ef4444;
-  --color-danger-hover: #f87171;
-  --color-danger-fg: #ffffff;
-  --color-success: #22c55e;
-  --color-warning: #eab308;
-
-  --color-status-draft-bg: #27272a;
-  --color-status-draft-fg: #a1a1aa;
-  --color-status-finalized-bg: #1e3a8a;
-  --color-status-finalized-fg: #bfdbfe;
-  --color-status-sent-bg: #14532d;
-  --color-status-sent-fg: #bbf7d0;
-  --color-status-cancelled-bg: #7f1d1d;
-  --color-status-cancelled-fg: #fecaca;
-
-  --shadow-card: 0 10px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.6);
+  --color-paper: oklch(0.18 0.008 240);
+  --color-paper-2: oklch(0.22 0.008 240);
+  --color-paper-3: oklch(0.26 0.008 240);
+  --color-line: oklch(0.32 0.01 240);
+  --color-line-soft: oklch(0.27 0.01 240);
+  --color-ink: oklch(0.95 0.005 75);
+  --color-ink-2: oklch(0.78 0.008 75);
+  --color-ink-3: oklch(0.62 0.01 70);
+  --color-ink-4: oklch(0.48 0.01 70);
+  --color-accent: oklch(0.66 0.13 40);
+  --color-accent-soft: oklch(0.32 0.08 40);
+  --color-accent-ink: oklch(0.85 0.08 40);
 }
 
 html,
@@ -123,22 +133,20 @@ body,
 }
 
 body {
-  background-color: var(--color-surface);
-  color: var(--color-fg);
+  background: var(--color-paper);
+  color: var(--color-ink);
   font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  transition:
-    background-color var(--duration-medium) var(--ease-standard),
-    color var(--duration-medium) var(--ease-standard);
+  font-feature-settings: "ss01", "cv11";
 }
 
 /* Tailwind v4 preflight applies `appearance: button` to <button> elements,
-   which on macOS WKWebView triggers native button chrome (gradient fill,
-   subtle border) that paints over our background/border-radius utilities.
-   Linux webkit2gtk renders `appearance: button` as a no-op so the bug is
-   invisible there. Reset it here so custom-styled buttons render the same
-   on every platform. */
+   which on macOS WKWebView triggers native button chrome that paints over
+   our background/border-radius utilities. Reset it here so custom-styled
+   buttons render the same on every platform. */
 button,
 input[type="button"],
 input[type="reset"],
@@ -147,8 +155,12 @@ input[type="submit"] {
   -webkit-appearance: none;
 }
 
-/* Respect reduced-motion: collapse all transitions to near-zero so
-   animations don't make users sick. */
+/* Tabular numerals on every cell containing numbers. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

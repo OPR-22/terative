@@ -1,45 +1,87 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate, useParams } from "react-router-dom";
 
-import { Button } from "../components/common/Button";
+import { Page } from "../components/layout/Page";
+import { Button } from "../components/ui/Button";
+import { Card, CardBody } from "../components/ui/Card";
+import { Field, Input } from "../components/ui/Input";
+import { Pills } from "../components/ui/Pills";
+import { Toggle } from "../components/ui/Toggle";
 import { ImageUploader } from "../components/common/ImageUploader";
-import { Input } from "../components/common/Input";
 import { PdfPreview, useDebounced } from "../components/template/PdfPreview";
 import { useTemplateStore } from "../stores/templateStore";
 import {
   ipc,
   type FontChoiceDto,
-  type InvoiceTemplateDto,
   type NewInvoiceTemplateDto,
   type TemplateLayoutDto,
   type TemplateOverrideDto,
   type UpdateTemplateDto,
 } from "../ipc";
 
-type EditorInitial =
-  | (InvoiceTemplateDto & { id: string })
-  | (NewInvoiceTemplateDto & { id: null });
-
-interface Props {
-  initial: EditorInitial;
-  onClose: () => void;
-}
-
 const LAYOUTS: TemplateLayoutDto[] = ["Classic", "Modern", "Minimal"];
 const FONTS: FontChoiceDto[] = ["SansSerif", "Serif", "Mono"];
 
-type Form = NewInvoiceTemplateDto;
+function defaults(): NewInvoiceTemplateDto {
+  return {
+    name: "",
+    base_layout: "Classic",
+    logo_image: null,
+    accent_color: null,
+    font_family: "SansSerif",
+    show_seller_phone: true,
+    show_seller_email: true,
+    show_registration_id: true,
+    show_tax_id_numbers: true,
+    show_signature: false,
+    show_due_date: true,
+    show_total_in_words: false,
+    header_text: null,
+    footer_text: null,
+  };
+}
 
-export function TemplateEditor({ initial, onClose }: Props) {
+export function TemplateEditor() {
   const { t } = useTranslation();
-  const { create, update } = useTemplateStore();
-  const [form, setForm] = useState<Form>(stripId(initial));
+  const navigate = useNavigate();
+  const { id } = useParams<{ id?: string }>();
+  const editing = Boolean(id);
+
+  const { templates, refresh, create, update } = useTemplateStore();
+  useEffect(() => {
+    if (templates.length === 0) void refresh();
+  }, [templates.length, refresh]);
+
+  const existing = useMemo(() => templates.find((tpl) => tpl.id === id), [templates, id]);
+
+  const [form, setForm] = useState<NewInvoiceTemplateDto>(defaults);
   const [submitting, setSubmitting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [previewBytes, setPreviewBytes] = useState<Uint8Array | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!existing) return;
+    setForm({
+      name: existing.name,
+      base_layout: existing.base_layout,
+      logo_image: existing.logo_image ?? null,
+      accent_color: existing.accent_color,
+      font_family: existing.font_family,
+      show_seller_phone: existing.show_seller_phone,
+      show_seller_email: existing.show_seller_email,
+      show_registration_id: existing.show_registration_id,
+      show_tax_id_numbers: existing.show_tax_id_numbers,
+      show_signature: existing.show_signature,
+      show_due_date: existing.show_due_date,
+      show_total_in_words: existing.show_total_in_words,
+      header_text: existing.header_text,
+      footer_text: existing.footer_text,
+    });
+  }, [existing]);
 
   const debouncedForm = useDebounced(form, 300);
 
@@ -63,10 +105,7 @@ export function TemplateEditor({ initial, onClose }: Props) {
     setPreviewLoading(true);
     setPreviewError(null);
     ipc
-      .templatePreview({
-        template_id: initial.id ?? null,
-        overrides,
-      })
+      .templatePreview({ template_id: existing?.id ?? null, overrides })
       .then((bytes) => {
         if (!cancelled) setPreviewBytes(new Uint8Array(bytes));
       })
@@ -79,12 +118,14 @@ export function TemplateEditor({ initial, onClose }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [debouncedForm, initial.id]);
+  }, [debouncedForm, existing?.id]);
 
-  const updateField = <K extends keyof Form>(key: K, value: Form[K]) =>
-    setForm((f) => ({ ...f, [key]: value }));
+  const updateField = <K extends keyof NewInvoiceTemplateDto>(
+    key: K,
+    value: NewInvoiceTemplateDto[K],
+  ) => setForm((f) => ({ ...f, [key]: value }));
 
-  const toggle = (key: keyof Form) =>
+  const toggle = (key: keyof NewInvoiceTemplateDto) =>
     setForm((f) => ({ ...f, [key]: !f[key] }));
 
   const submit = async (e: React.FormEvent) => {
@@ -92,13 +133,13 @@ export function TemplateEditor({ initial, onClose }: Props) {
     setSaveError(null);
     setSubmitting(true);
     try {
-      if (initial.id) {
-        const payload: UpdateTemplateDto = { ...form, id: initial.id };
+      if (editing && existing) {
+        const payload: UpdateTemplateDto = { ...form, id: existing.id };
         await update(payload);
       } else {
         await create(form);
       }
-      onClose();
+      navigate("/templates");
     } catch (e) {
       setSaveError(String(e));
     } finally {
@@ -107,214 +148,143 @@ export function TemplateEditor({ initial, onClose }: Props) {
   };
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] flex-col">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-fg">
-          {initial.id ? t("templates.edit") : t("templates.new")}
-        </h1>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={onClose}>
-            {t("common.cancel")}
-          </Button>
-          <Button onClick={submit} disabled={submitting}>
+    <Page
+      crumbs={[
+        "Cabinet Lemaire",
+        t("templates.title"),
+        editing ? existing?.name ?? t("templates.edit") : t("templates.new"),
+      ]}
+      title={editing ? t("templates.edit") : t("templates.new")}
+      subtitle="Aperçu mis à jour automatiquement"
+      actions={
+        <>
+          <Button onClick={() => navigate("/templates")}>{t("common.cancel")}</Button>
+          <Button onClick={submit} variant="primary" disabled={submitting}>
             {t("common.save")}
           </Button>
-        </div>
-      </div>
+        </>
+      }
+    >
+      {saveError ? <p className="mb-3 text-[13px] text-danger">{saveError}</p> : null}
 
-      {saveError ? (
-        <p className="mb-3 text-sm text-danger">{saveError}</p>
-      ) : null}
+      <Card className="overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr]">
+          <form onSubmit={submit} className="border-r border-line">
+            <CardBody className="flex flex-col gap-4">
+              <Field label={t("common.name")}>
+                <Input
+                  value={form.name}
+                  onChange={(e) => updateField("name", e.target.value)}
+                  required
+                />
+              </Field>
 
-      <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-[minmax(0,26rem)_1fr]">
-        <form
-          onSubmit={submit}
-          className="overflow-y-auto rounded-card border border-border bg-surface p-5 shadow-card"
-        >
-          <div className="flex flex-col gap-5">
-            <Input
-              label={t("common.name") ?? ""}
-              value={form.name}
-              onChange={(e) => updateField("name", e.target.value)}
-              required
-            />
+              <Field label={t("templates.layout")}>
+                <Pills<TemplateLayoutDto>
+                  value={form.base_layout}
+                  onChange={(v) => updateField("base_layout", v)}
+                  options={LAYOUTS.map((l) => ({
+                    id: l,
+                    label: t(`templates.layout_${l.toLowerCase()}`),
+                  }))}
+                />
+              </Field>
 
-            <fieldset className="flex flex-col gap-2">
-              <legend className="text-sm font-medium text-fg-muted">
-                {t("templates.layout")}
-              </legend>
-              <div className="flex gap-2">
-                {LAYOUTS.map((layout) => (
-                  <button
-                    key={layout}
-                    type="button"
-                    onClick={() => updateField("base_layout", layout)}
-                    className={[
-                      "flex-1 rounded-field border px-3 py-2 text-sm font-medium transition-colors",
-                      form.base_layout === layout
-                        ? "border-brand bg-brand text-brand-fg"
-                        : "border-border bg-surface text-fg-muted hover:bg-surface-muted",
-                    ].join(" ")}
-                  >
-                    {t(`templates.layout_${layout.toLowerCase()}`)}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
+              <Field label={t("templates.font")}>
+                <Pills<FontChoiceDto>
+                  value={form.font_family}
+                  onChange={(v) => updateField("font_family", v)}
+                  options={FONTS.map((f) => ({
+                    id: f,
+                    label: t(`templates.font_${f.toLowerCase()}`),
+                  }))}
+                />
+              </Field>
 
-            <fieldset className="flex flex-col gap-2">
-              <legend className="text-sm font-medium text-fg-muted">
-                {t("templates.font")}
-              </legend>
-              <div className="flex gap-2">
-                {FONTS.map((font) => (
-                  <button
-                    key={font}
-                    type="button"
-                    onClick={() => updateField("font_family", font)}
-                    className={[
-                      "flex-1 rounded-field border px-3 py-2 text-sm font-medium transition-colors",
-                      form.font_family === font
-                        ? "border-brand bg-brand text-brand-fg"
-                        : "border-border bg-surface text-fg-muted hover:bg-surface-muted",
-                    ].join(" ")}
-                  >
-                    {t(`templates.font_${font.toLowerCase()}`)}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-
-            <ImageUploader
-              label={t("templates.logo") ?? ""}
-              value={form.logo_image}
-              onChange={(bytes) => updateField("logo_image", bytes)}
-            />
-
-            <div className="flex items-end gap-3">
-              <Input
-                label={t("templates.accent_color") ?? ""}
-                value={form.accent_color ?? ""}
-                onChange={(e) =>
-                  updateField("accent_color", e.target.value || null)
-                }
-                placeholder="#2563EB"
+              <ImageUploader
+                label={t("templates.logo") ?? ""}
+                value={form.logo_image}
+                onChange={(bytes) => updateField("logo_image", bytes)}
               />
-              <input
-                type="color"
-                aria-label={t("templates.accent_color") ?? ""}
-                value={form.accent_color ?? "#2563EB"}
-                onChange={(e) =>
-                  updateField("accent_color", e.target.value.toUpperCase())
-                }
-                className="h-10 w-12 cursor-pointer rounded-field border border-border bg-surface"
-              />
-            </div>
 
-            <Input
-              label={t("templates.header_text") ?? ""}
-              value={form.header_text ?? ""}
-              onChange={(e) =>
-                updateField("header_text", e.target.value || null)
-              }
-            />
-            <Input
-              label={t("templates.footer_text") ?? ""}
-              value={form.footer_text ?? ""}
-              onChange={(e) =>
-                updateField("footer_text", e.target.value || null)
-              }
-            />
+              <Field label={t("templates.accent_color")}>
+                <div className="flex items-center gap-2">
+                  <Input
+                    mono
+                    value={form.accent_color ?? ""}
+                    onChange={(e) =>
+                      updateField("accent_color", e.target.value || null)
+                    }
+                    placeholder="#2563EB"
+                    className="w-32"
+                  />
+                  <input
+                    type="color"
+                    aria-label={t("templates.accent_color") ?? ""}
+                    value={form.accent_color ?? "#2563EB"}
+                    onChange={(e) =>
+                      updateField("accent_color", e.target.value.toUpperCase())
+                    }
+                    className="h-8 w-8 cursor-pointer border border-line bg-paper rounded-sm"
+                  />
+                </div>
+              </Field>
 
-            <fieldset className="flex flex-col gap-2">
-              <legend className="text-sm font-medium text-fg-muted">
-                {t("templates.toggles")}
-              </legend>
-              <div className="grid grid-cols-1 gap-2">
-                <Toggle
-                  label={t("templates.show_seller_phone")}
-                  checked={form.show_seller_phone}
-                  onChange={() => toggle("show_seller_phone")}
+              <Field label={t("templates.header_text")}>
+                <Input
+                  value={form.header_text ?? ""}
+                  onChange={(e) =>
+                    updateField("header_text", e.target.value || null)
+                  }
                 />
-                <Toggle
-                  label={t("templates.show_seller_email")}
-                  checked={form.show_seller_email}
-                  onChange={() => toggle("show_seller_email")}
+              </Field>
+
+              <Field label={t("templates.footer_text")}>
+                <Input
+                  value={form.footer_text ?? ""}
+                  onChange={(e) =>
+                    updateField("footer_text", e.target.value || null)
+                  }
                 />
-                <Toggle
-                  label={t("templates.show_registration_id")}
-                  checked={form.show_registration_id}
-                  onChange={() => toggle("show_registration_id")}
-                />
-                <Toggle
-                  label={t("templates.show_tax_id_numbers")}
-                  checked={form.show_tax_id_numbers}
-                  onChange={() => toggle("show_tax_id_numbers")}
-                />
-                <Toggle
-                  label={t("templates.show_signature")}
-                  checked={form.show_signature}
-                  onChange={() => toggle("show_signature")}
-                />
-                <Toggle
-                  label={t("templates.show_due_date")}
-                  checked={form.show_due_date}
-                  onChange={() => toggle("show_due_date")}
-                />
-                <Toggle
-                  label={t("templates.show_total_in_words")}
-                  checked={form.show_total_in_words}
-                  onChange={() => toggle("show_total_in_words")}
-                />
+              </Field>
+
+              <div>
+                <div className="text-[12px] font-medium text-ink-3 mb-1.5">
+                  {t("templates.toggles")}
+                </div>
+                <div className="flex flex-col gap-2">
+                  {(
+                    [
+                      "show_seller_phone",
+                      "show_seller_email",
+                      "show_registration_id",
+                      "show_tax_id_numbers",
+                      "show_signature",
+                      "show_due_date",
+                      "show_total_in_words",
+                    ] as const
+                  ).map((key) => (
+                    <Toggle
+                      key={key}
+                      checked={form[key] as boolean}
+                      onChange={() => toggle(key)}
+                      label={t(`templates.${key}`)}
+                    />
+                  ))}
+                </div>
               </div>
-            </fieldset>
+            </CardBody>
+          </form>
+
+          <div className="bg-paper-3 p-6 grid place-items-center min-h-[600px]">
+            <PdfPreview
+              bytes={previewBytes}
+              loading={previewLoading}
+              error={previewError}
+            />
           </div>
-        </form>
-
-        <div className="overflow-hidden">
-          <PdfPreview
-            bytes={previewBytes}
-            loading={previewLoading}
-            error={previewError}
-          />
         </div>
-      </div>
-    </div>
+      </Card>
+    </Page>
   );
-}
-
-function Toggle({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: () => void;
-}) {
-  return (
-    <label className="flex items-center gap-2 text-sm text-fg-muted">
-      <input type="checkbox" checked={checked} onChange={onChange} />
-      {label}
-    </label>
-  );
-}
-
-function stripId(initial: EditorInitial): Form {
-  return {
-    name: initial.name,
-    base_layout: initial.base_layout,
-    logo_image: initial.logo_image ?? null,
-    accent_color: initial.accent_color,
-    font_family: initial.font_family,
-    show_seller_phone: initial.show_seller_phone,
-    show_seller_email: initial.show_seller_email,
-    show_registration_id: initial.show_registration_id,
-    show_tax_id_numbers: initial.show_tax_id_numbers,
-    show_signature: initial.show_signature,
-    show_due_date: initial.show_due_date,
-    show_total_in_words: initial.show_total_in_words,
-    header_text: initial.header_text,
-    footer_text: initial.footer_text,
-  };
 }

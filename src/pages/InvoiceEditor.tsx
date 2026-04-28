@@ -1,10 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  ArrowLeft,
+  Check,
+  Download,
+  GripVertical,
+  Plus,
+  Send,
+  X,
+} from "lucide-react";
 
-import { Button } from "../components/common/Button";
-import { Input } from "../components/common/Input";
+import { Page } from "../components/layout/Page";
+import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
+import { Card, CardBody, CardHead } from "../components/ui/Card";
+import { Checkbox } from "../components/ui/Checkbox";
+import { Field, Input, Select, Textarea } from "../components/ui/Input";
+import { StatusDot } from "../components/ui/StatusDot";
 import { MoneyInput } from "../components/common/MoneyInput";
-import { StatusBadge } from "../components/invoice/StatusBadge";
 import { MarkPaidModal } from "../components/invoice/MarkPaidModal";
 import { useMoneyFormat } from "../lib/money";
 import { useInvoiceStore } from "../stores/invoiceStore";
@@ -20,11 +34,6 @@ import type {
   UpdateDraftInvoiceDto,
 } from "../ipc";
 
-interface Props {
-  invoice: InvoiceDto | null; // null = create mode
-  onClose: () => void;
-}
-
 interface LineRow {
   description: string;
   quantity: string;
@@ -35,9 +44,6 @@ interface FormState {
   client_id: string;
   template_id: string | null;
   date: string;
-  /// Days from the issue date to the due date. `""` means "no due date".
-  /// We model the form in days (not a fixed date) so the resolved date
-  /// stays in sync when the user edits the issue date.
   due_days: string;
   notes: string;
   lines: LineRow[];
@@ -46,9 +52,6 @@ interface FormState {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-/// Returns the date that's `days` calendar days after `issueDate`, formatted
-/// as `YYYY-MM-DD`. Returns null if either input is invalid or `days` is
-/// empty/non-numeric — caller treats that as "no due date".
 function computeDueDate(issueDate: string, days: string): string | null {
   if (days === "") return null;
   const n = parseInt(days, 10);
@@ -59,9 +62,6 @@ function computeDueDate(issueDate: string, days: string): string | null {
   return d.toISOString().slice(0, 10);
 }
 
-/// Inverse: how many calendar days separate `issueDate` from `dueDate`.
-/// Used when opening an existing invoice to populate the days input from
-/// its stored due_date.
 function daysBetween(issueDate: string, dueDate: string): string {
   const a = new Date(issueDate);
   const b = new Date(dueDate);
@@ -86,9 +86,7 @@ function initialForm(invoice: InvoiceDto | null): FormState {
     client_id: invoice.client_id,
     template_id: invoice.template_id,
     date: invoice.date,
-    due_days: invoice.due_date
-      ? daysBetween(invoice.date, invoice.due_date)
-      : "",
+    due_days: invoice.due_date ? daysBetween(invoice.date, invoice.due_date) : "",
     notes: invoice.notes ?? "",
     lines: invoice.line_items.map((li) => ({
       description: li.description,
@@ -101,19 +99,52 @@ function initialForm(invoice: InvoiceDto | null): FormState {
   };
 }
 
-export function InvoiceEditor({ invoice, onClose }: Props) {
+export function InvoiceEditor() {
   const { t } = useTranslation();
-  const { createDraft, updateDraft, finalize, cancel, send } = useInvoiceStore();
+  const navigate = useNavigate();
+  const { id } = useParams<{ id?: string }>();
+
+  const {
+    get: getInvoice,
+    createDraft,
+    updateDraft,
+    finalize,
+    cancel,
+    send,
+  } = useInvoiceStore();
   const { clients, refresh: refreshClients } = useClientStore();
   const { items: catalogItems, refresh: refreshCatalog } = useCatalogStore();
   const { taxes, refresh: refreshTaxes } = useTaxStore();
   const { templates, refresh: refreshTemplates } = useTemplateStore();
   const { snapshot, load: loadSettings } = useSettingsStore();
 
-  const [form, setForm] = useState<FormState>(() => initialForm(invoice));
+  const [invoice, setInvoice] = useState<InvoiceDto | null>(null);
+  const [form, setForm] = useState<FormState>(() => initialForm(null));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [markingPaid, setMarkingPaid] = useState(false);
+
+  // Load the invoice when an id is present.
+  useEffect(() => {
+    if (!id) {
+      setInvoice(null);
+      setForm(initialForm(null));
+      return;
+    }
+    let cancelled = false;
+    getInvoice(id)
+      .then((inv) => {
+        if (cancelled) return;
+        setInvoice(inv);
+        setForm(initialForm(inv));
+      })
+      .catch((e) => {
+        if (!cancelled) setError(String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, getInvoice]);
 
   useEffect(() => {
     if (clients.length === 0) void refreshClients();
@@ -134,10 +165,6 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
     loadSettings,
   ]);
 
-  // Pre-toggle every active tax on a freshly-created invoice. The tax store
-  // only lists non-archived taxes, so this skips retired ones automatically.
-  // Runs once when taxes finish loading; the user can still untoggle any of
-  // them and the seed won't fight that.
   const seededTaxesRef = useRef(false);
   useEffect(() => {
     if (invoice !== null) return;
@@ -147,9 +174,6 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
     setForm((f) => ({ ...f, tax_ids: taxes.map((t) => t.id) }));
   }, [invoice, taxes]);
 
-  // Pre-fill `due_days` from preferences.default_invoice_due_days for new
-  // invoices, once settings load. 0 days disables the prefill. The user can
-  // still edit the days; the seed runs only on first load.
   const seededDueDaysRef = useRef(false);
   useEffect(() => {
     if (invoice !== null) return;
@@ -165,6 +189,7 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
   const appCurrency = snapshot?.currency;
   const { formatMinor } = useMoneyFormat();
   const readOnly = invoice !== null && invoice.status !== "Draft";
+  const selectedClient = clients.find((c) => c.id === form.client_id);
 
   const subtotalCents = useMemo(
     () =>
@@ -213,12 +238,12 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
       lines: f.lines.length > 1 ? f.lines.filter((_, i) => i !== idx) : f.lines,
     }));
 
-  const toggleTax = (id: string) =>
+  const toggleTax = (tid: string) =>
     setForm((f) => ({
       ...f,
-      tax_ids: f.tax_ids.includes(id)
-        ? f.tax_ids.filter((x) => x !== id)
-        : [...f.tax_ids, id],
+      tax_ids: f.tax_ids.includes(tid)
+        ? f.tax_ids.filter((x) => x !== tid)
+        : [...f.tax_ids, tid],
     }));
 
   const buildLineItems = (): NewLineItemDto[] =>
@@ -227,16 +252,9 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
       .map((li) => ({
         description: li.description,
         quantity: li.quantity || "1",
-        unit_price: {
-          amount_minor: li.unit_price_cents,
-          currency: currencyCode,
-        },
+        unit_price: { amount_minor: li.unit_price_cents, currency: currencyCode },
       }));
 
-  /// Persist the current form as a draft (creating or updating) and return
-  /// the resulting invoice id. Throws if the form is invalid or the IPC
-  /// fails. Used by both the "save draft" button and the "finalize" button
-  /// so the latter never finalizes a stale snapshot.
   const persistDraft = async (): Promise<string> => {
     if (!form.client_id) {
       throw new Error(t("invoices.err_no_client"));
@@ -269,12 +287,14 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
     return created.id;
   };
 
+  const goBack = () => navigate("/invoices");
+
   const submitDraft = async () => {
     setError(null);
     setSubmitting(true);
     try {
       await persistDraft();
-      onClose();
+      goBack();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -286,9 +306,9 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
     setError(null);
     setSubmitting(true);
     try {
-      const id = await persistDraft();
-      await finalize(id);
-      onClose();
+      const newId = await persistDraft();
+      await finalize(newId);
+      goBack();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -302,7 +322,7 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
     setSubmitting(true);
     try {
       await cancel(invoice.id);
-      onClose();
+      goBack();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -316,7 +336,7 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
     setSubmitting(true);
     try {
       await send(invoice.id);
-      onClose();
+      goBack();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -324,39 +344,65 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
     }
   };
 
+  const titleNode = invoice ? (
+    <>
+      Facture{" "}
+      <span className="text-ink-3 font-mono text-[20px]">
+        #{invoice.number ?? "—"}
+      </span>
+    </>
+  ) : (
+    t("invoices.new")
+  );
+
+  const subtitleNode = invoice ? (
+    <span className="inline-flex items-center gap-2">
+      Émise le {invoice.date}
+      {invoice.due_date ? ` · Échéance ${invoice.due_date}` : null}
+      <Badge dot kind={invoice.status === "Draft" ? "draft" : invoice.status === "Cancelled" ? "cancel" : invoice.status === "Sent" ? "sent" : "final"}>
+        {t(`invoices.status_${invoice.status.toLowerCase()}`)}
+      </Badge>
+    </span>
+  ) : (
+    "Nouvelle facture · brouillon"
+  );
+
   return (
-    <div className="max-w-5xl">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-fg">
-            {invoice
-              ? invoice.number != null
-                ? `${t("invoices.title")} #${invoice.number}`
-                : t("invoices.edit")
-              : t("invoices.new")}
-          </h1>
-          {invoice ? <StatusBadge status={invoice.status} /> : null}
-        </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={onClose}>
+    <Page
+      crumbs={[
+        "Cabinet Lemaire",
+        t("invoices.title"),
+        invoice
+          ? `#${invoice.number ?? "—"}${selectedClient ? ` — ${selectedClient.name}` : ""}`
+          : t("invoices.new"),
+      ]}
+      title={titleNode}
+      subtitle={subtitleNode}
+      actions={
+        <>
+          <Button
+            leadingIcon={<ArrowLeft size={13} strokeWidth={1.5} />}
+            onClick={goBack}
+          >
             {t("common.back")}
           </Button>
           {!readOnly ? (
             <>
-              <Button
-                variant="secondary"
-                onClick={submitDraft}
-                disabled={submitting}
-              >
+              <Button onClick={submitDraft} disabled={submitting}>
                 {t("invoices.save_draft")}
               </Button>
-              <Button onClick={finalizeNow} disabled={submitting}>
+              <Button variant="primary" onClick={finalizeNow} disabled={submitting}>
                 {t("invoices.finalize")}
               </Button>
             </>
           ) : null}
           {invoice && invoice.status === "Finalized" ? (
-            <Button onClick={sendInvoice} disabled={submitting}>
+            <Button
+              variant="primary"
+              leadingIcon={<Send size={13} strokeWidth={1.5} />}
+              onClick={sendInvoice}
+              disabled={submitting}
+            >
               {t("invoices.send")}
             </Button>
           ) : null}
@@ -364,11 +410,16 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
           (invoice.status === "Finalized" || invoice.status === "Sent") &&
           invoice.payment_status !== "Paid" ? (
             <Button
-              variant="secondary"
+              leadingIcon={<Check size={13} strokeWidth={1.5} />}
               onClick={() => setMarkingPaid(true)}
               disabled={submitting}
             >
               {t("invoices.mark_paid")}
+            </Button>
+          ) : null}
+          {invoice ? (
+            <Button leadingIcon={<Download size={13} strokeWidth={1.5} />}>
+              PDF
             </Button>
           ) : null}
           {invoice &&
@@ -377,179 +428,144 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
               {t("invoices.cancel")}
             </Button>
           ) : null}
-        </div>
-      </div>
+        </>
+      }
+    >
+      {error ? <p className="mb-3 text-[13px] text-danger">{error}</p> : null}
 
-      {error ? <p className="mb-3 text-sm text-danger">{error}</p> : null}
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <section className="rounded-card border border-border bg-surface p-4 shadow-card">
-          <h2 className="mb-3 text-sm font-semibold text-fg-muted">
-            {t("invoices.section_header")}
-          </h2>
-          <div className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
-              {t("invoices.client")}
-              <select
-                className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm disabled:opacity-60"
-                value={form.client_id}
-                disabled={readOnly}
-                onChange={(e) =>
-                  setForm({ ...form, client_id: e.target.value })
-                }
-              >
-                <option value="">—</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
-              {t("invoices.template")}
-              <select
-                className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm disabled:opacity-60"
-                value={form.template_id ?? ""}
-                disabled={readOnly}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    template_id: e.target.value || null,
-                  })
-                }
-              >
-                <option value="">{t("invoices.template_default")}</option>
-                {templates.map((tpl) => (
-                  <option key={tpl.id} value={tpl.id}>
-                    {tpl.name}
-                    {tpl.is_default ? ` · ${t("templates.default")}` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                type="date"
-                label={t("common.date") ?? ""}
-                value={form.date}
-                disabled={readOnly}
-                onChange={(e) => setForm({ ...form, date: e.target.value })}
-              />
-              <div className="flex flex-col gap-1">
-                <Input
-                  type="number"
-                  min="0"
-                  label={t("invoices.due_in_days") ?? ""}
-                  value={form.due_days}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_380px]">
+        <Card>
+          <CardHead
+            title={t("invoices.section_header")}
+            actions={
+              invoice ? (
+                <span className="inline-flex items-center gap-1.5 text-[12px] text-ink-3">
+                  <StatusDot status="ok" />
+                  Enregistré
+                </span>
+              ) : null
+            }
+          />
+          <CardBody>
+            <div className="grid grid-cols-2 gap-3.5">
+              <Field label={t("invoices.client")}>
+                <Select
+                  value={form.client_id}
+                  disabled={readOnly}
+                  onChange={(e) => setForm({ ...form, client_id: e.target.value })}
+                >
+                  <option value="">—</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label={t("invoices.template")}>
+                <Select
+                  value={form.template_id ?? ""}
                   disabled={readOnly}
                   onChange={(e) =>
-                    setForm({ ...form, due_days: e.target.value })
+                    setForm({ ...form, template_id: e.target.value || null })
                   }
-                  placeholder="30"
+                >
+                  <option value="">{t("invoices.template_default")}</option>
+                  {templates.map((tpl) => (
+                    <option key={tpl.id} value={tpl.id}>
+                      {tpl.name}
+                      {tpl.is_default ? ` · ${t("templates.default")}` : ""}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label={t("common.date")}>
+                <Input
+                  type="date"
+                  mono
+                  value={form.date}
+                  disabled={readOnly}
+                  onChange={(e) => setForm({ ...form, date: e.target.value })}
                 />
-                <span className="text-xs text-fg-subtle">
-                  {form.due_days === ""
-                    ? t("invoices.due_no_date")
+              </Field>
+              <Field
+                label={t("invoices.due_in_days")}
+                help={
+                  form.due_days === ""
+                    ? t("invoices.due_no_date") ?? undefined
                     : (() => {
                         const d = computeDueDate(form.date, form.due_days);
                         return d ? `→ ${d}` : "—";
-                      })()}
-                </span>
-              </div>
+                      })()
+                }
+              >
+                <Input
+                  mono
+                  type="number"
+                  min="0"
+                  value={form.due_days}
+                  disabled={readOnly}
+                  onChange={(e) => setForm({ ...form, due_days: e.target.value })}
+                  placeholder="30"
+                />
+              </Field>
             </div>
-            <div className="flex flex-col gap-1">
-              <Input
-                label={t("invoices.public_notes") ?? ""}
-                value={form.notes}
-                disabled={readOnly}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-              />
-              <span className="text-xs text-fg-subtle">
-                {t("invoices.public_notes_hint")}
-              </span>
+            <div className="mt-3.5">
+              <Field
+                label={t("invoices.public_notes")}
+                help={t("invoices.public_notes_hint") ?? undefined}
+              >
+                <Textarea
+                  rows={3}
+                  value={form.notes}
+                  disabled={readOnly}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                />
+              </Field>
             </div>
-          </div>
-        </section>
+          </CardBody>
 
-        <section className="rounded-card border border-border bg-surface p-4 shadow-card">
-          <h2 className="mb-3 text-sm font-semibold text-fg-muted">
-            {t("invoices.section_taxes")}
-          </h2>
-          {taxes.length === 0 ? (
-            <p className="text-xs text-fg-subtle">{t("invoices.no_taxes")}</p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {taxes.map((tax) => (
-                <label
-                  key={tax.id}
-                  className="flex items-center justify-between gap-2 text-sm text-fg-muted"
+          <CardHead
+            title={t("invoices.section_lines")}
+            className="border-t border-line"
+            actions={
+              !readOnly ? (
+                <Button
+                  size="sm"
+                  leadingIcon={<Plus size={11} strokeWidth={1.5} />}
+                  onClick={addLine}
                 >
-                  <span>
-                    <input
-                      type="checkbox"
-                      className="mr-2"
-                      checked={form.tax_ids.includes(tax.id)}
-                      disabled={readOnly}
-                      onChange={() => toggleTax(tax.id)}
-                    />
-                    {tax.name}
-                  </span>
-                  <span className="text-fg-subtle">{tax.percentage}%</span>
-                </label>
-              ))}
-            </div>
-          )}
-          <div className="mt-4 space-y-1 border-t border-border pt-3 text-sm">
-            <div className="flex justify-between text-fg-muted">
-              <span>{t("invoices.subtotal")}</span>
-              <span>{formatMinor(subtotalCents, currencyCode)}</span>
-            </div>
-            {taxBreakdown.map((t) => (
-              <div key={t.id} className="flex justify-between text-fg-muted">
-                <span>
-                  {t.name} ({t.percentage}%)
-                </span>
-                <span>{formatMinor(t.amount, currencyCode)}</span>
-              </div>
-            ))}
-            <div className="flex justify-between pt-1 text-base font-semibold text-fg">
-              <span>{t("invoices.total")}</span>
-              <span>{formatMinor(totalCents, currencyCode)}</span>
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-card border border-border bg-surface p-4 shadow-card lg:col-span-2">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-fg-muted">
-              {t("invoices.section_lines")}
-            </h2>
-            {!readOnly ? (
-              <Button variant="secondary" onClick={addLine}>
-                {t("invoices.add_line")}
-              </Button>
-            ) : null}
-          </div>
-          <div className="flex flex-col gap-2">
+                  {t("invoices.add_line")}
+                </Button>
+              ) : null
+            }
+          />
+          <div>
             {form.lines.map((line, idx) => {
               const q = parseFloat(line.quantity);
-              const lineTotal =
-                Number.isNaN(q) ? 0 : Math.round(q * line.unit_price_cents);
+              const lineTotal = Number.isNaN(q) ? 0 : Math.round(q * line.unit_price_cents);
               return (
                 <div
                   key={idx}
-                  className="grid grid-cols-12 items-end gap-2 rounded-field border border-border p-2"
+                  className="grid items-center gap-2 px-5 py-3 border-b border-line-soft last:border-b-0"
+                  style={{ gridTemplateColumns: "24px 1fr 80px 140px 120px 24px" }}
                 >
-                  <div className="col-span-12 md:col-span-6 flex flex-col gap-1">
+                  <span className="text-ink-4 cursor-grab">
+                    <GripVertical size={14} strokeWidth={1.5} />
+                  </span>
+                  <div className="min-w-0">
+                    <Input
+                      value={line.description}
+                      disabled={readOnly}
+                      onChange={(e) => updateLine(idx, { description: e.target.value })}
+                      placeholder={t("invoices.line_description") ?? ""}
+                    />
                     {!readOnly && catalogItems.length > 0 ? (
-                      <select
-                        className="block w-full rounded-field border border-border bg-surface px-2 py-1 text-xs text-fg-muted shadow-sm"
+                      <Select
+                        className="mt-1.5 text-[11px] py-1"
                         value=""
                         onChange={(e) => {
-                          const item = catalogItems.find(
-                            (c) => c.id === e.target.value,
-                          );
+                          const item = catalogItems.find((c) => c.id === e.target.value);
                           if (!item) return;
                           updateLine(idx, {
                             description: item.name,
@@ -557,13 +573,9 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
                           });
                         }}
                       >
-                        <option value="">
-                          {t("invoices.pick_catalog_item")}
-                        </option>
+                        <option value="">{t("invoices.pick_catalog_item")}</option>
                         {(["Service", "Product"] as const).map((kind) => {
-                          const group = catalogItems.filter(
-                            (c) => c.kind === kind,
-                          );
+                          const group = catalogItems.filter((c) => c.kind === kind);
                           if (group.length === 0) return null;
                           return (
                             <optgroup
@@ -573,44 +585,29 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
                               {group.map((c) => (
                                 <option key={c.id} value={c.id}>
                                   {c.reference ? `[${c.reference}] ` : ""}
-                                  {c.name} · {formatMinor(
-                                    c.default_price.amount_minor,
-                                    c.default_price.currency,
-                                  )}
+                                  {c.name} · {formatMinor(c.default_price.amount_minor, c.default_price.currency)}
                                   {c.unit ? ` / ${c.unit}` : ""}
                                 </option>
                               ))}
                             </optgroup>
                           );
                         })}
-                      </select>
+                      </Select>
                     ) : null}
-                    <Input
-                      label={t("invoices.line_description") ?? ""}
-                      value={line.description}
-                      disabled={readOnly}
-                      onChange={(e) =>
-                        updateLine(idx, { description: e.target.value })
-                      }
-                    />
                   </div>
-                  <div className="col-span-3 md:col-span-2">
-                    <Input
-                      label={t("invoices.line_qty") ?? ""}
-                      value={line.quantity}
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      disabled={readOnly}
-                      onChange={(e) =>
-                        updateLine(idx, { quantity: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="col-span-6 md:col-span-3">
+                  <Input
+                    mono
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={line.quantity}
+                    disabled={readOnly}
+                    onChange={(e) => updateLine(idx, { quantity: e.target.value })}
+                    className="text-right"
+                  />
+                  <div>
                     {appCurrency ? (
                       <MoneyInput
-                        label={t("invoices.line_unit_price") ?? ""}
                         valueMinor={line.unit_price_cents}
                         currency={appCurrency}
                         disabled={readOnly}
@@ -620,35 +617,122 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
                       />
                     ) : null}
                   </div>
-                  <div className="col-span-2 md:col-span-1 flex justify-end text-right text-sm text-fg">
+                  <span className="text-right tabular font-mono text-[13px]">
                     {formatMinor(lineTotal, currencyCode)}
-                  </div>
+                  </span>
                   {!readOnly ? (
-                    <div className="col-span-1 flex justify-end">
-                      <button
-                        type="button"
-                        onClick={() => removeLine(idx)}
-                        className="text-fg-subtle hover:text-danger"
-                        aria-label={t("common.delete") ?? ""}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ) : null}
+                    <button
+                      type="button"
+                      onClick={() => removeLine(idx)}
+                      className="text-ink-3 hover:text-danger"
+                      aria-label={t("common.delete") ?? ""}
+                    >
+                      <X size={13} strokeWidth={1.5} />
+                    </button>
+                  ) : (
+                    <span />
+                  )}
                 </div>
               );
             })}
           </div>
-        </section>
+        </Card>
+
+        <div className="flex flex-col gap-3.5">
+          <Card>
+            <CardHead title="Totaux" />
+            <CardBody>
+              <div className="flex justify-between py-1.5 text-[13px] text-ink-3">
+                <span>{t("invoices.subtotal")}</span>
+                <span className="font-mono tabular text-ink">
+                  {formatMinor(subtotalCents, currencyCode)}
+                </span>
+              </div>
+              {taxBreakdown.map((t) => (
+                <div key={t.id} className="flex justify-between py-1.5 text-[13px] text-ink-3">
+                  <span>
+                    {t.name} ({t.percentage}%)
+                  </span>
+                  <span className="font-mono tabular text-ink">
+                    {formatMinor(t.amount, currencyCode)}
+                  </span>
+                </div>
+              ))}
+              <div className="flex items-baseline justify-between border-t border-line mt-2 pt-3">
+                <span className="font-medium">{t("invoices.total")}</span>
+                <span className="font-mono tabular text-[18px] font-semibold">
+                  {formatMinor(totalCents, currencyCode)}
+                </span>
+              </div>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHead title={t("invoices.section_taxes")} />
+            <CardBody>
+              {taxes.length === 0 ? (
+                <p className="text-[12px] text-ink-4">{t("invoices.no_taxes")}</p>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {taxes.map((tax) => (
+                    <Checkbox
+                      key={tax.id}
+                      checked={form.tax_ids.includes(tax.id)}
+                      disabled={readOnly}
+                      onChange={() => toggleTax(tax.id)}
+                    >
+                      <span className="flex-1">{tax.name}</span>
+                      <span className="ml-auto font-mono tabular text-ink-3 text-[12px]">
+                        {tax.percentage}&nbsp;%
+                      </span>
+                    </Checkbox>
+                  ))}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+
+          {invoice && invoice.email_sends.length > 0 ? (
+            <Card>
+              <CardHead title="Historique d'envoi" />
+              <CardBody>
+                {invoice.email_sends.map((s) => (
+                  <div
+                    key={s.id}
+                    className="flex items-start gap-2.5 py-2 border-b border-line-soft last:border-b-0"
+                  >
+                    <Send size={13} strokeWidth={1.5} className="text-ink-3 mt-0.5" />
+                    <div className="flex-1 text-[12.5px]">
+                      <div>
+                        {s.template_type === "InitialContact"
+                          ? "Premier contact"
+                          : "Relance"}
+                      </div>
+                      <div className="text-[11px] text-ink-3 font-mono">
+                        {s.sent_at}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {invoice ? (
+            <div className="text-[11px] text-ink-3">
+              Créée le {invoice.created_at}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {markingPaid && invoice ? (
         <MarkPaidModal
           invoice={invoice}
           onClose={() => setMarkingPaid(false)}
-          onPaid={onClose}
+          onPaid={goBack}
         />
       ) : null}
-    </div>
+    </Page>
   );
 }

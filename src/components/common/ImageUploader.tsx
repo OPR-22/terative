@@ -1,14 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Image as ImageIcon, Upload, X } from "lucide-react";
 
-import { Button } from "./Button";
+import { Button } from "../ui/Button";
 
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024;
-// `image/jpeg` is the standard MIME for both .jpg and .jpeg files; a handful
-// of systems emit `image/jpg` incorrectly, so we accept it too.
 const ACCEPT_TYPES = ["image/png", "image/jpeg", "image/jpg"];
-// Explicit extensions in `accept` as a fallback for file pickers that don't
-// pre-filter by MIME.
 const ACCEPT_ATTR = "image/png,image/jpeg,.png,.jpg,.jpeg";
 
 interface ImageUploaderProps {
@@ -66,44 +63,46 @@ export function ImageUploader({
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-sm font-medium text-fg-muted">{label}</label>
-      {previewUrl ? (
-        <div className="flex items-start gap-3">
+      <span className="text-[12px] font-medium text-ink-3">{label}</span>
+      <div className="flex items-center gap-3 border border-dashed border-line p-3.5">
+        {previewUrl ? (
           <img
             src={previewUrl}
             alt={label}
-            className="h-24 w-auto max-w-48 rounded-field border border-border bg-surface object-contain"
+            className="h-10 w-auto max-w-32 bg-paper-3 object-contain border border-line"
           />
-          <div className="flex flex-col gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => inputRef.current?.click()}
-            >
-              {t("image_uploader.replace")}
-            </Button>
-            <Button
-              type="button"
-              variant="danger"
-              onClick={() => {
-                onChange(null);
-                setError(null);
-              }}
-            >
-              {t("image_uploader.remove")}
-            </Button>
+        ) : (
+          <div className="grid place-items-center w-[42px] h-[42px] bg-paper-3 text-ink-3">
+            <ImageIcon size={18} strokeWidth={1.5} />
           </div>
-        </div>
-      ) : (
+        )}
+        <p className="text-[11px] text-ink-3 flex-1">
+          {t("image_uploader.hint", { max: `${maxMb} MB` })}
+        </p>
+        {previewUrl ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            iconOnly
+            onClick={() => {
+              onChange(null);
+              setError(null);
+            }}
+            aria-label={t("image_uploader.remove")}
+          >
+            <X size={12} strokeWidth={1.5} />
+          </Button>
+        ) : null}
         <Button
-          type="button"
-          variant="secondary"
+          size="sm"
           onClick={() => inputRef.current?.click()}
-          className="self-start"
+          leadingIcon={<Upload size={11} strokeWidth={1.5} />}
         >
-          {t("image_uploader.upload")}
+          {previewUrl
+            ? t("image_uploader.replace")
+            : t("image_uploader.upload")}
         </Button>
-      )}
+      </div>
       <input
         ref={inputRef}
         type="file"
@@ -111,10 +110,7 @@ export function ImageUploader({
         className="hidden"
         onChange={onFileChange}
       />
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
-      <p className="text-xs text-fg-muted">
-        {t("image_uploader.hint", { max: `${maxMb} MB` })}
-      </p>
+      {error ? <p className="text-[12px] text-danger">{error}</p> : null}
     </div>
   );
 }

@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="fr" data-theme="light" data-style="sober">
+<head>
+<meta charset="utf-8">
+<title>Terative — Design reference</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* Frozen design direction: Sobre · Lato · Papier froid · Terracotta.
+     This block is the source of truth for tokens — copy into globals.css. */
+  :root {
+    --accent:      oklch(0.62 0.13 40);
+    --accent-soft: oklch(0.94 0.052 40);
+    --accent-ink:  oklch(0.42 0.1235 40);
+    --font-sans:   "Lato", ui-sans-serif, system-ui, sans-serif;
+
+    --paper:    oklch(0.985 0.004 240);
+    --paper-2:  oklch(0.97  0.0048 240);
+    --paper-3:  oklch(0.945 0.006 240);
+    --line:     oklch(0.88 0.008 240);
+    --line-soft:oklch(0.93 0.0064 240);
+  }
+
+  html, body, #root { height: 100%; margin: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Picker (out-of-app chrome — not part of the design) */
+  .picker {
+    position: fixed; left: 16px; bottom: 16px; z-index: 100;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 4px;
+    padding: 6px; display: flex; gap: 4px; flex-wrap: wrap;
+    max-width: calc(100vw - 32px);
+    font-size: 11px; color: var(--ink-3);
+    box-shadow: 0 2px 8px oklch(0 0 0 / 0.06);
+  }
+  .picker .label {
+    align-self: center; padding: 0 6px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.04em; font-size: 10px;
+  }
+  .picker button {
+    appearance: none; border: 1px solid transparent; background: transparent;
+    color: var(--ink-2); font: inherit; cursor: pointer;
+    padding: 4px 8px; border-radius: 2px; font-family: var(--font-sans);
+  }
+  .picker button:hover { background: var(--paper-2); color: var(--ink); }
+  .picker button[aria-current="page"] {
+    background: var(--accent-soft); color: var(--accent-ink);
+    border-color: oklch(0.85 0.06 40);
+  }
+
+  /* Frame the prototype as a fixed shell */
+  .stage { width: 100%; height: 100vh; overflow: hidden; }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<nav class="picker" aria-label="Aperçu des écrans"><span class="label">Écran</span></nav>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="shell.jsx"></script>
+<script type="text/babel" src="page-dashboard.jsx"></script>
+<script type="text/babel" src="page-invoices.jsx"></script>
+<script type="text/babel" src="page-clients-payments.jsx"></script>
+<script type="text/babel" src="page-data.jsx"></script>
+<script type="text/babel" src="page-templates-settings.jsx"></script>
+
+<script type="text/babel">
+const SCREENS = [
+  { id: "dashboard",     label: "1. Tableau de bord",     render: () => <DashboardPage /> },
+  { id: "invoices",      label: "2. Factures",            render: () => <InvoicesPage /> },
+  { id: "invoice-edit",  label: "2b. Facture · édition",  render: () => <InvoiceEditorPage /> },
+  { id: "payments",      label: "3. Paiements",           render: () => <PaymentsPage /> },
+  { id: "clients",       label: "4. Clients",             render: () => <ClientsPage /> },
+  { id: "client-detail", label: "4b. Client · fiche",     render: () => <ClientDetailPage /> },
+  { id: "catalog",       label: "5. Catalogue",           render: () => <CatalogPage /> },
+  { id: "taxes",         label: "5b. Taxes",              render: () => <TaxesPage /> },
+  { id: "accounting",    label: "6. Comptabilité",        render: () => <AccountingPage /> },
+  { id: "templates",     label: "7. Modèles facture",     render: () => <TemplatesPage /> },
+  { id: "emails",        label: "7b. Modèles e-mail",     render: () => <EmailsPage /> },
+  { id: "bookmark",      label: "8. Favori (web)",        render: () => <BookmarkPage /> },
+  { id: "settings",      label: "8b. Paramètres",         render: () => <SettingsPage /> },
+];
+
+function readHash() {
+  const id = (location.hash || "").replace(/^#/, "");
+  return SCREENS.find(s => s.id === id) ? id : SCREENS[0].id;
+}
+
+function App() {
+  const [active, setActive] = React.useState(readHash);
+
+  React.useEffect(() => {
+    const onHash = () => setActive(readHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  React.useEffect(() => {
+    if (location.hash.replace(/^#/, "") !== active) {
+      history.replaceState(null, "", "#" + active);
+    }
+  }, [active]);
+
+  // Render picker into the existing nav (so it sits outside #root)
+  React.useEffect(() => {
+    const nav = document.querySelector(".picker");
+    if (!nav) return;
+    // Clear any prior picker buttons (keep label)
+    [...nav.querySelectorAll("button")].forEach(b => b.remove());
+    SCREENS.forEach(s => {
+      const b = document.createElement("button");
+      b.textContent = s.label;
+      b.type = "button";
+      if (s.id === active) b.setAttribute("aria-current", "page");
+      b.addEventListener("click", () => setActive(s.id));
+      nav.appendChild(b);
+    });
+  }, [active]);
+
+  const screen = SCREENS.find(s => s.id === active) || SCREENS[0];
+  return <div className="stage">{screen.render()}</div>;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+
+</body>
+</html>

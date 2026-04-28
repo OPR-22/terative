@@ -1,9 +1,8 @@
 import type { ChangeEvent } from "react";
-
 import BigNumber from "bignumber.js";
 
 import type { CurrencyConfigDto } from "../../ipc";
-import { Input } from "./Input";
+import { Field, Input } from "../ui/Input";
 
 interface Props {
   label?: string;
@@ -19,11 +18,6 @@ interface Props {
   disabled?: boolean;
 }
 
-/**
- * Currency-aware money input. For zero-decimal currencies (JPY, KRW) the
- * field accepts whole numbers only; for others, it accepts decimals with the
- * right precision.
- */
 export function MoneyInput({
   label,
   valueMinor,
@@ -59,18 +53,22 @@ export function MoneyInput({
     onChangeMinor(minor);
   };
 
-  return (
-    <div className="flex items-end gap-2">
+  const input = (
+    <div className="flex items-center gap-2">
       <Input
-        label={label}
+        mono
         type="number"
         step={step}
         min="0"
         value={displayValue}
         onChange={handleChange}
         disabled={disabled}
+        className="text-right"
       />
-      <span className="pb-2 text-sm text-fg-muted">{currency.symbol}</span>
+      <span className="text-[12px] text-ink-3 shrink-0">{currency.symbol}</span>
     </div>
   );
+
+  if (label) return <Field label={label}>{input}</Field>;
+  return input;
 }

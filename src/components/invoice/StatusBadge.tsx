@@ -1,20 +1,20 @@
 import { useTranslation } from "react-i18next";
+
+import { Badge, type BadgeKind } from "../ui/Badge";
 import type { InvoiceStatusDto } from "../../ipc";
 
-const classes: Record<InvoiceStatusDto, string> = {
-  Draft: "bg-status-draft-bg text-status-draft-fg",
-  Finalized: "bg-status-finalized-bg text-status-finalized-fg",
-  Sent: "bg-status-sent-bg text-status-sent-fg",
-  Cancelled: "bg-status-cancelled-bg text-status-cancelled-fg",
+const kindMap: Record<InvoiceStatusDto, BadgeKind> = {
+  Draft: "draft",
+  Finalized: "final",
+  Sent: "sent",
+  Cancelled: "cancel",
 };
 
 export function StatusBadge({ status }: { status: InvoiceStatusDto }) {
   const { t } = useTranslation();
   return (
-    <span
-      className={`inline-flex rounded-pill px-2 py-0.5 text-xs font-medium ${classes[status]}`}
-    >
+    <Badge dot kind={kindMap[status]}>
       {t(`invoices.status_${status.toLowerCase()}`)}
-    </span>
+    </Badge>
   );
 }

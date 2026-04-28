@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import { open } from "@tauri-apps/plugin-dialog";
 
+import { Page } from "../components/layout/Page";
 import { Button } from "../components/common/Button";
 import { ImageUploader } from "../components/common/ImageUploader";
 import { Input } from "../components/common/Input";
@@ -47,16 +48,27 @@ export function Settings() {
   }, [load]);
 
   if (loading && !snapshot) {
-    return <p className="text-sm text-fg-muted">{t("common.loading")}</p>;
+    return (
+      <Page crumbs={["Cabinet Lemaire", t("settings.title")]} title={t("settings.title")}>
+        <p className="text-[13px] text-ink-3">{t("common.loading")}</p>
+      </Page>
+    );
   }
   if (!snapshot) {
-    return error ? <p className="text-sm text-danger">{error}</p> : null;
+    return (
+      <Page crumbs={["Cabinet Lemaire", t("settings.title")]} title={t("settings.title")}>
+        {error ? <p className="text-[13px] text-danger">{error}</p> : null}
+      </Page>
+    );
   }
 
   return (
-    <div className="max-w-3xl space-y-10">
-      <h1 className="text-2xl font-bold text-fg">{t("settings.title")}</h1>
-
+    <Page
+      crumbs={["Cabinet Lemaire", t("settings.title")]}
+      title={t("settings.title")}
+      subtitle="Profil, préférences et sauvegardes du cabinet"
+    >
+      <div className="max-w-3xl space-y-10">
       <SellerSection seller={snapshot.seller} onSave={saveSeller} />
       <CurrencySection currency={snapshot.currency} onSave={saveCurrency} />
       <EmailSection
@@ -77,7 +89,8 @@ export function Settings() {
       />
       <DataSection />
       {import.meta.env.DEV ? <DeveloperSection /> : null}
-    </div>
+      </div>
+    </Page>
   );
 }
 

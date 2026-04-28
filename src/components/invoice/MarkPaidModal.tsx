@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "../common/Button";
-import { Input } from "../common/Input";
+import { Button } from "../ui/Button";
+import { Field, Input, Select } from "../ui/Input";
+import { Modal } from "../ui/Modal";
 import { MoneyInput } from "../common/MoneyInput";
 import { useMoneyFormat } from "../../lib/money";
 import {
@@ -46,8 +47,7 @@ export function MarkPaidModal({ invoice, onClose, onPaid }: Props) {
 
   const [amountCents, setAmountCents] = useState(0);
   const [date, setDate] = useState(today());
-  const [methodKind, setMethodKind] =
-    useState<PaymentMethodKind>("BankTransfer");
+  const [methodKind, setMethodKind] = useState<PaymentMethodKind>("BankTransfer");
   const [methodDetail, setMethodDetail] = useState("");
   const [reference, setReference] = useState("");
   const [notes, setNotes] = useState("");
@@ -85,16 +85,10 @@ export function MarkPaidModal({ invoice, onClose, onPaid }: Props) {
 
   const buildMethod = (): PaymentMethodDto => {
     switch (methodKind) {
-      case "BankTransfer":
-        return { kind: "BankTransfer" };
-      case "Cash":
-        return { kind: "Cash" };
-      case "Check":
-        return { kind: "Check" };
-      case "Card":
-        return { kind: "Card" };
       case "Other":
         return { kind: "Other", detail: methodDetail };
+      default:
+        return { kind: methodKind };
     }
   };
 
@@ -135,96 +129,103 @@ export function MarkPaidModal({ invoice, onClose, onPaid }: Props) {
     }
   };
 
+  const title = `${t("invoices.mark_paid_title")}${
+    invoice.number != null ? ` #${invoice.number}` : ""
+  }`;
+
   return (
-    <div className="fixed inset-0 z-10 flex items-start justify-center overflow-y-auto bg-overlay p-4">
-      <form
-        className="my-8 w-full max-w-lg rounded-card bg-surface p-6 shadow-card"
-        onSubmit={submit}
-      >
-        <h2 className="mb-4 text-lg font-bold text-fg">
-          {t("invoices.mark_paid_title")}
-          {invoice.number != null ? ` #${invoice.number}` : ""}
-        </h2>
-        {loading ? (
-          <p className="text-sm text-fg-muted">{t("common.loading")}</p>
-        ) : fullyPaid ? (
-          <>
-            <p className="mb-4 text-sm text-fg-muted">
-              {t("invoices.mark_paid_already_paid")}
-            </p>
-            <div className="flex justify-end">
-              <Button type="button" onClick={onClose}>
-                {t("common.close")}
-              </Button>
-            </div>
-          </>
+    <Modal
+      open
+      onClose={onClose}
+      title={title}
+      subtitle={
+        !loading && !fullyPaid
+          ? `${t("invoices.mark_paid_amount_due")}: ${formatMinor(amountDueCents, currencyCode)}`
+          : undefined
+      }
+      width={560}
+      footer={
+        loading || fullyPaid ? (
+          <Button type="button" onClick={onClose}>
+            {t("common.close")}
+          </Button>
         ) : (
           <>
-            <p className="mb-3 text-xs text-fg-subtle">
-              {t("invoices.mark_paid_amount_due")}:{" "}
-              {formatMinor(amountDueCents, currencyCode)}
-            </p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {currency ? (
-                <MoneyInput
-                  label={t("payments.amount") ?? ""}
-                  valueMinor={amountCents}
-                  currency={currency}
-                  onChangeMinor={setAmountCents}
-                />
-              ) : null}
-              <Input
-                type="date"
-                label={t("common.date") ?? ""}
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
-              <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
-                {t("payments.method")}
-                <select
-                  className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
-                  value={methodKind}
-                  onChange={(e) =>
-                    setMethodKind(e.target.value as PaymentMethodKind)
-                  }
-                >
-                  {METHOD_KINDS.map((k) => (
-                    <option key={k} value={k}>
-                      {t(`payments.method_${k.toLowerCase()}`)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {methodKind === "Other" ? (
-                <Input
-                  label={t("payments.method_detail") ?? ""}
-                  value={methodDetail}
-                  onChange={(e) => setMethodDetail(e.target.value)}
-                />
-              ) : null}
-              <Input
-                label={t("payments.reference") ?? ""}
-                value={reference}
-                onChange={(e) => setReference(e.target.value)}
-              />
-              <Input
-                label={t("common.notes") ?? ""}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </div>
-            {err ? <p className="mt-3 text-sm text-danger">{err}</p> : null}
-            <div className="mt-5 flex justify-end gap-2">
-              <Button variant="secondary" type="button" onClick={onClose}>
-                {t("common.cancel")}
-              </Button>
-              <Button type="submit" disabled={submitting}>
-                {t("invoices.mark_paid_confirm")}
-              </Button>
-            </div>
+            <Button type="button" onClick={onClose}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="submit"
+              form="mark-paid-form"
+              variant="primary"
+              disabled={submitting}
+            >
+              {t("invoices.mark_paid_confirm")}
+            </Button>
           </>
-        )}
-      </form>
-    </div>
+        )
+      }
+    >
+      {loading ? (
+        <p className="text-[13px] text-ink-3">{t("common.loading")}</p>
+      ) : fullyPaid ? (
+        <p className="text-[13px] text-ink-3">
+          {t("invoices.mark_paid_already_paid")}
+        </p>
+      ) : (
+        <form id="mark-paid-form" onSubmit={submit} className="grid gap-3.5 grid-cols-2">
+          {currency ? (
+            <Field label={t("payments.amount")}>
+              <MoneyInput
+                valueMinor={amountCents}
+                currency={currency}
+                onChangeMinor={setAmountCents}
+              />
+            </Field>
+          ) : null}
+          <Field label={t("common.date")}>
+            <Input
+              mono
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          </Field>
+          <Field label={t("payments.method")}>
+            <Select
+              value={methodKind}
+              onChange={(e) => setMethodKind(e.target.value as PaymentMethodKind)}
+            >
+              {METHOD_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {t(`payments.method_${k.toLowerCase()}`)}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {methodKind === "Other" ? (
+            <Field label={t("payments.method_detail")}>
+              <Input
+                value={methodDetail}
+                onChange={(e) => setMethodDetail(e.target.value)}
+              />
+            </Field>
+          ) : null}
+          <Field label={t("payments.reference")}>
+            <Input
+              mono
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+            />
+          </Field>
+          <Field label={t("common.notes")}>
+            <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </Field>
+          {err ? (
+            <p className="col-span-2 text-[13px] text-danger">{err}</p>
+          ) : null}
+        </form>
+      )}
+    </Modal>
   );
 }

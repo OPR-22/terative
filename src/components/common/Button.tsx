@@ -1,30 +1,23 @@
 import type { ButtonHTMLAttributes } from "react";
 
-type Variant = "primary" | "secondary" | "danger";
+import { Button as UiButton } from "../ui/Button";
+
+type LegacyVariant = "primary" | "secondary" | "danger";
 
 interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: Variant;
+  variant?: LegacyVariant;
 }
 
-const base =
-  "inline-flex items-center justify-center rounded-field px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-brand focus:ring-offset-1";
+const variantMap = {
+  primary: "primary",
+  secondary: "default",
+  danger: "danger",
+} as const;
 
-const variantClasses: Record<Variant, string> = {
-  primary: "bg-brand text-brand-fg hover:bg-brand-hover",
-  secondary: "bg-surface-muted text-fg hover:bg-border",
-  danger: "bg-danger text-danger-fg hover:bg-danger-hover",
-};
-
-export function Button({
-  variant = "primary",
-  className = "",
-  ...rest
-}: Props) {
-  return (
-    <button
-      type="button"
-      className={`${base} ${variantClasses[variant]} ${className}`}
-      {...rest}
-    />
-  );
+/**
+ * Legacy Button kept as a shim around the new design-system Button.
+ * Prefer importing `Button` from `components/ui` in new code.
+ */
+export function Button({ variant = "primary", ...rest }: Props) {
+  return <UiButton variant={variantMap[variant]} {...rest} />;
 }

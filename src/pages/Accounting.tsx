@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Download } from "lucide-react";
 
+import { Page } from "../components/layout/Page";
+import { Avatar } from "../components/ui/Avatar";
+import { Button } from "../components/ui/Button";
+import { Card, CardBody, CardHead } from "../components/ui/Card";
+import { EmptyState } from "../components/ui/EmptyState";
+import { Field, Input, Select } from "../components/ui/Input";
+import { Pills } from "../components/ui/Pills";
+import { Table, Td, Th, THead, Tr } from "../components/ui/Table";
 import {
   ipc,
   type AgingBucketDto,
@@ -23,55 +32,37 @@ export function Accounting() {
   const [tab, setTab] = useState<Tab>("revenue");
 
   return (
-    <div className="max-w-6xl">
-      <h1 className="mb-4 text-2xl font-bold text-fg">
-        {t("accounting.title")}
-      </h1>
-
-      <div className="mb-4 flex gap-2">
-        <TabButton active={tab === "revenue"} onClick={() => setTab("revenue")}>
-          {t("accounting.tab_revenue")}
-        </TabButton>
-        <TabButton active={tab === "aging"} onClick={() => setTab("aging")}>
-          {t("accounting.tab_aging")}
-        </TabButton>
-        <TabButton
-          active={tab === "balances"}
-          onClick={() => setTab("balances")}
-        >
-          {t("accounting.tab_balances")}
-        </TabButton>
+    <Page
+      crumbs={["Cabinet Lemaire", t("accounting.title")]}
+      title={t("accounting.title")}
+      subtitle={`Période — ${THIS_YEAR_START} → ${THIS_YEAR_END}`}
+      actions={
+        <>
+          <Button leadingIcon={<Download size={13} strokeWidth={1.5} />}>
+            CSV
+          </Button>
+          <Button leadingIcon={<Download size={13} strokeWidth={1.5} />}>
+            PDF
+          </Button>
+        </>
+      }
+    >
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <Pills<Tab>
+          value={tab}
+          onChange={setTab}
+          options={[
+            { id: "revenue", label: t("accounting.tab_revenue") },
+            { id: "aging", label: t("accounting.tab_aging") },
+            { id: "balances", label: t("accounting.tab_balances") },
+          ]}
+        />
       </div>
 
       {tab === "revenue" ? <RevenueTab /> : null}
       {tab === "aging" ? <AgingTab /> : null}
       {tab === "balances" ? <BalancesTab /> : null}
-    </div>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[
-        "rounded-pill px-4 py-1.5 text-sm font-medium transition-colors",
-        active
-          ? "bg-brand text-brand-fg"
-          : "bg-surface-muted text-fg-muted hover:bg-border",
-      ].join(" ")}
-    >
-      {children}
-    </button>
+    </Page>
   );
 }
 
@@ -109,123 +100,132 @@ function RevenueTab() {
 
   const total = buckets.reduce((sum, b) => sum + b.amount.amount_minor, 0);
   const maxBucket = Math.max(1, ...buckets.map((b) => b.amount.amount_minor));
+  const totalAll = byClient.reduce((s, r) => s + r.total_invoiced.amount_minor, 0);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-end gap-3 rounded-card border border-border bg-surface p-4">
-        <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
-          {t("accounting.period_start")}
-          <input
-            type="date"
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
-            className="rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
-          {t("accounting.period_end")}
-          <input
-            type="date"
-            value={end}
-            onChange={(e) => setEnd(e.target.value)}
-            className="rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
-          {t("accounting.grouping")}
-          <select
-            value={grouping}
-            onChange={(e) => setGrouping(e.target.value as RevenueGroupingDto)}
-            className="rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
-          >
-            <option value="Day">{t("accounting.grouping_day")}</option>
-            <option value="Month">{t("accounting.grouping_month")}</option>
-            <option value="Year">{t("accounting.grouping_year")}</option>
-          </select>
-        </label>
-        <div className="ml-auto text-right">
-          <p className="text-xs uppercase tracking-wide text-fg-subtle">
-            {t("accounting.total")}
-          </p>
-          <p className="text-xl font-bold text-fg">{fmt(total)}</p>
-        </div>
-      </div>
-
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
-
-      <section className="rounded-card border border-border bg-surface p-5 shadow-card">
-        <h2 className="mb-3 text-sm font-semibold text-fg">
-          {t("accounting.revenue_by_period")}
-        </h2>
-        {buckets.length === 0 ? (
-          <p className="text-sm text-fg-muted">{t("common.empty")}</p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {buckets.map((bucket) => {
-              const pct = (bucket.amount.amount_minor / maxBucket) * 100;
-              return (
-                <div
-                  key={bucket.bucket_start}
-                  className="grid grid-cols-12 items-center gap-2"
-                >
-                  <span className="col-span-2 text-xs text-fg-muted">
-                    {bucket.bucket_start}
-                  </span>
-                  <div className="col-span-8 h-6 overflow-hidden rounded-field bg-surface-muted">
-                    <div
-                      className="h-full rounded-field bg-brand"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <span className="col-span-2 text-right text-sm font-medium text-fg">
-                    {fmt(bucket.amount.amount_minor)}
-                  </span>
-                </div>
-              );
-            })}
+    <div className="flex flex-col">
+      <Card className="mb-5">
+        <CardBody className="flex flex-wrap items-end gap-4">
+          <Field label={t("accounting.period_start")}>
+            <Input
+              mono
+              type="date"
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+            />
+          </Field>
+          <Field label={t("accounting.period_end")}>
+            <Input
+              mono
+              type="date"
+              value={end}
+              onChange={(e) => setEnd(e.target.value)}
+            />
+          </Field>
+          <Field label={t("accounting.grouping")}>
+            <Select
+              value={grouping}
+              onChange={(e) => setGrouping(e.target.value as RevenueGroupingDto)}
+            >
+              <option value="Day">{t("accounting.grouping_day")}</option>
+              <option value="Month">{t("accounting.grouping_month")}</option>
+              <option value="Year">{t("accounting.grouping_year")}</option>
+            </Select>
+          </Field>
+          <div className="ml-auto text-right">
+            <p className="text-[12px] font-medium text-ink-3">
+              {t("accounting.total")}
+            </p>
+            <p className="text-[22px] font-semibold tabular leading-none mt-1">
+              {fmt(total)}
+            </p>
           </div>
-        )}
-      </section>
+        </CardBody>
+      </Card>
 
-      <section className="rounded-card border border-border bg-surface p-5 shadow-card">
-        <h2 className="mb-3 text-sm font-semibold text-fg">
-          {t("accounting.revenue_by_client")}
-        </h2>
-        {byClient.length === 0 ? (
-          <p className="text-sm text-fg-muted">{t("common.empty")}</p>
-        ) : (
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-fg-muted">
-                <th className="py-2 pr-3 font-medium">
-                  {t("invoices.client")}
-                </th>
-                <th className="py-2 pr-3 font-medium">
-                  {t("accounting.invoice_count")}
-                </th>
-                <th className="py-2 pr-3 text-right font-medium">
-                  {t("accounting.total")}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {byClient.map((row) => (
-                <tr key={row.client_id} className="border-b border-border">
-                  <td className="py-2 pr-3 font-medium text-fg">
-                    {row.client_name}
-                  </td>
-                  <td className="py-2 pr-3 text-fg-muted">
-                    {row.invoice_count}
-                  </td>
-                  <td className="py-2 pr-3 text-right text-fg">
-                    {fmt(row.total_invoiced.amount_minor)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+      {error ? <p className="text-[13px] text-danger mb-3">{error}</p> : null}
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-5">
+        <Card>
+          <CardHead title={t("accounting.revenue_by_period")} />
+          <CardBody>
+            {buckets.length === 0 ? (
+              <EmptyState description={t("common.empty")} />
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {buckets.map((bucket) => {
+                  const pct = (bucket.amount.amount_minor / maxBucket) * 100;
+                  return (
+                    <div
+                      key={bucket.bucket_start}
+                      className="grid items-center gap-3.5"
+                      style={{ gridTemplateColumns: "110px 1fr 110px" }}
+                    >
+                      <span className="text-[12px] text-ink-3 font-mono tabular">
+                        {bucket.bucket_start}
+                      </span>
+                      <div className="h-[18px] bg-paper-3 relative">
+                        <div
+                          className="absolute inset-y-0 left-0 bg-accent"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <span className="text-right font-mono tabular text-[13px]">
+                        {fmt(bucket.amount.amount_minor)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHead title={t("accounting.revenue_by_client")} />
+          {byClient.length === 0 ? (
+            <EmptyState description={t("common.empty")} />
+          ) : (
+            <Table>
+              <THead>
+                <Tr>
+                  <Th>{t("invoices.client")}</Th>
+                  <Th numeric>{t("accounting.invoice_count")}</Th>
+                  <Th numeric>{t("accounting.total")}</Th>
+                  <Th numeric className="w-16">
+                    %
+                  </Th>
+                </Tr>
+              </THead>
+              <tbody>
+                {byClient.map((row) => {
+                  const pct =
+                    totalAll > 0
+                      ? (row.total_invoiced.amount_minor / totalAll) * 100
+                      : 0;
+                  return (
+                    <Tr key={row.client_id}>
+                      <Td>
+                        <div className="flex items-center gap-2">
+                          <Avatar name={row.client_name} size={22} />
+                          <span className="font-medium">{row.client_name}</span>
+                        </div>
+                      </Td>
+                      <Td numeric muted>
+                        {row.invoice_count}
+                      </Td>
+                      <Td numeric>{fmt(row.total_invoiced.amount_minor)}</Td>
+                      <Td numeric className="text-[11px]">
+                        {pct.toFixed(1)} %
+                      </Td>
+                    </Tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
@@ -273,80 +273,70 @@ function AgingTab() {
     return t;
   }, [rows]);
 
-  const BUCKETS: AgingBucketDto[] = [
-    "Current",
-    "Days1To30",
-    "Days31To60",
-    "Days61To90",
-    "Days91Plus",
+  const BUCKETS: { id: AgingBucketDto; tone: string }[] = [
+    { id: "Current", tone: "var(--color-ok)" },
+    { id: "Days1To30", tone: "var(--color-ink-2)" },
+    { id: "Days31To60", tone: "var(--color-ink-3)" },
+    { id: "Days61To90", tone: "var(--color-warn)" },
+    { id: "Days91Plus", tone: "var(--color-danger)" },
   ];
 
   return (
-    <div className="flex flex-col gap-4">
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
+    <div className="flex flex-col">
+      {error ? <p className="text-[13px] text-danger mb-3">{error}</p> : null}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-5 mb-5">
         {BUCKETS.map((b) => (
-          <div
-            key={b}
-            className="rounded-card border border-border bg-surface p-4 shadow-card"
-          >
-            <p className="text-xs uppercase tracking-wide text-fg-subtle">
-              {t(`accounting.bucket_${b.toLowerCase()}`)}
-            </p>
-            <p className="mt-2 text-lg font-bold text-fg">{fmt(totals[b])}</p>
-            <p className="text-xs text-fg-muted">
-              {grouped[b].length} {t("accounting.invoices")}
-            </p>
-          </div>
+          <Card key={b.id} className="p-4 flex flex-col gap-2">
+            <div className="flex items-center gap-2.5">
+              <span className="w-1.5 h-6" style={{ background: b.tone }} />
+              <div>
+                <p className="text-[12px] font-medium text-ink-3">
+                  {t(`accounting.bucket_${b.id.toLowerCase()}`)}
+                </p>
+                <p className="text-[18px] font-semibold tabular leading-tight mt-0.5">
+                  {fmt(totals[b.id])}
+                </p>
+                <p className="text-[11px] text-ink-3">
+                  {grouped[b.id].length} {t("accounting.invoices")}
+                </p>
+              </div>
+            </div>
+          </Card>
         ))}
       </div>
 
-      <section className="rounded-card border border-border bg-surface p-5 shadow-card">
-        <h2 className="mb-3 text-sm font-semibold text-fg">
-          {t("accounting.aging_detail")}
-        </h2>
+      <Card>
+        <CardHead title={t("accounting.aging_detail")} />
         {rows.length === 0 ? (
-          <p className="text-sm text-fg-muted">{t("common.empty")}</p>
+          <EmptyState description={t("common.empty")} />
         ) : (
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-fg-muted">
-                <th className="py-2 pr-3 font-medium">{t("invoices.number")}</th>
-                <th className="py-2 pr-3 font-medium">{t("invoices.client")}</th>
-                <th className="py-2 pr-3 font-medium">
-                  {t("invoices.due_date")}
-                </th>
-                <th className="py-2 pr-3 font-medium">
-                  {t("accounting.bucket")}
-                </th>
-                <th className="py-2 pr-3 text-right font-medium">
-                  {t("accounting.amount_due")}
-                </th>
-              </tr>
-            </thead>
+          <Table>
+            <THead>
+              <Tr>
+                <Th>{t("invoices.number")}</Th>
+                <Th>{t("invoices.client")}</Th>
+                <Th>{t("invoices.due_date")}</Th>
+                <Th>{t("accounting.bucket")}</Th>
+                <Th numeric>{t("accounting.amount_due")}</Th>
+              </Tr>
+            </THead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.invoice_id} className="border-b border-border">
-                  <td className="py-2 pr-3 font-medium text-fg">
-                    {row.number ?? "—"}
-                  </td>
-                  <td className="py-2 pr-3 text-fg-muted">{row.client_name}</td>
-                  <td className="py-2 pr-3 text-fg-muted">
+                <Tr key={row.invoice_id}>
+                  <Td mono>#{row.number ?? "—"}</Td>
+                  <Td>{row.client_name}</Td>
+                  <Td muted mono>
                     {row.due_date ?? "—"}
-                  </td>
-                  <td className="py-2 pr-3 text-fg-muted">
-                    {t(`accounting.bucket_${row.bucket.toLowerCase()}`)}
-                  </td>
-                  <td className="py-2 pr-3 text-right font-medium text-fg">
-                    {fmt(row.amount_due.amount_minor)}
-                  </td>
-                </tr>
+                  </Td>
+                  <Td muted>{t(`accounting.bucket_${row.bucket.toLowerCase()}`)}</Td>
+                  <Td numeric>{fmt(row.amount_due.amount_minor)}</Td>
+                </Tr>
               ))}
             </tbody>
-          </table>
+          </Table>
         )}
-      </section>
+      </Card>
     </div>
   );
 }
@@ -371,53 +361,50 @@ function BalancesTab() {
   }, []);
 
   return (
-    <section className="rounded-card border border-border bg-surface p-5 shadow-card">
-      {error ? <p className="mb-3 text-sm text-danger">{error}</p> : null}
+    <Card>
+      {error ? <p className="px-5 pt-4 text-[13px] text-danger">{error}</p> : null}
       {rows.length === 0 ? (
-        <p className="text-sm text-fg-muted">{t("common.empty")}</p>
+        <EmptyState description={t("common.empty")} />
       ) : (
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-border text-left text-fg-muted">
-              <th className="py-2 pr-3 font-medium">{t("invoices.client")}</th>
-              <th className="py-2 pr-3 text-right font-medium">
-                {t("accounting.total_invoiced")}
-              </th>
-              <th className="py-2 pr-3 text-right font-medium">
-                {t("accounting.total_paid")}
-              </th>
-              <th className="py-2 pr-3 text-right font-medium">
-                {t("accounting.outstanding")}
-              </th>
-            </tr>
-          </thead>
+        <Table>
+          <THead>
+            <Tr>
+              <Th>{t("invoices.client")}</Th>
+              <Th numeric>{t("accounting.total_invoiced")}</Th>
+              <Th numeric>{t("accounting.total_paid")}</Th>
+              <Th numeric>{t("accounting.outstanding")}</Th>
+            </Tr>
+          </THead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.client_id} className="border-b border-border">
-                <td className="py-2 pr-3 font-medium text-fg">
-                  {row.client_name}
-                </td>
-                <td className="py-2 pr-3 text-right text-fg-muted">
+              <Tr key={row.client_id}>
+                <Td>
+                  <div className="flex items-center gap-2">
+                    <Avatar name={row.client_name} size={22} />
+                    <span className="font-medium">{row.client_name}</span>
+                  </div>
+                </Td>
+                <Td numeric muted>
                   {fmt(row.total_invoiced.amount_minor)}
-                </td>
-                <td className="py-2 pr-3 text-right text-fg-muted">
+                </Td>
+                <Td numeric muted>
                   {fmt(row.total_paid.amount_minor)}
-                </td>
-                <td
-                  className={[
-                    "py-2 pr-3 text-right font-semibold",
+                </Td>
+                <Td
+                  numeric
+                  className={
                     row.outstanding.amount_minor > 0
-                      ? "text-warning"
-                      : "text-fg",
-                  ].join(" ")}
+                      ? "text-warn font-medium"
+                      : "font-medium"
+                  }
                 >
                   {fmt(row.outstanding.amount_minor)}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
           </tbody>
-        </table>
+        </Table>
       )}
-    </section>
+    </Card>
   );
 }

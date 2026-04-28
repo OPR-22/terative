@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ArrowLeft, Edit, Mail, Plus, Star, Trash2 } from "lucide-react";
 
-import { Button } from "../components/common/Button";
-import { Input } from "../components/common/Input";
+import { Page, SectionTitle } from "../components/layout/Page";
+import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
+import { Card, CardBody, CardHead } from "../components/ui/Card";
+import { EmptyState } from "../components/ui/EmptyState";
+import { Field, Input, Textarea } from "../components/ui/Input";
 import { useEmailTemplateStore } from "../stores/emailTemplateStore";
 import type { EmailTemplateDto, EmailTemplateTypeDto } from "../ipc";
 
@@ -93,195 +98,204 @@ export function EmailTemplates() {
       ? t("email_templates.initial_contact_desc")
       : t("email_templates.follow_up_desc");
 
-  // -- Editor view --
   if (editor.mode !== "closed") {
-    const heading =
-      editor.mode === "edit"
-        ? `${t("common.edit")} — ${editor.template.name}`
-        : `${t("email_templates.new_template")} — ${typeLabel(editor.mode === "create" ? editor.templateType : "InitialContact")}`;
-
+    const typeForLabel =
+      editor.mode === "create" ? editor.templateType : editor.template.template_type;
     return (
-      <div className="max-w-3xl">
-        <button
-          className="mb-4 text-sm font-medium text-fg-muted hover:text-fg"
-          onClick={closeEditor}
-        >
-          &larr; {t("common.back")}
-        </button>
-
-        <h1 className="mb-6 text-2xl font-bold text-fg">{heading}</h1>
-
-        <div className="space-y-4">
-          <Input
-            label={t("email_templates.name") ?? ""}
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            placeholder={t("email_templates.name_placeholder") ?? ""}
-          />
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-fg-muted">
-              {t("email_templates.subject")}
-            </label>
-            <input
-              className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-              value={form.subject_template}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, subject_template: e.target.value }))
-              }
-              placeholder="Invoice {{number}} from {{seller_name}}"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-fg-muted">
-              {t("email_templates.body")}
-            </label>
-            <textarea
-              className="block min-h-48 w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
-              value={form.body_template}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, body_template: e.target.value }))
-              }
-              placeholder={`Hi {{client_name}},\n\nPlease find invoice {{number}} attached.\nTotal: {{total}}.\n\n— {{seller_name}}`}
-            />
-          </div>
-
-          <div className="rounded-field border border-border bg-surface-muted px-3 py-2">
-            <p className="mb-1 text-xs font-medium text-fg-muted">
-              {t("email_templates.placeholders_help")}
-            </p>
-            <div className="flex flex-wrap gap-1">
-              {PLACEHOLDER_KEYS.map((k) => (
-                <code
-                  key={k}
-                  className="rounded-field bg-surface px-1.5 py-0.5 text-xs text-fg-muted"
-                >{`{{${k}}}`}</code>
-              ))}
+      <Page
+        crumbs={[
+          "Cabinet Lemaire",
+          t("email_templates.title"),
+          editor.mode === "edit" ? editor.template.name : t("email_templates.new_template"),
+        ]}
+        title={
+          editor.mode === "edit"
+            ? `${t("common.edit")} — ${editor.template.name}`
+            : `${t("email_templates.new_template")} — ${typeLabel(typeForLabel)}`
+        }
+        actions={
+          <>
+            <Button
+              leadingIcon={<ArrowLeft size={13} strokeWidth={1.5} />}
+              onClick={closeEditor}
+            >
+              {t("common.back")}
+            </Button>
+            <Button variant="primary" onClick={handleSave}>
+              {t("common.save")}
+            </Button>
+          </>
+        }
+      >
+        <Card>
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px]">
+            <CardBody className="border-r border-line">
+              <div className="flex flex-col gap-3.5">
+                <Field label={t("email_templates.name")}>
+                  <Input
+                    value={form.name}
+                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                    placeholder={t("email_templates.name_placeholder") ?? ""}
+                  />
+                </Field>
+                <Field label={t("email_templates.subject")}>
+                  <Input
+                    mono
+                    value={form.subject_template}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, subject_template: e.target.value }))
+                    }
+                    placeholder="Invoice {{number}} from {{seller_name}}"
+                  />
+                </Field>
+                <Field label={t("email_templates.body")}>
+                  <Textarea
+                    rows={10}
+                    value={form.body_template}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, body_template: e.target.value }))
+                    }
+                    placeholder={`Hi {{client_name}},\n\nPlease find invoice {{number}} attached.\nTotal: {{total}}.\n\n— {{seller_name}}`}
+                  />
+                </Field>
+              </div>
+              {saveErr ? (
+                <p className="mt-3 text-[13px] text-danger">{saveErr}</p>
+              ) : null}
+            </CardBody>
+            <div className="bg-paper-2 p-4">
+              <div className="text-[12px] font-medium text-ink-3 mb-2">
+                {t("email_templates.placeholders_help")}
+              </div>
+              <div className="flex flex-col gap-1">
+                {PLACEHOLDER_KEYS.map((k) => (
+                  <code
+                    key={k}
+                    className="bg-paper border border-line-soft rounded-sm px-1.5 py-0.5 font-mono text-[11px] text-ink-2 self-start"
+                  >{`{{${k}}}`}</code>
+                ))}
+              </div>
             </div>
           </div>
-
-          {saveErr ? (
-            <p className="text-sm text-danger">{saveErr}</p>
-          ) : null}
-
-          <div className="flex items-center gap-2 pt-2">
-            <Button onClick={handleSave}>{t("common.save")}</Button>
-            <Button variant="secondary" onClick={closeEditor}>
-              {t("common.cancel")}
-            </Button>
-          </div>
-        </div>
-      </div>
+        </Card>
+      </Page>
     );
   }
 
-  // -- List view --
   return (
-    <div className="max-w-5xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-fg">
-          {t("email_templates.title")}
-        </h1>
-        <p className="mt-1 text-sm text-fg-muted">
-          {t("email_templates.page_desc")}
-        </p>
-      </div>
-
-      {error ? <p className="mb-4 text-sm text-danger">{error}</p> : null}
+    <Page
+      crumbs={["Cabinet Lemaire", t("email_templates.title")]}
+      title={t("email_templates.title")}
+      subtitle={t("email_templates.page_desc")}
+    >
+      {error ? <p className="mb-3 text-[13px] text-danger">{error}</p> : null}
 
       {loading ? (
-        <p className="text-sm text-fg-muted">{t("common.loading")}</p>
+        <Card>
+          <EmptyState description={t("common.loading")} />
+        </Card>
       ) : (
-        <div className="space-y-8">
-          {(["InitialContact", "FollowUp"] as const).map((tt) => {
-            const group = templates.filter((tmpl) => tmpl.template_type === tt);
-            return (
-              <section key={tt}>
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-semibold text-fg">
-                      {typeLabel(tt)}
-                    </h2>
-                    <p className="text-sm text-fg-muted">{typeDescription(tt)}</p>
-                  </div>
-                  <Button variant="secondary" onClick={() => openCreate(tt)}>
+        (["InitialContact", "FollowUp"] as const).map((tt) => {
+          const group = templates.filter((tmpl) => tmpl.template_type === tt);
+          return (
+            <div key={tt} className="mb-7">
+              <SectionTitle
+                action={
+                  <Button
+                    size="sm"
+                    leadingIcon={<Plus size={11} strokeWidth={1.5} />}
+                    onClick={() => openCreate(tt)}
+                  >
                     {t("common.add")}
                   </Button>
-                </div>
+                }
+              >
+                <span className="text-ink font-medium text-[14px]">
+                  {typeLabel(tt)}
+                </span>
+                <span className="ml-2 text-ink-3 font-normal text-[12px]">
+                  {typeDescription(tt)}
+                </span>
+              </SectionTitle>
 
-                {group.length === 0 ? (
-                  <p className="text-sm text-fg-subtle">
-                    {t("email_templates.none")}
-                  </p>
-                ) : (
-                  <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {group.map((tmpl) => (
-                      <li
-                        key={tmpl.id}
-                        className="rounded-card border border-border bg-surface p-4 shadow-card"
-                      >
-                        <div className="mb-2 flex items-start justify-between">
-                          <div>
-                            <h3 className="font-semibold text-fg">
+              {group.length === 0 ? (
+                <Card>
+                  <EmptyState description={t("email_templates.none")} />
+                </Card>
+              ) : (
+                <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+                  {group.map((tmpl) => (
+                    <Card key={tmpl.id}>
+                      <CardHead>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Mail size={14} strokeWidth={1.5} className="text-ink-3 shrink-0" />
+                          <div className="min-w-0">
+                            <div className="text-[13px] font-medium truncate">
                               {tmpl.name}
-                            </h3>
-                            <p className="mt-0.5 text-xs text-fg-subtle">
+                            </div>
+                            <div className="text-[11px] text-ink-3 truncate font-mono">
                               {tmpl.subject_template}
-                            </p>
+                            </div>
                           </div>
-                          {tmpl.is_default ? (
-                            <span className="rounded-pill bg-status-finalized-bg px-2 py-0.5 text-xs font-medium text-status-finalized-fg">
-                              {t("email_templates.default_badge")}
-                            </span>
-                          ) : null}
                         </div>
-                        <p className="mb-3 line-clamp-2 text-xs text-fg-muted">
+                        {tmpl.is_default ? (
+                          <Badge kind="final">
+                            {t("email_templates.default_badge")}
+                          </Badge>
+                        ) : null}
+                      </CardHead>
+                      <CardBody>
+                        <div className="text-[12px] text-ink-2 leading-[1.55] font-mono bg-paper-2 border border-line-soft rounded-sm p-2.5 whitespace-pre-wrap line-clamp-4">
                           {tmpl.body_template}
-                        </p>
-                        <div className="flex flex-wrap gap-2">
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mt-3">
                           <Button
-                            variant="secondary"
+                            size="sm"
+                            leadingIcon={<Edit size={11} strokeWidth={1.5} />}
                             onClick={() => openEdit(tmpl)}
                           >
                             {t("common.edit")}
                           </Button>
                           {!tmpl.is_default ? (
-                            <Button
-                              variant="secondary"
-                              onClick={() =>
-                                void setDefault(tmpl.id).catch((e) =>
-                                  alert(String(e)),
-                                )
-                              }
-                            >
-                              {t("email_templates.set_default")}
-                            </Button>
-                          ) : null}
-                          {!tmpl.is_default ? (
-                            <Button
-                              variant="danger"
-                              onClick={() => {
-                                if (confirm(t("common.confirm_delete"))) {
-                                  void remove(tmpl.id).catch((e) =>
+                            <>
+                              <Button
+                                size="sm"
+                                leadingIcon={<Star size={11} strokeWidth={1.5} />}
+                                onClick={() =>
+                                  void setDefault(tmpl.id).catch((e) =>
                                     alert(String(e)),
-                                  );
+                                  )
                                 }
-                              }}
-                            >
-                              {t("common.delete")}
-                            </Button>
+                              >
+                                {t("email_templates.set_default")}
+                              </Button>
+                              <Button
+                                size="sm"
+                                iconOnly
+                                variant="danger"
+                                aria-label={t("common.delete")}
+                                onClick={() => {
+                                  if (confirm(t("common.confirm_delete"))) {
+                                    void remove(tmpl.id).catch((e) =>
+                                      alert(String(e)),
+                                    );
+                                  }
+                                }}
+                              >
+                                <Trash2 size={11} strokeWidth={1.5} />
+                              </Button>
+                            </>
                           ) : null}
                         </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-            );
-          })}
-        </div>
+                      </CardBody>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })
       )}
-    </div>
+    </Page>
   );
 }

@@ -1,30 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
+import { Archive, ArchiveRestore, Edit, Plus } from "lucide-react";
 
-import { Button } from "../components/common/Button";
-import { Input } from "../components/common/Input";
+import { Page } from "../components/layout/Page";
+import { Button } from "../components/ui/Button";
+import { Card } from "../components/ui/Card";
+import { Checkbox } from "../components/ui/Checkbox";
+import { EmptyState } from "../components/ui/EmptyState";
+import { StatusDot } from "../components/ui/StatusDot";
+import { Table, Td, Th, THead, Tr } from "../components/ui/Table";
 import { useTaxStore } from "../stores/taxStore";
-import type {
-  NewTaxDefinitionDto,
-  TaxDefinitionDto,
-  UpdateTaxDto,
-} from "../ipc";
-
-type EditorState =
-  | { mode: "closed" }
-  | { mode: "create" }
-  | { mode: "edit"; tax: TaxDefinitionDto };
-
-interface Form {
-  name: string;
-  percentage: string;
-  tax_id_number: string;
-}
-
-const emptyForm: Form = { name: "", percentage: "0", tax_id_number: "" };
 
 export function TaxList() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const {
     taxes,
     includeArchived,
@@ -32,198 +22,121 @@ export function TaxList() {
     loading,
     error,
     refresh,
-    create,
-    update,
     archive,
     unarchive,
   } = useTaxStore();
-  const [editor, setEditor] = useState<EditorState>({ mode: "closed" });
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
+  const activeCount = taxes.filter((t) => !t.archived_at).length;
+
   return (
-    <div className="max-w-4xl">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-fg">{t("taxes.title")}</h1>
-        <Button onClick={() => setEditor({ mode: "create" })}>
+    <Page
+      crumbs={["Cabinet Lemaire", t("taxes.title")]}
+      title={t("taxes.title")}
+      subtitle={`${activeCount} ${activeCount > 1 ? "taxes actives" : "taxe active"}`}
+      actions={
+        <Button
+          variant="primary"
+          leadingIcon={<Plus size={13} strokeWidth={1.5} />}
+          onClick={() => navigate("/taxes/create")}
+        >
           {t("taxes.new")}
         </Button>
-      </div>
-
-      <div className="mb-4 flex items-center gap-3">
-        <label className="flex items-center gap-2 text-sm text-fg-muted">
-          <input
-            type="checkbox"
-            checked={includeArchived}
-            onChange={(e) => setIncludeArchived(e.target.checked)}
-          />
+      }
+    >
+      <div className="mb-3.5 flex items-center justify-between">
+        <Checkbox checked={includeArchived} onChange={setIncludeArchived}>
           {t("common.include_archived")}
-        </label>
+        </Checkbox>
       </div>
 
-      {error ? <p className="mb-4 text-sm text-danger">{error}</p> : null}
-      {loading ? (
-        <p className="text-sm text-fg-muted">{t("common.loading")}</p>
-      ) : taxes.length === 0 ? (
-        <p className="text-sm text-fg-muted">{t("taxes.none")}</p>
-      ) : (
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-border text-left text-fg-muted">
-              <th className="py-2 pr-3 font-medium">{t("common.name")}</th>
-              <th className="py-2 pr-3 font-medium">{t("taxes.percentage")}</th>
-              <th className="py-2 pr-3 font-medium">{t("taxes.tax_id_number")}</th>
-              <th className="py-2 pr-3 font-medium">{t("common.active")}</th>
-              <th className="py-2 pr-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {taxes.map((tax) => (
-              <tr key={tax.id} className="border-b border-border">
-                <td className="py-2 pr-3 font-medium text-fg">{tax.name}</td>
-                <td className="py-2 pr-3 text-fg-muted">{tax.percentage}%</td>
-                <td className="py-2 pr-3 text-fg-muted">
-                  {tax.tax_id_number ?? "—"}
-                </td>
-                <td className="py-2 pr-3 text-fg-muted">
-                  {tax.archived_at ? "—" : "✓"}
-                </td>
-                <td className="flex justify-end gap-2 py-2 pr-3">
-                  <Button
-                    variant="secondary"
-                    onClick={() => setEditor({ mode: "edit", tax })}
-                  >
-                    {t("common.edit")}
-                  </Button>
-                  {tax.archived_at ? (
-                    <Button onClick={() => void unarchive(tax.id)}>
-                      {t("common.unarchive")}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="danger"
-                      onClick={() => {
-                        if (confirm(t("common.confirm_archive"))) {
-                          void archive(tax.id);
-                        }
-                      }}
-                    >
-                      {t("common.archive")}
-                    </Button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      {error ? <p className="mb-3 text-[13px] text-danger">{error}</p> : null}
 
-      {editor.mode !== "closed" ? (
-        <TaxEditor
-          initial={
-            editor.mode === "edit"
-              ? {
-                  name: editor.tax.name,
-                  percentage: editor.tax.percentage,
-                  tax_id_number: editor.tax.tax_id_number ?? "",
-                }
-              : emptyForm
-          }
-          onCancel={() => setEditor({ mode: "closed" })}
-          onSubmit={async (form) => {
-            if (editor.mode === "edit") {
-              const payload: UpdateTaxDto = {
-                id: editor.tax.id,
-                name: form.name,
-                percentage: form.percentage,
-                tax_id_number: form.tax_id_number || null,
-              };
-              await update(payload);
-            } else {
-              const payload: NewTaxDefinitionDto = {
-                name: form.name,
-                percentage: form.percentage,
-                tax_id_number: form.tax_id_number || null,
-              };
-              await create(payload);
-            }
-            setEditor({ mode: "closed" });
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-interface EditorProps {
-  initial: Form;
-  onCancel: () => void;
-  onSubmit: (form: Form) => void | Promise<void>;
-}
-
-function TaxEditor({ initial, onCancel, onSubmit }: EditorProps) {
-  const { t } = useTranslation();
-  const [form, setForm] = useState<Form>(initial);
-  const [submitting, setSubmitting] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const updateField = <K extends keyof Form>(key: K, value: Form[K]) =>
-    setForm((f) => ({ ...f, [key]: value }));
-
-  return (
-    <div className="fixed inset-0 z-10 flex items-center justify-center bg-overlay p-4">
-      <form
-        className="w-full max-w-lg rounded-card bg-surface p-6 shadow-card"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setErr(null);
-          setSubmitting(true);
-          try {
-            await onSubmit(form);
-          } catch (e) {
-            setErr(String(e));
-          } finally {
-            setSubmitting(false);
-          }
-        }}
-      >
-        <h2 className="mb-4 text-lg font-bold text-fg">
-          {t("taxes.edit")}
-        </h2>
-        <div className="flex flex-col gap-3">
-          <Input
-            label={t("common.name") ?? ""}
-            value={form.name}
-            onChange={(e) => updateField("name", e.target.value)}
-            required
-          />
-          <Input
-            label={t("taxes.percentage") ?? ""}
-            type="number"
-            step="0.01"
-            min="0"
-            value={form.percentage}
-            onChange={(e) => updateField("percentage", e.target.value)}
-            required
-          />
-          <Input
-            label={t("taxes.tax_id_number") ?? ""}
-            value={form.tax_id_number}
-            onChange={(e) => updateField("tax_id_number", e.target.value)}
-          />
-        </div>
-        {err ? <p className="mt-3 text-sm text-danger">{err}</p> : null}
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" type="button" onClick={onCancel}>
-            {t("common.cancel")}
-          </Button>
-          <Button type="submit" disabled={submitting}>
-            {t("common.save")}
-          </Button>
-        </div>
-      </form>
-    </div>
+      <Card className="overflow-hidden max-w-3xl">
+        {loading ? (
+          <EmptyState description={t("common.loading")} />
+        ) : taxes.length === 0 ? (
+          <EmptyState description={t("taxes.none")} />
+        ) : (
+          <Table>
+            <THead>
+              <Tr>
+                <Th>{t("common.name")}</Th>
+                <Th numeric>{t("taxes.percentage")}</Th>
+                <Th>{t("taxes.tax_id_number")}</Th>
+                <Th>{t("common.status")}</Th>
+                <Th />
+              </Tr>
+            </THead>
+            <tbody>
+              {taxes.map((tax) => (
+                <Tr key={tax.id}>
+                  <Td className="font-medium">{tax.name}</Td>
+                  <Td numeric className="text-[14px]">
+                    {tax.percentage}&nbsp;%
+                  </Td>
+                  <Td muted mono>
+                    {tax.tax_id_number ?? "—"}
+                  </Td>
+                  <Td>
+                    <span className="inline-flex items-center gap-1.5 text-[12px]">
+                      {tax.archived_at ? (
+                        <>
+                          <StatusDot status="idle" />
+                          <span className="text-ink-3">Archivée</span>
+                        </>
+                      ) : (
+                        <>
+                          <StatusDot status="ok" />
+                          <span className="text-ok-ink">Active</span>
+                        </>
+                      )}
+                    </span>
+                  </Td>
+                  <Td className="text-right whitespace-nowrap">
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        size="sm"
+                        leadingIcon={<Edit size={11} strokeWidth={1.5} />}
+                        onClick={() => navigate(`/taxes/${tax.id}/edit`)}
+                      >
+                        {t("common.edit")}
+                      </Button>
+                      {tax.archived_at ? (
+                        <Button
+                          size="sm"
+                          iconOnly
+                          aria-label={t("common.unarchive")}
+                          onClick={() => void unarchive(tax.id)}
+                        >
+                          <ArchiveRestore size={12} strokeWidth={1.5} />
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          iconOnly
+                          variant="danger"
+                          aria-label={t("common.archive")}
+                          onClick={() => {
+                            if (confirm(t("common.confirm_archive"))) {
+                              void archive(tax.id);
+                            }
+                          }}
+                        >
+                          <Archive size={12} strokeWidth={1.5} />
+                        </Button>
+                      )}
+                    </div>
+                  </Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+    </Page>
   );
 }
