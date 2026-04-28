@@ -72,7 +72,7 @@ impl ArchiveCatalogItem {
 
     pub fn execute(&self, id: CatalogItemId) -> Result<(), AppError> {
         let mut item = self.repo.get(id)?.ok_or(AppError::NotFound)?;
-        item.deactivate();
+        item.archive(chrono::Utc::now());
         self.repo.update(&item)?;
         Ok(())
     }
@@ -89,7 +89,7 @@ impl UnarchiveCatalogItem {
 
     pub fn execute(&self, id: CatalogItemId) -> Result<(), AppError> {
         let mut item = self.repo.get(id)?.ok_or(AppError::NotFound)?;
-        item.reactivate();
+        item.unarchive();
         self.repo.update(&item)?;
         Ok(())
     }
@@ -104,8 +104,8 @@ impl ListCatalogItems {
         Self { repo }
     }
 
-    pub fn execute(&self, include_inactive: bool) -> Result<Vec<CatalogItem>, AppError> {
-        Ok(self.repo.list(include_inactive)?)
+    pub fn execute(&self, include_archived: bool) -> Result<Vec<CatalogItem>, AppError> {
+        Ok(self.repo.list(include_archived)?)
     }
 }
 
@@ -147,11 +147,11 @@ mod tests {
         fn get(&self, id: CatalogItemId) -> Result<Option<CatalogItem>, RepoError> {
             Ok(self.inner.lock().get(&id).cloned())
         }
-        fn list(&self, include_inactive: bool) -> Result<Vec<CatalogItem>, RepoError> {
+        fn list(&self, include_archived: bool) -> Result<Vec<CatalogItem>, RepoError> {
             let g = self.inner.lock();
             let mut v: Vec<CatalogItem> = g
                 .values()
-                .filter(|s| include_inactive || s.active)
+                .filter(|s| include_archived || !s.is_archived())
                 .cloned()
                 .collect();
             v.sort_by(|a, b| a.name.cmp(&b.name));
@@ -193,7 +193,7 @@ mod tests {
         assert_eq!(s.kind, CatalogItemKind::Service);
         assert_eq!(s.unit.as_deref(), Some("hour"));
         assert_eq!(s.reference.as_deref(), Some("CONS-01"));
-        assert!(s.active);
+        assert!(!s.is_archived());
         assert_eq!(repo.inner.lock().len(), 1);
 
         // Confirm the stored copy matches (the repo receives the fully
@@ -357,7 +357,7 @@ mod tests {
             .unwrap();
         ArchiveCatalogItem::new(repo.clone()).execute(s.id).unwrap();
         let stored = repo.inner.lock().get(&s.id).cloned().unwrap();
-        assert!(!stored.active);
+        assert!(stored.is_archived());
         assert_eq!(
             ListCatalogItems::new(repo.clone()).execute(false).unwrap().len(),
             0
@@ -377,7 +377,7 @@ mod tests {
         ArchiveCatalogItem::new(repo.clone()).execute(s.id).unwrap();
         UnarchiveCatalogItem::new(repo.clone()).execute(s.id).unwrap();
         let stored = repo.inner.lock().get(&s.id).cloned().unwrap();
-        assert!(stored.active);
+        assert!(!stored.is_archived());
         assert_eq!(
             ListCatalogItems::new(repo).execute(false).unwrap().len(),
             1

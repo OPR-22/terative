@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension, Row};
 use uuid::Uuid;
 
@@ -57,6 +58,20 @@ fn row_to_item(row: &Row<'_>) -> rusqlite::Result<CatalogItem> {
             )),
         )
     })?;
+    let archived_at = match row.get::<_, Option<String>>("archived_at")? {
+        None => None,
+        Some(s) => Some(
+            DateTime::parse_from_rfc3339(&s)
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?
+                .with_timezone(&Utc),
+        ),
+    };
     Ok(CatalogItem {
         id,
         name: row.get("name")?,
@@ -64,7 +79,7 @@ fn row_to_item(row: &Row<'_>) -> rusqlite::Result<CatalogItem> {
         default_price: Money::new(amount_minor, currency),
         unit: row.get("unit")?,
         reference: row.get("reference")?,
-        active: row.get::<_, i64>("active")? != 0,
+        archived_at,
     })
 }
 
@@ -73,7 +88,7 @@ impl CatalogItemRepository for SqliteCatalogItemRepository {
         let conn = self.db.lock();
         conn.execute(
             "INSERT INTO catalog_items
-             (id, name, kind, default_price, currency, unit, reference, active)
+             (id, name, kind, default_price, currency, unit, reference, archived_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 item.id.to_string(),
@@ -83,7 +98,7 @@ impl CatalogItemRepository for SqliteCatalogItemRepository {
                 item.default_price.currency().code(),
                 item.unit,
                 item.reference,
-                item.active as i64,
+                item.archived_at.map(|d| d.to_rfc3339()),
             ],
         )
         .map_err(map_err)?;
@@ -96,7 +111,7 @@ impl CatalogItemRepository for SqliteCatalogItemRepository {
             .execute(
                 "UPDATE catalog_items
                  SET name = ?2, kind = ?3, default_price = ?4, currency = ?5,
-                     unit = ?6, reference = ?7, active = ?8
+                     unit = ?6, reference = ?7, archived_at = ?8
                  WHERE id = ?1",
                 params![
                     item.id.to_string(),
@@ -106,7 +121,7 @@ impl CatalogItemRepository for SqliteCatalogItemRepository {
                     item.default_price.currency().code(),
                     item.unit,
                     item.reference,
-                    item.active as i64,
+                    item.archived_at.map(|d| d.to_rfc3339()),
                 ],
             )
             .map_err(map_err)?;
@@ -119,7 +134,7 @@ impl CatalogItemRepository for SqliteCatalogItemRepository {
     fn get(&self, id: CatalogItemId) -> Result<Option<CatalogItem>, RepoError> {
         let conn = self.db.lock();
         conn.query_row(
-            "SELECT id, name, kind, default_price, currency, unit, reference, active
+            "SELECT id, name, kind, default_price, currency, unit, reference, archived_at
              FROM catalog_items WHERE id = ?1",
             params![id.to_string()],
             row_to_item,
@@ -128,16 +143,16 @@ impl CatalogItemRepository for SqliteCatalogItemRepository {
         .map_err(map_err)
     }
 
-    fn list(&self, include_inactive: bool) -> Result<Vec<CatalogItem>, RepoError> {
+    fn list(&self, include_archived: bool) -> Result<Vec<CatalogItem>, RepoError> {
         let conn = self.db.lock();
-        let sql = if include_inactive {
-            "SELECT id, name, kind, default_price, currency, unit, reference, active
+        let sql = if include_archived {
+            "SELECT id, name, kind, default_price, currency, unit, reference, archived_at
              FROM catalog_items
              ORDER BY kind ASC, name COLLATE NOCASE ASC"
         } else {
-            "SELECT id, name, kind, default_price, currency, unit, reference, active
+            "SELECT id, name, kind, default_price, currency, unit, reference, archived_at
              FROM catalog_items
-             WHERE active = 1
+             WHERE archived_at IS NULL
              ORDER BY kind ASC, name COLLATE NOCASE ASC"
         };
         let mut stmt = conn.prepare(sql).map_err(map_err)?;
@@ -270,11 +285,11 @@ mod tests {
     }
 
     #[test]
-    fn list_excludes_inactive_by_default() {
+    fn list_excludes_archived_by_default() {
         let db = open_memory();
         let repo = SqliteCatalogItemRepository::new(db);
         let mut a = make_service("A", 100);
-        a.active = false;
+        a.archived_at = Some(Utc::now());
         repo.insert(&a).unwrap();
         repo.insert(&make_service("B", 200)).unwrap();
         let list = repo.list(false).unwrap();

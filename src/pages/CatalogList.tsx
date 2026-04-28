@@ -35,8 +35,8 @@ export function CatalogList() {
     items,
     loading,
     error,
-    includeInactive,
-    setIncludeInactive,
+    includeArchived,
+    setIncludeArchived,
     refresh,
     create,
     update,
@@ -91,10 +91,10 @@ export function CatalogList() {
         <label className="ml-auto flex items-center gap-2 text-sm text-fg-muted">
           <input
             type="checkbox"
-            checked={includeInactive}
-            onChange={(e) => setIncludeInactive(e.target.checked)}
+            checked={includeArchived}
+            onChange={(e) => setIncludeArchived(e.target.checked)}
           />
-          {t("common.include_inactive")}
+          {t("common.include_archived")}
         </label>
       </div>
 
@@ -133,7 +133,7 @@ export function CatalogList() {
                 </td>
                 <td className="py-2 pr-3 text-fg-muted">{s.unit ?? "—"}</td>
                 <td className="py-2 pr-3 text-fg-muted">
-                  {s.active ? "✓" : "—"}
+                  {s.archived_at ? "—" : "✓"}
                 </td>
                 <td className="flex justify-end gap-2 py-2 pr-3">
                   <Button
@@ -142,7 +142,11 @@ export function CatalogList() {
                   >
                     {t("common.edit")}
                   </Button>
-                  {s.active ? (
+                  {s.archived_at ? (
+                    <Button onClick={() => void unarchive(s.id)}>
+                      {t("common.unarchive")}
+                    </Button>
+                  ) : (
                     <Button
                       variant="danger"
                       onClick={() => {
@@ -152,10 +156,6 @@ export function CatalogList() {
                       }}
                     >
                       {t("common.archive")}
-                    </Button>
-                  ) : (
-                    <Button onClick={() => void unarchive(s.id)}>
-                      {t("common.unarchive")}
                     </Button>
                   )}
                 </td>

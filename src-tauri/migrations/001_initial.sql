@@ -17,7 +17,7 @@ CREATE TABLE clients (
     pronouns        TEXT,
     occupation      TEXT,
     language        TEXT,    -- ISO 639-1 code (fr, en, nl, ...)
-    active          INTEGER NOT NULL DEFAULT 1,
+    archived_at     TEXT,    -- RFC 3339 timestamp; NULL = active
     created_at      TEXT NOT NULL
 );
 
@@ -80,7 +80,7 @@ CREATE TABLE catalog_items (
     currency        TEXT NOT NULL DEFAULT 'EUR',
     unit            TEXT,
     reference       TEXT,
-    active          INTEGER NOT NULL DEFAULT 1
+    archived_at     TEXT
 );
 
 CREATE INDEX idx_catalog_items_reference ON catalog_items(reference);
@@ -90,7 +90,7 @@ CREATE TABLE tax_definitions (
     name            TEXT NOT NULL,
     percentage      REAL NOT NULL,
     tax_id_number   TEXT,
-    active          INTEGER NOT NULL DEFAULT 1
+    archived_at     TEXT
 );
 
 CREATE TABLE bookmarks (
@@ -222,7 +222,8 @@ CREATE TABLE app_preferences (
     auto_backup_enabled         INTEGER NOT NULL DEFAULT 1,
     auto_backup_interval_hours  INTEGER NOT NULL DEFAULT 24,
     retention_mode              TEXT NOT NULL DEFAULT 'KeepLast' CHECK (retention_mode IN ('All', 'KeepLast')),
-    retention_count             INTEGER NOT NULL DEFAULT 30
+    retention_count             INTEGER NOT NULL DEFAULT 30,
+    default_invoice_due_days    INTEGER NOT NULL DEFAULT 30
 );
 INSERT INTO app_preferences (id) VALUES (1);
 
@@ -303,7 +304,7 @@ LEFT JOIN (
     FROM payments
     GROUP BY client_id
 ) pay ON pay.client_id = c.id
-WHERE c.active = 1;
+WHERE c.archived_at IS NULL;
 
 CREATE VIEW v_aging_report AS
 SELECT

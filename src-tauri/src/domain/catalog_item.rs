@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::domain::money::{Money, MoneyError};
@@ -57,7 +58,9 @@ pub struct CatalogItem {
     pub unit: Option<String>,
     /// Optional internal reference / SKU. Free-text, searchable.
     pub reference: Option<String>,
-    pub active: bool,
+    /// `None` = active. `Some(timestamp)` = archived; the timestamp records
+    /// when the user clicked "archive".
+    pub archived_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -95,16 +98,20 @@ impl CatalogItem {
             default_price: input.default_price,
             unit: input.unit.and_then(non_empty),
             reference: input.reference.and_then(non_empty),
-            active: true,
+            archived_at: None,
         })
     }
 
-    pub fn deactivate(&mut self) {
-        self.active = false;
+    pub fn is_archived(&self) -> bool {
+        self.archived_at.is_some()
     }
 
-    pub fn reactivate(&mut self) {
-        self.active = true;
+    pub fn archive(&mut self, now: DateTime<Utc>) {
+        self.archived_at = Some(now);
+    }
+
+    pub fn unarchive(&mut self) {
+        self.archived_at = None;
     }
 }
 
@@ -143,7 +150,7 @@ mod tests {
         assert_eq!(s.kind, CatalogItemKind::Service);
         assert_eq!(s.default_price.minor_units(), 15000);
         assert_eq!(s.unit.as_deref(), Some("hour"));
-        assert!(s.active);
+        assert!(!s.is_archived());
     }
 
     #[test]
@@ -215,18 +222,21 @@ mod tests {
     }
 
     #[test]
-    fn deactivate_flips_active_flag() {
+    fn archive_stamps_timestamp() {
         let mut s = CatalogItem::create(new_service("Consulting")).unwrap();
-        s.deactivate();
-        assert!(!s.active);
+        let now = Utc::now();
+        s.archive(now);
+        assert_eq!(s.archived_at, Some(now));
+        assert!(s.is_archived());
     }
 
     #[test]
-    fn reactivate_restores_active_flag() {
+    fn unarchive_clears_timestamp() {
         let mut s = CatalogItem::create(new_service("Consulting")).unwrap();
-        s.deactivate();
-        s.reactivate();
-        assert!(s.active);
+        s.archive(Utc::now());
+        s.unarchive();
+        assert!(s.archived_at.is_none());
+        assert!(!s.is_archived());
     }
 
     #[test]

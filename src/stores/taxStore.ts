@@ -8,10 +8,10 @@ import {
 
 interface TaxState {
   taxes: TaxDefinitionDto[];
-  includeInactive: boolean;
+  includeArchived: boolean;
   loading: boolean;
   error: string | null;
-  setIncludeInactive: (v: boolean) => void;
+  setIncludeArchived: (v: boolean) => void;
   refresh: () => Promise<void>;
   create: (input: NewTaxDefinitionDto) => Promise<TaxDefinitionDto>;
   update: (input: UpdateTaxDto) => Promise<TaxDefinitionDto>;
@@ -21,17 +21,17 @@ interface TaxState {
 
 export const useTaxStore = create<TaxState>((set, get) => ({
   taxes: [],
-  includeInactive: false,
+  includeArchived: false,
   loading: false,
   error: null,
-  setIncludeInactive: (includeInactive) => {
-    set({ includeInactive });
+  setIncludeArchived: (includeArchived) => {
+    set({ includeArchived });
     void get().refresh();
   },
   refresh: async () => {
     set({ loading: true, error: null });
     try {
-      const taxes = await ipc.taxList(get().includeInactive);
+      const taxes = await ipc.taxList(get().includeArchived);
       set({ taxes, loading: false });
     } catch (e) {
       set({ error: String(e), loading: false });

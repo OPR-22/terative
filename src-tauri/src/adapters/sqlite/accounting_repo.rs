@@ -270,7 +270,7 @@ impl AccountingQueries for SqliteAccountingRepository {
                      FROM payments
                      GROUP BY client_id
                  ) pay ON pay.client_id = c.id
-                 WHERE c.active = 1
+                 WHERE c.archived_at IS NULL
                  ORDER BY outstanding DESC",
             )
             .map_err(map_err)?;

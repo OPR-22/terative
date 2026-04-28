@@ -62,7 +62,7 @@
     "active": "Actif",
     "date": "Date",
     "status": "Statut",
-    "include_inactive": "Inclure les inactifs"
+    "include_archived": "Inclure les archivés"
   },
   "clients": {
     "title": "Clients",
@@ -172,6 +172,10 @@
     "total": "Total",
     "subtotal": "Sous-total",
     "due_date": "Échéance",
+    "due_in_days": "Échéance (jours)",
+    "due_no_date": "Pas d’échéance",
+    "public_notes": "Notes (imprimées sur la facture)",
+    "public_notes_hint": "Visible par le client sur le PDF de la facture.",
     "all": "Toutes",
     "status_draft": "Brouillon",
     "status_finalized": "Finalisée",
@@ -230,6 +234,7 @@
     "pdf_output_dir": "Dossier de sortie des PDF",
     "user_backup_dir": "Dossier de sauvegardes",
     "user_backup_dir_placeholder": "Laissez vide pour utiliser l’emplacement par défaut",
+    "default_invoice_due_days": "Échéance par défaut (jours)",
     "saved": "Enregistré",
     "email": "E-mail",
     "smtp_host": "Serveur SMTP",

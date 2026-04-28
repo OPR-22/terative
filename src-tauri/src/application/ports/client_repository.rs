@@ -17,7 +17,7 @@ pub trait ClientRepository: Send + Sync {
 #[derive(Debug, Clone, Default)]
 pub struct ListClientsQuery {
     pub search: Option<String>,
-    pub include_inactive: bool,
+    pub include_archived: bool,
     pub pagination: PaginationParams,
 }
 

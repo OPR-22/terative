@@ -5,6 +5,6 @@ pub trait CatalogItemRepository: Send + Sync {
     fn insert(&self, item: &CatalogItem) -> Result<(), RepoError>;
     fn update(&self, item: &CatalogItem) -> Result<(), RepoError>;
     fn get(&self, id: CatalogItemId) -> Result<Option<CatalogItem>, RepoError>;
-    fn list(&self, include_inactive: bool) -> Result<Vec<CatalogItem>, RepoError>;
+    fn list(&self, include_archived: bool) -> Result<Vec<CatalogItem>, RepoError>;
     fn delete(&self, id: CatalogItemId) -> Result<(), RepoError>;
 }

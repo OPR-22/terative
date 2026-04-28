@@ -76,7 +76,11 @@ pub struct Client {
     /// "nl"). Free-form to accommodate languages outside the UI's two
     /// supported locales.
     pub language: Option<String>,
-    pub active: bool,
+    /// `None` = active client. `Some(timestamp)` = archived client; the
+    /// timestamp records when the user clicked "archive". Lets the UI
+    /// sort archived items by when they were retired and gives an audit
+    /// trail without a separate event log.
+    pub archived_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -131,9 +135,13 @@ impl Client {
             pronouns: input.pronouns.and_then(non_empty),
             occupation: input.occupation.and_then(non_empty),
             language: input.language.and_then(non_empty),
-            active: true,
+            archived_at: None,
             created_at: now,
         })
+    }
+
+    pub fn is_archived(&self) -> bool {
+        self.archived_at.is_some()
     }
 
     pub fn replace_emails(&mut self, new_emails: Vec<NewContactEntry>) -> Result<(), ClientError> {
@@ -162,12 +170,12 @@ impl Client {
         default_value(&self.phones)
     }
 
-    pub fn deactivate(&mut self) {
-        self.active = false;
+    pub fn archive(&mut self, now: DateTime<Utc>) {
+        self.archived_at = Some(now);
     }
 
-    pub fn reactivate(&mut self) {
-        self.active = true;
+    pub fn unarchive(&mut self) {
+        self.archived_at = None;
     }
 }
 
@@ -265,7 +273,7 @@ mod tests {
         .unwrap();
         assert_eq!(c.name, "Acme Corp");
         assert_eq!(c.default_email(), Some("billing@acme.example"));
-        assert!(c.active);
+        assert!(!c.is_archived());
         assert_eq!(c.created_at, now());
     }
 
@@ -392,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn deactivate_flips_active_flag() {
+    fn archive_stamps_timestamp() {
         let mut c = Client::create(
             NewClient {
                 name: "Acme".into(),
@@ -401,13 +409,14 @@ mod tests {
             now(),
         )
         .unwrap();
-        assert!(c.active);
-        c.deactivate();
-        assert!(!c.active);
+        assert!(!c.is_archived());
+        c.archive(now());
+        assert_eq!(c.archived_at, Some(now()));
+        assert!(c.is_archived());
     }
 
     #[test]
-    fn reactivate_restores_active_flag() {
+    fn unarchive_clears_timestamp() {
         let mut c = Client::create(
             NewClient {
                 name: "Acme".into(),
@@ -416,9 +425,10 @@ mod tests {
             now(),
         )
         .unwrap();
-        c.deactivate();
-        c.reactivate();
-        assert!(c.active);
+        c.archive(now());
+        c.unarchive();
+        assert!(c.archived_at.is_none());
+        assert!(!c.is_archived());
     }
 
     #[test]

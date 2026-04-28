@@ -89,7 +89,7 @@ impl ArchiveClient {
 
     pub fn execute(&self, id: ClientId) -> Result<(), AppError> {
         let mut client = self.repo.get(id)?.ok_or(AppError::NotFound)?;
-        client.deactivate();
+        client.archive(Utc::now());
         self.repo.update(&client)?;
         Ok(())
     }
@@ -106,7 +106,7 @@ impl UnarchiveClient {
 
     pub fn execute(&self, id: ClientId) -> Result<(), AppError> {
         let mut client = self.repo.get(id)?.ok_or(AppError::NotFound)?;
-        client.reactivate();
+        client.unarchive();
         self.repo.update(&client)?;
         Ok(())
     }
@@ -202,7 +202,7 @@ mod tests {
             let g = self.inner.lock();
             let mut v: Vec<Client> = g
                 .values()
-                .filter(|c| query.include_inactive || c.active)
+                .filter(|c| query.include_archived || !c.is_archived())
                 .filter(|c| {
                     query
                         .search
@@ -393,7 +393,7 @@ mod tests {
             .unwrap();
         ArchiveClient::new(repo.clone()).execute(c.id).unwrap();
         let stored = repo.inner.lock().get(&c.id).cloned().unwrap();
-        assert!(!stored.active);
+        assert!(stored.is_archived());
     }
 
     #[test]
@@ -408,7 +408,7 @@ mod tests {
         ArchiveClient::new(repo.clone()).execute(c.id).unwrap();
         UnarchiveClient::new(repo.clone()).execute(c.id).unwrap();
         let stored = repo.inner.lock().get(&c.id).cloned().unwrap();
-        assert!(stored.active);
+        assert!(!stored.is_archived());
     }
 
     #[test]
@@ -437,7 +437,7 @@ mod tests {
 
         let all = ListClients::new(repo.clone())
             .execute(ListClientsQuery {
-                include_inactive: true,
+                include_archived: true,
                 search: None,
                 ..Default::default()
             })
@@ -464,7 +464,7 @@ mod tests {
         let list = ListClients::new(repo.clone())
             .execute(ListClientsQuery {
                 search: Some("acm".into()),
-                include_inactive: false,
+                include_archived: false,
                 ..Default::default()
             })
             .unwrap();

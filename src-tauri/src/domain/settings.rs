@@ -218,6 +218,10 @@ pub struct AppPreferences {
     pub auto_backup_interval_hours: u32,
     pub retention_mode: RetentionMode,
     pub retention_count: u32,
+    /// Days added to an invoice's issue date to prefill its due date when
+    /// creating a new invoice. The user can still override on a per-invoice
+    /// basis. 0 means "no prefill" — the invoice opens with an empty due date.
+    pub default_invoice_due_days: u32,
 }
 
 impl Default for AppPreferences {
@@ -231,6 +235,7 @@ impl Default for AppPreferences {
             auto_backup_interval_hours: 24,
             retention_mode: RetentionMode::default(),
             retention_count: 30,
+            default_invoice_due_days: 30,
         }
     }
 }

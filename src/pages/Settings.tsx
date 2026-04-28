@@ -504,6 +504,23 @@ function PreferencesSection({ prefs, onSave }: PreferencesProps) {
           placeholder={t("settings.user_backup_dir_placeholder") ?? ""}
           className="sm:col-span-2"
         />
+        <Input
+          label={t("settings.default_invoice_due_days") ?? ""}
+          type="number"
+          min="0"
+          max="365"
+          value={form.default_invoice_due_days}
+          onChange={(e) =>
+            setForm({
+              ...form,
+              default_invoice_due_days: Math.max(
+                0,
+                parseInt(e.target.value, 10) || 0,
+              ),
+            })
+          }
+          placeholder="30"
+        />
         <div className="sm:col-span-2 flex items-center gap-3">
           <Button type="submit">{t("common.save")}</Button>
           {saved ? (

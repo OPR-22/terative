@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -11,7 +12,7 @@ pub struct TaxDefinitionDto {
     pub name: String,
     pub percentage: Decimal,
     pub tax_id_number: Option<String>,
-    pub active: bool,
+    pub archived_at: Option<DateTime<Utc>>,
 }
 
 impl From<&TaxDefinition> for TaxDefinitionDto {
@@ -21,7 +22,7 @@ impl From<&TaxDefinition> for TaxDefinitionDto {
             name: t.name.clone(),
             percentage: t.percentage,
             tax_id_number: t.tax_id_number.clone(),
-            active: t.active,
+            archived_at: t.archived_at,
         }
     }
 }
@@ -74,7 +75,7 @@ mod tests {
             name: "TVA".into(),
             percentage: dec!(21),
             tax_id_number: Some("BE123".into()),
-            active: true,
+            archived_at: None,
         };
         let dto: TaxDefinitionDto = (&domain).into();
         assert_eq!(dto.id, domain.id.0);

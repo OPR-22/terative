@@ -62,7 +62,7 @@
     "active": "Active",
     "date": "Date",
     "status": "Status",
-    "include_inactive": "Include inactive"
+    "include_archived": "Include archived"
   },
   "clients": {
     "title": "Clients",
@@ -172,6 +172,10 @@
     "total": "Total",
     "subtotal": "Subtotal",
     "due_date": "Due date",
+    "due_in_days": "Due in (days)",
+    "due_no_date": "No due date",
+    "public_notes": "Notes (printed on the invoice)",
+    "public_notes_hint": "Visible to the client on the invoice PDF.",
     "all": "All",
     "status_draft": "Draft",
     "status_finalized": "Finalized",
@@ -230,6 +234,7 @@
     "pdf_output_dir": "PDF output folder",
     "user_backup_dir": "Backup folder",
     "user_backup_dir_placeholder": "Leave empty to use the default location",
+    "default_invoice_due_days": "Default invoice due (days)",
     "saved": "Saved",
     "email": "Email",
     "smtp_host": "SMTP host",

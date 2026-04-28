@@ -27,8 +27,8 @@ export function TaxList() {
   const { t } = useTranslation();
   const {
     taxes,
-    includeInactive,
-    setIncludeInactive,
+    includeArchived,
+    setIncludeArchived,
     loading,
     error,
     refresh,
@@ -56,10 +56,10 @@ export function TaxList() {
         <label className="flex items-center gap-2 text-sm text-fg-muted">
           <input
             type="checkbox"
-            checked={includeInactive}
-            onChange={(e) => setIncludeInactive(e.target.checked)}
+            checked={includeArchived}
+            onChange={(e) => setIncludeArchived(e.target.checked)}
           />
-          {t("common.include_inactive")}
+          {t("common.include_archived")}
         </label>
       </div>
 
@@ -88,7 +88,7 @@ export function TaxList() {
                   {tax.tax_id_number ?? "—"}
                 </td>
                 <td className="py-2 pr-3 text-fg-muted">
-                  {tax.active ? "✓" : "—"}
+                  {tax.archived_at ? "—" : "✓"}
                 </td>
                 <td className="flex justify-end gap-2 py-2 pr-3">
                   <Button
@@ -97,7 +97,11 @@ export function TaxList() {
                   >
                     {t("common.edit")}
                   </Button>
-                  {tax.active ? (
+                  {tax.archived_at ? (
+                    <Button onClick={() => void unarchive(tax.id)}>
+                      {t("common.unarchive")}
+                    </Button>
+                  ) : (
                     <Button
                       variant="danger"
                       onClick={() => {
@@ -107,10 +111,6 @@ export function TaxList() {
                       }}
                     >
                       {t("common.archive")}
-                    </Button>
-                  ) : (
-                    <Button onClick={() => void unarchive(tax.id)}>
-                      {t("common.unarchive")}
                     </Button>
                   )}
                 </td>

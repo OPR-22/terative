@@ -10,7 +10,7 @@ export const commands = {
 	clientUnarchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("client_unarchive", { id })),
 	clientList: (query: {
 	search?: string | null,
-	include_inactive?: boolean,
+	include_archived?: boolean,
 	pagination?: PaginationParamsDto | null,
 } | null) => typedError<PageDto<ClientDto>, string>(__TAURI_INVOKE("client_list", { query })),
 	clientGet: (id: string) => typedError<ClientDto, string>(__TAURI_INVOKE("client_get", { id })),
@@ -19,7 +19,7 @@ export const commands = {
 	catalogItemUpdate: (input: UpdateCatalogItemDto) => typedError<CatalogItemDto, string>(__TAURI_INVOKE("catalog_item_update", { input })),
 	catalogItemArchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("catalog_item_archive", { id })),
 	catalogItemUnarchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("catalog_item_unarchive", { id })),
-	catalogItemList: (includeInactive: boolean | null) => typedError<CatalogItemDto[], string>(__TAURI_INVOKE("catalog_item_list", { includeInactive })),
+	catalogItemList: (includeArchived: boolean | null) => typedError<CatalogItemDto[], string>(__TAURI_INVOKE("catalog_item_list", { includeArchived })),
 	settingsGet: () => typedError<SettingsSnapshotDto, string>(__TAURI_INVOKE("settings_get")),
 	/**
 	 *  Returns the full list of supported currencies with their display metadata.
@@ -39,7 +39,7 @@ export const commands = {
 	taxUpdate: (input: UpdateTaxDto) => typedError<TaxDefinitionDto, string>(__TAURI_INVOKE("tax_update", { input })),
 	taxArchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("tax_archive", { id })),
 	taxUnarchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("tax_unarchive", { id })),
-	taxList: (includeInactive: boolean | null) => typedError<TaxDefinitionDto[], string>(__TAURI_INVOKE("tax_list", { includeInactive })),
+	taxList: (includeArchived: boolean | null) => typedError<TaxDefinitionDto[], string>(__TAURI_INVOKE("tax_list", { includeArchived })),
 	templateCreate: (input: NewInvoiceTemplateDto) => typedError<InvoiceTemplateDto, string>(__TAURI_INVOKE("template_create", { input })),
 	templateUpdate: (input: UpdateTemplateDto) => typedError<InvoiceTemplateDto, string>(__TAURI_INVOKE("template_update", { input })),
 	templateDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("template_delete", { id })),
@@ -163,6 +163,7 @@ export type AppPreferencesDto = {
 	auto_backup_interval_hours: number,
 	retention_mode: RetentionModeDto,
 	retention_count: number,
+	default_invoice_due_days: number,
 };
 
 export type AppliedTaxDto = {
@@ -199,7 +200,7 @@ export type CatalogItemDto = {
 	default_price: MoneyDto,
 	unit: string | null,
 	reference: string | null,
-	active: boolean,
+	archived_at: string | null,
 };
 
 export type CatalogItemKindDto = "Product" | "Service";
@@ -232,7 +233,7 @@ export type ClientDto = {
 	pronouns: string | null,
 	occupation: string | null,
 	language: string | null,
-	active: boolean,
+	archived_at: string | null,
 	created_at: string,
 };
 
@@ -392,7 +393,7 @@ export type LineItemDto = {
 
 export type ListClientsQueryDto = {
 	search?: string | null,
-	include_inactive?: boolean,
+	include_archived?: boolean,
 	pagination?: PaginationParamsDto | null,
 };
 
@@ -626,7 +627,7 @@ export type TaxDefinitionDto = {
 	name: string,
 	percentage: string,
 	tax_id_number: string | null,
-	active: boolean,
+	archived_at: string | null,
 };
 
 export type TemplateLayoutDto = "Classic" | "Modern" | "Minimal";

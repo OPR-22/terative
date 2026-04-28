@@ -93,7 +93,7 @@ impl SettingsRepository for SqliteSettingsRepository {
         conn.query_row(
             "SELECT theme, language, pdf_output_dir, user_backup_dir,
                     auto_backup_enabled, auto_backup_interval_hours,
-                    retention_mode, retention_count
+                    retention_mode, retention_count, default_invoice_due_days
              FROM app_preferences WHERE id = 1",
             [],
             |row| {
@@ -109,6 +109,7 @@ impl SettingsRepository for SqliteSettingsRepository {
                     auto_backup_interval_hours: row.get::<_, i64>(5)? as u32,
                     retention_mode: RetentionMode::parse(&retention_s).unwrap_or_default(),
                     retention_count: row.get::<_, i64>(7)? as u32,
+                    default_invoice_due_days: row.get::<_, i64>(8)? as u32,
                 })
             },
         )
@@ -121,7 +122,8 @@ impl SettingsRepository for SqliteSettingsRepository {
             "UPDATE app_preferences
              SET theme = ?1, language = ?2, pdf_output_dir = ?3, user_backup_dir = ?4,
                  auto_backup_enabled = ?5, auto_backup_interval_hours = ?6,
-                 retention_mode = ?7, retention_count = ?8
+                 retention_mode = ?7, retention_count = ?8,
+                 default_invoice_due_days = ?9
              WHERE id = 1",
             params![
                 p.theme.as_str(),
@@ -132,6 +134,7 @@ impl SettingsRepository for SqliteSettingsRepository {
                 p.auto_backup_interval_hours as i64,
                 p.retention_mode.as_str(),
                 p.retention_count as i64,
+                p.default_invoice_due_days as i64,
             ],
         )
         .map_err(map_err)?;

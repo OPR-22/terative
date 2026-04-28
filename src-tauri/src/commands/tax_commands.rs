@@ -48,11 +48,11 @@ pub fn tax_unarchive(state: State<'_, AppState>, id: Uuid) -> Result<(), String>
 #[specta::specta]
 pub fn tax_list(
     state: State<'_, AppState>,
-    include_inactive: Option<bool>,
+    include_archived: Option<bool>,
 ) -> Result<Vec<TaxDefinitionDto>, String> {
     state
         .list_taxes
-        .execute(include_inactive.unwrap_or(false))
+        .execute(include_archived.unwrap_or(false))
         .map(|list| list.iter().map(Into::into).collect())
         .map_err(to_ipc_err)
 }

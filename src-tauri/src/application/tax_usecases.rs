@@ -71,7 +71,7 @@ impl ArchiveTax {
     }
     pub fn execute(&self, id: TaxId) -> Result<(), AppError> {
         let mut tax = self.repo.get(id)?.ok_or(AppError::NotFound)?;
-        tax.deactivate();
+        tax.archive(chrono::Utc::now());
         self.repo.update(&tax)?;
         Ok(())
     }
@@ -87,7 +87,7 @@ impl UnarchiveTax {
     }
     pub fn execute(&self, id: TaxId) -> Result<(), AppError> {
         let mut tax = self.repo.get(id)?.ok_or(AppError::NotFound)?;
-        tax.reactivate();
+        tax.unarchive();
         self.repo.update(&tax)?;
         Ok(())
     }
@@ -101,8 +101,8 @@ impl ListTaxes {
     pub fn new(repo: Arc<dyn TaxRepository>) -> Self {
         Self { repo }
     }
-    pub fn execute(&self, include_inactive: bool) -> Result<Vec<TaxDefinition>, AppError> {
-        Ok(self.repo.list(include_inactive)?)
+    pub fn execute(&self, include_archived: bool) -> Result<Vec<TaxDefinition>, AppError> {
+        Ok(self.repo.list(include_archived)?)
     }
 }
 
@@ -135,11 +135,11 @@ mod tests {
         fn get(&self, id: TaxId) -> Result<Option<TaxDefinition>, RepoError> {
             Ok(self.inner.lock().get(&id).cloned())
         }
-        fn list(&self, include_inactive: bool) -> Result<Vec<TaxDefinition>, RepoError> {
+        fn list(&self, include_archived: bool) -> Result<Vec<TaxDefinition>, RepoError> {
             let g = self.inner.lock();
             let mut v: Vec<TaxDefinition> = g
                 .values()
-                .filter(|t| include_inactive || t.active)
+                .filter(|t| include_archived || !t.is_archived())
                 .cloned()
                 .collect();
             v.sort_by(|a, b| a.name.cmp(&b.name));
@@ -243,7 +243,7 @@ mod tests {
             .unwrap();
         ArchiveTax::new(r.clone()).execute(tax.id).unwrap();
         let stored = r.inner.lock().get(&tax.id).cloned().unwrap();
-        assert!(!stored.active);
+        assert!(stored.is_archived());
     }
 
     #[test]
@@ -259,7 +259,7 @@ mod tests {
         ArchiveTax::new(r.clone()).execute(tax.id).unwrap();
         UnarchiveTax::new(r.clone()).execute(tax.id).unwrap();
         let stored = r.inner.lock().get(&tax.id).cloned().unwrap();
-        assert!(stored.active);
+        assert!(!stored.is_archived());
     }
 
     #[test]

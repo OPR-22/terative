@@ -56,6 +56,20 @@ fn row_to_bare_client(row: &Row<'_>) -> rusqlite::Result<Client> {
         })?),
         None => None,
     };
+    let archived_at = match row.get::<_, Option<String>>("archived_at")? {
+        None => None,
+        Some(s) => Some(
+            DateTime::parse_from_rfc3339(&s)
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?
+                .with_timezone(&Utc),
+        ),
+    };
     Ok(Client {
         id,
         name: row.get("name")?,
@@ -70,7 +84,7 @@ fn row_to_bare_client(row: &Row<'_>) -> rusqlite::Result<Client> {
         pronouns: row.get("pronouns")?,
         occupation: row.get("occupation")?,
         language: row.get("language")?,
-        active: row.get::<_, i64>("active")? != 0,
+        archived_at,
         created_at,
     })
 }
@@ -171,7 +185,7 @@ impl ClientRepository for SqliteClientRepository {
         conn.execute(
             "INSERT INTO clients
              (id, name, address, notes, referred_by, date_of_birth, sex, gender,
-              pronouns, occupation, language, active, created_at)
+              pronouns, occupation, language, archived_at, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 c.id.to_string(),
@@ -185,7 +199,7 @@ impl ClientRepository for SqliteClientRepository {
                 c.pronouns,
                 c.occupation,
                 c.language,
-                c.active as i64,
+                c.archived_at.map(|d| d.to_rfc3339()),
                 c.created_at.to_rfc3339(),
             ],
         )
@@ -203,7 +217,7 @@ impl ClientRepository for SqliteClientRepository {
                  SET name = ?2, address = ?3, notes = ?4, referred_by = ?5,
                      date_of_birth = ?6, sex = ?7, gender = ?8,
                      pronouns = ?9, occupation = ?10, language = ?11,
-                     active = ?12
+                     archived_at = ?12
                  WHERE id = ?1",
                 params![
                     c.id.to_string(),
@@ -217,7 +231,7 @@ impl ClientRepository for SqliteClientRepository {
                     c.pronouns,
                     c.occupation,
                     c.language,
-                    c.active as i64,
+                    c.archived_at.map(|d| d.to_rfc3339()),
                 ],
             )
             .map_err(map_err)?;
@@ -233,7 +247,7 @@ impl ClientRepository for SqliteClientRepository {
         let conn = self.db.lock();
         let mut client = conn
             .query_row(
-                "SELECT id, name, address, notes, referred_by, date_of_birth, sex, gender, pronouns, occupation, language, active, created_at
+                "SELECT id, name, address, notes, referred_by, date_of_birth, sex, gender, pronouns, occupation, language, archived_at, created_at
                  FROM clients WHERE id = ?1",
                 params![id.to_string()],
                 row_to_bare_client,
@@ -252,8 +266,8 @@ impl ClientRepository for SqliteClientRepository {
 
         let mut where_clause = String::new();
         let mut clauses: Vec<&str> = Vec::new();
-        if !query.include_inactive {
-            clauses.push("active = 1");
+        if !query.include_archived {
+            clauses.push("archived_at IS NULL");
         }
         let search_pattern: Option<String> = query
             .search
@@ -279,7 +293,7 @@ impl ClientRepository for SqliteClientRepository {
         let offset = query.pagination.offset();
         let limit = query.pagination.per_page as u64;
         let select_sql = format!(
-            "SELECT id, name, address, notes, referred_by, date_of_birth, sex, gender, pronouns, occupation, language, active, created_at FROM clients{where_clause} \
+            "SELECT id, name, address, notes, referred_by, date_of_birth, sex, gender, pronouns, occupation, language, archived_at, created_at FROM clients{where_clause} \
              ORDER BY name COLLATE NOCASE ASC LIMIT {limit} OFFSET {offset}"
         );
 
@@ -362,7 +376,7 @@ mod tests {
         let loaded = repo.get(c.id).unwrap().unwrap();
         assert_eq!(loaded.name, "Acme");
         assert_eq!(loaded.id, c.id);
-        assert!(loaded.active);
+        assert!(!loaded.is_archived());
     }
 
     #[test]
@@ -443,12 +457,12 @@ mod tests {
     }
 
     #[test]
-    fn list_excludes_inactive_by_default() {
+    fn list_excludes_archived_by_default() {
         let db = open_memory();
         let repo = SqliteClientRepository::new(db);
         let mut a = make_client("Alpha");
         let b = make_client("Beta");
-        a.active = false;
+        a.archived_at = Some(Utc::now());
         repo.insert(&a).unwrap();
         repo.insert(&b).unwrap();
         let list = repo.list(ListClientsQuery::default()).unwrap();
@@ -457,15 +471,15 @@ mod tests {
     }
 
     #[test]
-    fn list_includes_inactive_when_requested() {
+    fn list_includes_archived_when_requested() {
         let db = open_memory();
         let repo = SqliteClientRepository::new(db);
         let mut a = make_client("Alpha");
-        a.active = false;
+        a.archived_at = Some(Utc::now());
         repo.insert(&a).unwrap();
         let list = repo
             .list(ListClientsQuery {
-                include_inactive: true,
+                include_archived: true,
                 search: None,
                 ..Default::default()
             })
@@ -482,7 +496,7 @@ mod tests {
         let list = repo
             .list(ListClientsQuery {
                 search: Some("ACM".into()),
-                include_inactive: false,
+                include_archived: false,
                 ..Default::default()
             })
             .unwrap();

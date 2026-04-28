@@ -10,8 +10,8 @@ interface CatalogState {
   items: CatalogItemDto[];
   loading: boolean;
   error: string | null;
-  includeInactive: boolean;
-  setIncludeInactive: (v: boolean) => void;
+  includeArchived: boolean;
+  setIncludeArchived: (v: boolean) => void;
   refresh: () => Promise<void>;
   create: (input: NewCatalogItemDto) => Promise<CatalogItemDto>;
   update: (input: UpdateCatalogItemDto) => Promise<CatalogItemDto>;
@@ -23,15 +23,15 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   items: [],
   loading: false,
   error: null,
-  includeInactive: false,
-  setIncludeInactive: (includeInactive) => {
-    set({ includeInactive });
+  includeArchived: false,
+  setIncludeArchived: (includeArchived) => {
+    set({ includeArchived });
     void get().refresh();
   },
   refresh: async () => {
     set({ loading: true, error: null });
     try {
-      const items = await ipc.catalogItemList(get().includeInactive);
+      const items = await ipc.catalogItemList(get().includeArchived);
       set({ items, loading: false });
     } catch (e) {
       set({ error: String(e), loading: false });

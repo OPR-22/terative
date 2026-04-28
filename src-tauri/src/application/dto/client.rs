@@ -51,7 +51,7 @@ pub struct ClientDto {
     pub pronouns: Option<String>,
     pub occupation: Option<String>,
     pub language: Option<String>,
-    pub active: bool,
+    pub archived_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -71,7 +71,7 @@ impl From<&Client> for ClientDto {
             pronouns: c.pronouns.clone(),
             occupation: c.occupation.clone(),
             language: c.language.clone(),
-            active: c.active,
+            archived_at: c.archived_at,
             created_at: c.created_at,
         }
     }
@@ -160,7 +160,7 @@ pub struct ListClientsQueryDto {
     #[serde(default)]
     pub search: Option<String>,
     #[serde(default)]
-    pub include_inactive: bool,
+    pub include_archived: bool,
     #[serde(default)]
     pub pagination: Option<super::PaginationParamsDto>,
 }
@@ -175,7 +175,7 @@ impl From<ListClientsQueryDto> for ListClientsQuery {
     fn from(dto: ListClientsQueryDto) -> Self {
         ListClientsQuery {
             search: dto.search,
-            include_inactive: dto.include_inactive,
+            include_archived: dto.include_archived,
             pagination: dto.pagination.into(),
         }
     }
@@ -238,7 +238,7 @@ mod tests {
             pronouns: None,
             occupation: None,
             language: None,
-            active: true,
+            archived_at: None,
             created_at: Utc.with_ymd_and_hms(2026, 4, 14, 9, 0, 0).unwrap(),
         }
     }
@@ -258,7 +258,7 @@ mod tests {
         assert_eq!(dto.address, client.address);
         assert_eq!(dto.notes, client.notes);
         assert_eq!(dto.referred_by, None);
-        assert_eq!(dto.active, client.active);
+        assert_eq!(dto.archived_at, client.archived_at);
         assert_eq!(dto.created_at, client.created_at);
     }
 
@@ -322,7 +322,7 @@ mod tests {
             serde_json::from_str("{}").expect("empty object must deserialize");
         let q: ListClientsQuery = dto.into();
         assert_eq!(q.search, None);
-        assert!(!q.include_inactive);
+        assert!(!q.include_archived);
     }
 
     #[test]
@@ -330,6 +330,6 @@ mod tests {
         let dto: ListClientsQueryDto = serde_json::from_str(r#"{"search":"acme"}"#).unwrap();
         let q: ListClientsQuery = dto.into();
         assert_eq!(q.search.as_deref(), Some("acme"));
-        assert!(!q.include_inactive);
+        assert!(!q.include_archived);
     }
 }

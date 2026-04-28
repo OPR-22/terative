@@ -349,7 +349,7 @@ function InfoTab({
           {referrerOptions.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
-              {c.active ? "" : ` (${t("clients.archived")})`}
+              {c.archived_at ? ` (${t("clients.archived")})` : ""}
             </option>
           ))}
         </select>

@@ -189,6 +189,7 @@ pub struct AppPreferencesDto {
     pub auto_backup_interval_hours: u32,
     pub retention_mode: RetentionModeDto,
     pub retention_count: u32,
+    pub default_invoice_due_days: u32,
 }
 
 impl Default for AppPreferencesDto {
@@ -208,6 +209,7 @@ impl AppPreferences {
             auto_backup_interval_hours: self.auto_backup_interval_hours,
             retention_mode: self.retention_mode.into(),
             retention_count: self.retention_count,
+            default_invoice_due_days: self.default_invoice_due_days,
         }
     }
 }
@@ -229,6 +231,7 @@ impl From<AppPreferencesDto> for AppPreferences {
             auto_backup_interval_hours: dto.auto_backup_interval_hours,
             retention_mode: dto.retention_mode.into(),
             retention_count: dto.retention_count,
+            default_invoice_due_days: dto.default_invoice_due_days,
         }
     }
 }

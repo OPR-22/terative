@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "../components/common/Button";
@@ -35,7 +35,10 @@ interface FormState {
   client_id: string;
   template_id: string | null;
   date: string;
-  due_date: string;
+  /// Days from the issue date to the due date. `""` means "no due date".
+  /// We model the form in days (not a fixed date) so the resolved date
+  /// stays in sync when the user edits the issue date.
+  due_days: string;
   notes: string;
   lines: LineRow[];
   tax_ids: string[];
@@ -43,13 +46,37 @@ interface FormState {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+/// Returns the date that's `days` calendar days after `issueDate`, formatted
+/// as `YYYY-MM-DD`. Returns null if either input is invalid or `days` is
+/// empty/non-numeric — caller treats that as "no due date".
+function computeDueDate(issueDate: string, days: string): string | null {
+  if (days === "") return null;
+  const n = parseInt(days, 10);
+  if (Number.isNaN(n)) return null;
+  const d = new Date(issueDate);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/// Inverse: how many calendar days separate `issueDate` from `dueDate`.
+/// Used when opening an existing invoice to populate the days input from
+/// its stored due_date.
+function daysBetween(issueDate: string, dueDate: string): string {
+  const a = new Date(issueDate);
+  const b = new Date(dueDate);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return "";
+  const diff = Math.round((b.getTime() - a.getTime()) / 86_400_000);
+  return String(diff);
+}
+
 function initialForm(invoice: InvoiceDto | null): FormState {
   if (!invoice) {
     return {
       client_id: "",
       template_id: null,
       date: today(),
-      due_date: "",
+      due_days: "",
       notes: "",
       lines: [{ description: "", quantity: "1", unit_price_cents: 0 }],
       tax_ids: [],
@@ -59,7 +86,9 @@ function initialForm(invoice: InvoiceDto | null): FormState {
     client_id: invoice.client_id,
     template_id: invoice.template_id,
     date: invoice.date,
-    due_date: invoice.due_date ?? "",
+    due_days: invoice.due_date
+      ? daysBetween(invoice.date, invoice.due_date)
+      : "",
     notes: invoice.notes ?? "",
     lines: invoice.line_items.map((li) => ({
       description: li.description,
@@ -104,6 +133,33 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
     refreshTemplates,
     loadSettings,
   ]);
+
+  // Pre-toggle every active tax on a freshly-created invoice. The tax store
+  // only lists non-archived taxes, so this skips retired ones automatically.
+  // Runs once when taxes finish loading; the user can still untoggle any of
+  // them and the seed won't fight that.
+  const seededTaxesRef = useRef(false);
+  useEffect(() => {
+    if (invoice !== null) return;
+    if (seededTaxesRef.current) return;
+    if (taxes.length === 0) return;
+    seededTaxesRef.current = true;
+    setForm((f) => ({ ...f, tax_ids: taxes.map((t) => t.id) }));
+  }, [invoice, taxes]);
+
+  // Pre-fill `due_days` from preferences.default_invoice_due_days for new
+  // invoices, once settings load. 0 days disables the prefill. The user can
+  // still edit the days; the seed runs only on first load.
+  const seededDueDaysRef = useRef(false);
+  useEffect(() => {
+    if (invoice !== null) return;
+    if (seededDueDaysRef.current) return;
+    if (!snapshot) return;
+    seededDueDaysRef.current = true;
+    const days = snapshot.preferences.default_invoice_due_days;
+    if (days <= 0) return;
+    setForm((f) => (f.due_days ? f : { ...f, due_days: String(days) }));
+  }, [invoice, snapshot]);
 
   const currencyCode = snapshot?.currency.code ?? "EUR";
   const appCurrency = snapshot?.currency;
@@ -177,37 +233,47 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
         },
       }));
 
+  /// Persist the current form as a draft (creating or updating) and return
+  /// the resulting invoice id. Throws if the form is invalid or the IPC
+  /// fails. Used by both the "save draft" button and the "finalize" button
+  /// so the latter never finalizes a stale snapshot.
+  const persistDraft = async (): Promise<string> => {
+    if (!form.client_id) {
+      throw new Error(t("invoices.err_no_client"));
+    }
+    const dueDate = computeDueDate(form.date, form.due_days);
+    if (invoice && invoice.status === "Draft") {
+      const payload: UpdateDraftInvoiceDto = {
+        id: invoice.id,
+        template_id: form.template_id,
+        date: form.date,
+        due_date: dueDate,
+        line_items: buildLineItems(),
+        tax_ids: form.tax_ids,
+        notes: form.notes || null,
+      };
+      await updateDraft(payload);
+      return invoice.id;
+    }
+    const payload: NewInvoiceDto = {
+      client_id: form.client_id,
+      template_id: form.template_id,
+      date: form.date,
+      due_date: dueDate,
+      line_items: buildLineItems(),
+      tax_ids: form.tax_ids,
+      notes: form.notes || null,
+      currency: currencyCode,
+    };
+    const created = await createDraft(payload);
+    return created.id;
+  };
+
   const submitDraft = async () => {
     setError(null);
     setSubmitting(true);
     try {
-      if (!form.client_id) {
-        throw new Error(t("invoices.err_no_client"));
-      }
-      if (invoice && invoice.status === "Draft") {
-        const payload: UpdateDraftInvoiceDto = {
-          id: invoice.id,
-          template_id: form.template_id,
-          date: form.date,
-          due_date: form.due_date || null,
-          line_items: buildLineItems(),
-          tax_ids: form.tax_ids,
-          notes: form.notes || null,
-        };
-        await updateDraft(payload);
-      } else {
-        const payload: NewInvoiceDto = {
-          client_id: form.client_id,
-          template_id: form.template_id,
-          date: form.date,
-          due_date: form.due_date || null,
-          line_items: buildLineItems(),
-          tax_ids: form.tax_ids,
-          notes: form.notes || null,
-          currency: currencyCode,
-        };
-        await createDraft(payload);
-      }
+      await persistDraft();
       onClose();
     } catch (e) {
       setError(String(e));
@@ -217,11 +283,11 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
   };
 
   const finalizeNow = async () => {
-    if (!invoice) return;
     setError(null);
     setSubmitting(true);
     try {
-      await finalize(invoice.id);
+      const id = await persistDraft();
+      await finalize(id);
       onClose();
     } catch (e) {
       setError(String(e));
@@ -276,14 +342,18 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
             {t("common.back")}
           </Button>
           {!readOnly ? (
-            <Button onClick={submitDraft} disabled={submitting}>
-              {t("invoices.save_draft")}
-            </Button>
-          ) : null}
-          {invoice && invoice.status === "Draft" ? (
-            <Button onClick={finalizeNow} disabled={submitting}>
-              {t("invoices.finalize")}
-            </Button>
+            <>
+              <Button
+                variant="secondary"
+                onClick={submitDraft}
+                disabled={submitting}
+              >
+                {t("invoices.save_draft")}
+              </Button>
+              <Button onClick={finalizeNow} disabled={submitting}>
+                {t("invoices.finalize")}
+              </Button>
+            </>
           ) : null}
           {invoice && invoice.status === "Finalized" ? (
             <Button onClick={sendInvoice} disabled={submitting}>
@@ -366,22 +436,39 @@ export function InvoiceEditor({ invoice, onClose }: Props) {
                 disabled={readOnly}
                 onChange={(e) => setForm({ ...form, date: e.target.value })}
               />
-              <Input
-                type="date"
-                label={t("invoices.due_date") ?? ""}
-                value={form.due_date}
-                disabled={readOnly}
-                onChange={(e) =>
-                  setForm({ ...form, due_date: e.target.value })
-                }
-              />
+              <div className="flex flex-col gap-1">
+                <Input
+                  type="number"
+                  min="0"
+                  label={t("invoices.due_in_days") ?? ""}
+                  value={form.due_days}
+                  disabled={readOnly}
+                  onChange={(e) =>
+                    setForm({ ...form, due_days: e.target.value })
+                  }
+                  placeholder="30"
+                />
+                <span className="text-xs text-fg-subtle">
+                  {form.due_days === ""
+                    ? t("invoices.due_no_date")
+                    : (() => {
+                        const d = computeDueDate(form.date, form.due_days);
+                        return d ? `→ ${d}` : "—";
+                      })()}
+                </span>
+              </div>
             </div>
-            <Input
-              label={t("common.notes") ?? ""}
-              value={form.notes}
-              disabled={readOnly}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            />
+            <div className="flex flex-col gap-1">
+              <Input
+                label={t("invoices.public_notes") ?? ""}
+                value={form.notes}
+                disabled={readOnly}
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              />
+              <span className="text-xs text-fg-subtle">
+                {t("invoices.public_notes_hint")}
+              </span>
+            </div>
           </div>
         </section>
 

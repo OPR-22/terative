@@ -73,12 +73,12 @@ export function ClientList() {
         <label className="flex items-center gap-2 text-sm text-fg-muted">
           <input
             type="checkbox"
-            checked={query.include_inactive ?? false}
+            checked={query.include_archived ?? false}
             onChange={(e) =>
-              setQuery({ ...query, include_inactive: e.target.checked })
+              setQuery({ ...query, include_archived: e.target.checked })
             }
           />
-          {t("common.include_inactive")}
+          {t("common.include_archived")}
         </label>
       </div>
 
@@ -113,7 +113,7 @@ export function ClientList() {
                   {defaultContact(c.phones)}
                 </td>
                 <td className="py-2 pr-3 text-fg-muted">
-                  {c.active ? "✓" : "—"}
+                  {c.archived_at ? "—" : "✓"}
                 </td>
                 <td
                   className="flex justify-end gap-2 py-2 pr-3"
@@ -125,7 +125,11 @@ export function ClientList() {
                   >
                     {t("common.view")}
                   </Button>
-                  {c.active ? (
+                  {c.archived_at ? (
+                    <Button onClick={() => void unarchive(c.id)}>
+                      {t("common.unarchive")}
+                    </Button>
+                  ) : (
                     <Button
                       variant="danger"
                       onClick={() => {
@@ -135,10 +139,6 @@ export function ClientList() {
                       }}
                     >
                       {t("common.archive")}
-                    </Button>
-                  ) : (
-                    <Button onClick={() => void unarchive(c.id)}>
-                      {t("common.unarchive")}
                     </Button>
                   )}
                 </td>
@@ -332,7 +332,7 @@ function ClientEditor({ initial, allClients, onCancel, onSubmit }: EditorProps) 
               {allClients.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
-                  {c.active ? "" : ` (${t("clients.archived")})`}
+                  {c.archived_at ? ` (${t("clients.archived")})` : ""}
                 </option>
               ))}
             </select>

@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
@@ -28,7 +29,9 @@ pub struct TaxDefinition {
     pub name: String,
     pub percentage: Decimal,
     pub tax_id_number: Option<String>,
-    pub active: bool,
+    /// `None` = active. `Some(timestamp)` = archived; the timestamp records
+    /// when the user clicked "archive".
+    pub archived_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -69,16 +72,20 @@ impl TaxDefinition {
                         Some(t)
                     }
                 }),
-            active: true,
+            archived_at: None,
         })
     }
 
-    pub fn deactivate(&mut self) {
-        self.active = false;
+    pub fn is_archived(&self) -> bool {
+        self.archived_at.is_some()
     }
 
-    pub fn reactivate(&mut self) {
-        self.active = true;
+    pub fn archive(&mut self, now: DateTime<Utc>) {
+        self.archived_at = Some(now);
+    }
+
+    pub fn unarchive(&mut self) {
+        self.archived_at = None;
     }
 }
 
@@ -96,7 +103,7 @@ mod tests {
         })
         .unwrap();
         assert_eq!(t.name, "TVA");
-        assert!(t.active);
+        assert!(!t.is_archived());
     }
 
     #[test]
@@ -133,15 +140,15 @@ mod tests {
     }
 
     #[test]
-    fn reactivate_restores_active_flag() {
+    fn unarchive_restores_active_state() {
         let mut t = TaxDefinition::create(NewTaxDefinition {
             name: "TVA".into(),
             percentage: dec!(21),
             tax_id_number: None,
         })
         .unwrap();
-        t.deactivate();
-        t.reactivate();
-        assert!(t.active);
+        t.archive(Utc::now());
+        t.unarchive();
+        assert!(!t.is_archived());
     }
 }

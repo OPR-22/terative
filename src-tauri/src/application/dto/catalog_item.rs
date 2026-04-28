@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -40,7 +41,7 @@ pub struct CatalogItemDto {
     pub default_price: MoneyDto,
     pub unit: Option<String>,
     pub reference: Option<String>,
-    pub active: bool,
+    pub archived_at: Option<DateTime<Utc>>,
 }
 
 impl From<&CatalogItem> for CatalogItemDto {
@@ -52,7 +53,7 @@ impl From<&CatalogItem> for CatalogItemDto {
             default_price: (&s.default_price).into(),
             unit: s.unit.clone(),
             reference: s.reference.clone(),
-            active: s.active,
+            archived_at: s.archived_at,
         }
     }
 }
@@ -118,7 +119,7 @@ mod tests {
             default_price: Money::new(15000, eur),
             unit: Some("hour".into()),
             reference: None,
-            active: true,
+            archived_at: None,
         };
         let dto: CatalogItemDto = (&domain).into();
         assert_eq!(dto.id, domain.id.0);
