@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "../stores/toastStore";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { Page } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHead } from "../components/ui/Card";
 import { Field, Input } from "../components/ui/Input";
@@ -11,6 +13,7 @@ import type { NewTaxDefinitionDto, UpdateTaxDto } from "../ipc";
 
 export function TaxEditor() {
   const { t } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
   const editing = Boolean(id);
@@ -58,7 +61,7 @@ export function TaxEditor() {
       }
       navigate("/taxes");
     } catch (e) {
-      setErr(String(e));
+      toast.error(String(e));
     } finally {
       setSubmitting(false);
     }
@@ -66,7 +69,7 @@ export function TaxEditor() {
 
   return (
     <Page
-      crumbs={["Cabinet Lemaire", t("taxes.title"), editing ? t("taxes.edit") : t("taxes.new")]}
+      crumbs={[workspaceName, t("taxes.title"), editing ? t("taxes.edit") : t("taxes.new")]}
       title={editing ? t("taxes.edit") : t("taxes.new")}
     >
       <form onSubmit={submit} className="max-w-lg">
@@ -97,7 +100,7 @@ export function TaxEditor() {
                   mono
                   value={taxIdNumber}
                   onChange={(e) => setTaxIdNumber(e.target.value)}
-                  placeholder="Optionnel"
+                  placeholder={t("common.optional")}
                 />
               </Field>
             </div>

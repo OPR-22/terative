@@ -87,6 +87,7 @@ impl TryFrom<NewPaymentAllocationDto> for NewPaymentAllocation {
 pub struct PaymentDto {
     pub id: Uuid,
     pub client_id: Uuid,
+    pub client_name: Option<String>,
     pub date: NaiveDate,
     pub amount: MoneyDto,
     pub method: PaymentMethodDto,
@@ -96,11 +97,24 @@ pub struct PaymentDto {
     pub created_at: DateTime<Utc>,
 }
 
-impl From<&Payment> for PaymentDto {
-    fn from(p: &Payment) -> Self {
+impl PaymentDto {
+    /// Conversion for write paths where the joined client name isn't
+    /// available. Leaves `client_name` as `None`; callers that need it
+    /// must use [`PaymentDto::from_payment_enriched`].
+    pub fn from_payment_basic(p: &Payment) -> Self {
+        Self::build(p, None)
+    }
+
+    /// Conversion for read paths that know the joined client name.
+    pub fn from_payment_enriched(p: &Payment, client_name: Option<String>) -> Self {
+        Self::build(p, client_name)
+    }
+
+    fn build(p: &Payment, client_name: Option<String>) -> Self {
         Self {
             id: p.id.0,
             client_id: p.client_id.0,
+            client_name,
             date: p.date,
             amount: (&p.amount).into(),
             method: (&p.method).into(),
@@ -109,6 +123,12 @@ impl From<&Payment> for PaymentDto {
             notes: p.notes.clone(),
             created_at: p.created_at,
         }
+    }
+}
+
+impl From<&Payment> for PaymentDto {
+    fn from(p: &Payment) -> Self {
+        Self::from_payment_basic(p)
     }
 }
 
@@ -191,6 +211,8 @@ pub struct ListPaymentsQueryDto {
     #[serde(default)]
     pub client_id: Option<Uuid>,
     #[serde(default)]
+    pub invoice_id: Option<Uuid>,
+    #[serde(default)]
     pub search: Option<String>,
 }
 
@@ -198,6 +220,7 @@ impl From<ListPaymentsQueryDto> for ListPaymentsQuery {
     fn from(dto: ListPaymentsQueryDto) -> Self {
         ListPaymentsQuery {
             client_id: dto.client_id.map(ClientId),
+            invoice_id: dto.invoice_id.map(InvoiceId),
             search: dto.search,
         }
     }

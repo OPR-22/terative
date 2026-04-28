@@ -1,6 +1,10 @@
 {
   "app": {
-    "title": "Terative"
+    "title": "Terative",
+    "workspace_fallback": "My workspace"
+  },
+  "topbar": {
+    "search_placeholder": "Search everywhere"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -38,6 +42,8 @@
   "common": {
     "save": "Save",
     "cancel": "Cancel",
+    "confirm": "Confirm",
+    "confirm_type_prompt": "Type \"{{phrase}}\" to confirm.",
     "close": "Close",
     "delete": "Delete",
     "edit": "Edit",
@@ -62,7 +68,17 @@
     "active": "Active",
     "date": "Date",
     "status": "Status",
-    "include_archived": "Include archived"
+    "include_archived": "Include archived",
+    "export": "Export",
+    "import": "Import",
+    "see_all": "See all",
+    "period": "Period",
+    "optional": "Optional",
+    "details": "Details",
+    "csv": "CSV",
+    "pdf": "PDF",
+    "active_status": "Active",
+    "archived_status": "Archived"
   },
   "clients": {
     "title": "Clients",
@@ -106,7 +122,13 @@
     "language": "Preferred language",
     "no_language": "Not set",
     "age_years_one": "{{count}} year old",
-    "age_years_other": "{{count}} years old"
+    "age_years_other": "{{count}} years old",
+    "summary_active": "{{count}} active clients",
+    "summary_archived": "{{count}} archived",
+    "identity": "Identity",
+    "demographics": "Demographics",
+    "tab_payments": "Payments",
+    "tab_invoices": "Invoices"
   },
   "catalog": {
     "title": "Catalog",
@@ -123,7 +145,10 @@
     "unit": "Unit",
     "unit_placeholder": "hour, day, piece, kg…",
     "reference": "Reference",
-    "reference_placeholder": "SKU or internal code"
+    "reference_placeholder": "SKU or internal code",
+    "summary_total": "{{count}} items",
+    "summary_products": "{{count}} products",
+    "summary_services": "{{count}} services"
   },
   "taxes": {
     "title": "Taxes",
@@ -131,7 +156,9 @@
     "edit": "Edit tax",
     "none": "No taxes yet.",
     "percentage": "Percentage",
-    "tax_id_number": "Tax ID number"
+    "tax_id_number": "Tax ID number",
+    "summary_active_one": "{{count}} active tax",
+    "summary_active_other": "{{count}} active taxes"
   },
   "templates": {
     "title": "Templates",
@@ -160,7 +187,9 @@
     "show_tax_id_numbers": "Show tax ID numbers",
     "show_signature": "Show signature",
     "show_due_date": "Show due date",
-    "show_total_in_words": "Show total in words"
+    "show_total_in_words": "Show total in words",
+    "summary_count": "{{count}} templates",
+    "editor_subtitle": "Preview updates automatically"
   },
   "invoices": {
     "title": "Invoices",
@@ -196,8 +225,9 @@
     "finalize": "Finalize",
     "cancel": "Cancel invoice",
     "duplicate": "Duplicate",
-    "send": "Send by email",
+    "send": "Send",
     "send_reminder": "Send reminder",
+    "more_actions": "More actions",
     "confirm_cancel": "Cancel this invoice? This action is permanent.",
     "err_no_client": "Please select a client.",
     "mark_paid": "Mark as paid",
@@ -211,13 +241,43 @@
     "payment_status_partial": "Partial",
     "payment_status_paid": "Paid",
     "payment_status_overdue": "Overdue",
-    "payment_status_cancelled": "Cancelled"
+    "payment_status_cancelled": "Cancelled",
+    "preview_title": "Invoice preview",
+    "preview_open_folder": "Open folder",
+    "preview_open_externally": "Open in default app",
+    "preview_print": "Print",
+    "totals": "Totals",
+    "send_history": "Send history",
+    "email_kind_initial": "First contact",
+    "email_kind_follow_up": "Follow-up",
+    "draft_subtitle": "New invoice · draft",
+    "created_at": "Created on {{date}}",
+    "issued_on": "Issued on {{date}}",
+    "due_on": "Due {{date}}",
+    "saved": "Saved",
+    "summary_total_one": "{{count}} invoice total",
+    "summary_total_other": "{{count}} invoices total",
+    "summary_displayed": "{{count}} shown",
+    "payment_filter_paid": "Paid",
+    "payment_filter_unpaid": "Unpaid",
+    "payment_filter_late": "Late",
+    "payments_section": "Payments",
+    "payments_none": "No payments recorded.",
+    "tab_summary": "Summary",
+    "tab_preview": "Preview",
+    "tab_payments": "Payments",
+    "tab_email": "Email",
+    "email_none": "No emails sent yet.",
+    "remaining_due": "Remaining due",
+    "fully_paid": "Fully paid",
+    "preview_unavailable": "Preview becomes available once the invoice is finalized."
   },
   "preview": {
     "empty": "Preview unavailable"
   },
   "settings": {
     "title": "Settings",
+    "subtitle": "Profile, preferences, and backups",
     "seller": "Seller profile",
     "seller_name": "Name / business name",
     "seller_title": "Title",
@@ -277,6 +337,8 @@
     "backup_system_tooltip": "System backups are safety rails kept by the app and can't be deleted from here. The app prunes them automatically.",
     "data_restored": "Database restored.",
     "data_restore_warning": "Restore will overwrite your current database and restart the app. Your current database will be backed up first. Continue?",
+    "confirm_restore_phrase": "restore",
+    "confirm_delete_phrase": "delete",
     "bookmarks": "Sidebar bookmarks",
     "bookmarks_help": "Pin websites to the sidebar. Each bookmark opens a child webview inside the app — reorder with the arrows.",
     "notebook_sections": "Notebook sections",
@@ -290,12 +352,35 @@
   },
   "dashboard": {
     "title": "Dashboard",
+    "subtitle": "Overview",
     "revenue_this_year": "Revenue this year",
     "outstanding": "Outstanding",
     "overdue_count": "Overdue invoices",
     "draft_count": "Draft invoices",
     "overdue_invoices": "Overdue",
-    "no_overdue": "No overdue invoices."
+    "no_overdue": "No overdue invoices.",
+    "action_required": "Action required",
+    "recent_activity": "Recent activity",
+    "kpi_revenue_meta": "vs. last year",
+    "kpi_outstanding_meta": "Sent invoices",
+    "kpi_overdue_meta_some": "Follow up",
+    "kpi_overdue_meta_none": "No overdue",
+    "kpi_drafts_meta": "Drafts in progress",
+    "overdue_to_follow_up_count_one": "{{count}} invoice to follow up",
+    "overdue_to_follow_up_count_other": "{{count}} invoices to follow up",
+    "overdue_days_label": "Overdue",
+    "follow_up_action": "Follow up",
+    "activity_payment_received": "Payment received",
+    "activity_payment_received_detail": "See Payments for details",
+    "activity_invoice_sent": "Invoice sent",
+    "activity_invoice_sent_detail": "Sending history in Invoices",
+    "activity_draft_modified": "Draft modified",
+    "activity_draft_modified_detail": "See Invoices > drafts",
+    "activity_new_client": "New client",
+    "activity_new_client_detail": "See the client list",
+    "activity_when_recent_minutes": "a few min ago",
+    "activity_when_today": "today",
+    "activity_when_recently": "recently"
   },
   "payments": {
     "title": "Payments",
@@ -320,7 +405,10 @@
     "no_outstanding": "No outstanding invoices for this client.",
     "err_non_positive": "Amount must be positive.",
     "err_method_detail": "Method detail is required for 'Other'.",
-    "err_over_allocated": "Allocations exceed the payment amount."
+    "err_over_allocated": "Allocations exceed the payment amount.",
+    "summary_count": "{{count}} payments",
+    "summary_collected": "{{total}} collected",
+    "search_placeholder": "Client, reference…"
   },
   "accounting": {
     "title": "Accounting",
@@ -348,7 +436,8 @@
     "bucket_days91plus": "90+ days",
     "total_invoiced": "Invoiced",
     "total_paid": "Paid",
-    "outstanding": "Outstanding"
+    "outstanding": "Outstanding",
+    "period_range": "Period — {{start}} → {{end}}"
   },
   "onboarding": {
     "welcome_title": "Welcome to Terative",

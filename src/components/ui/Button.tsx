@@ -12,12 +12,12 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const base =
-  "inline-flex items-center justify-center gap-1.5 font-medium leading-none border rounded-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft";
+  "inline-flex items-center justify-center gap-1.5 font-medium leading-none border rounded-sm transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-soft";
 
 const variants: Record<Variant, string> = {
   default:
     "bg-paper-2 border-line text-ink hover:bg-paper-3 active:bg-paper-3",
-  primary: "bg-ink border-ink text-paper hover:bg-ink-2",
+  primary: "bg-fill border-fill text-fill-fg hover:bg-fill-hover",
   accent: "bg-accent border-accent text-white hover:opacity-90",
   ghost:
     "bg-transparent border-transparent text-ink-2 hover:bg-paper-2 hover:text-ink",
@@ -26,8 +26,8 @@ const variants: Record<Variant, string> = {
 };
 
 const sizes: Record<Size, string> = {
-  sm: "px-2 py-1 text-[11.5px]",
-  md: "px-3 py-1.5 text-[12.5px]",
+  sm: "px-2.5 py-1.5 text-[12px]",
+  md: "px-3.5 py-2 text-[13px]",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
@@ -44,7 +44,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   },
   ref,
 ) {
-  const padding = iconOnly ? (size === "sm" ? "p-1" : "p-1.5") : sizes[size];
+  const padding = iconOnly ? (size === "sm" ? "p-1.5" : "p-2") : sizes[size];
   return (
     <button
       ref={ref}

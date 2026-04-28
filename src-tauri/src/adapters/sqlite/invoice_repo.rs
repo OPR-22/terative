@@ -5,7 +5,9 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::adapters::sqlite::connection::Db;
-use crate::application::ports::{InvoiceRepository, ListInvoicesQuery, Page};
+use crate::application::ports::{
+    InvoicePaymentFilter, InvoiceRepository, ListInvoicesQuery, Page,
+};
 use crate::application::RepoError;
 use crate::domain::client::ClientId;
 use crate::domain::email_template::EmailTemplateType;
@@ -240,15 +242,24 @@ impl InvoiceRepository for SqliteInvoiceRepository {
     fn list(&self, query: ListInvoicesQuery) -> Result<Page<Invoice>, RepoError> {
         let conn = self.db.lock();
 
-        let mut where_clause = String::new();
+        // We alias the invoices table as `i` so the optional join against
+        // `v_invoice_payment_status` (aliased `ps`) can disambiguate
+        // columns. The `ps` JOIN is only needed when `payment_filter` is
+        // set — most queries don't use it, so we keep it conditional to
+        // avoid pulling the view's extra computation into every list.
+        let payment_join = match query.payment_filter {
+            Some(_) => " INNER JOIN v_invoice_payment_status ps ON ps.id = i.id",
+            None => "",
+        };
+
         let mut clauses: Vec<String> = Vec::new();
         let mut binds: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         if let Some(status) = query.status {
-            clauses.push(format!("status = ?{}", binds.len() + 1));
+            clauses.push(format!("i.status = ?{}", binds.len() + 1));
             binds.push(Box::new(status.as_str().to_string()));
         }
         if let Some(cid) = query.client_id {
-            clauses.push(format!("client_id = ?{}", binds.len() + 1));
+            clauses.push(format!("i.client_id = ?{}", binds.len() + 1));
             binds.push(Box::new(cid.to_string()));
         }
         if let Some(search) = query.search.as_ref().and_then(|s| {
@@ -260,30 +271,58 @@ impl InvoiceRepository for SqliteInvoiceRepository {
             }
         }) {
             clauses.push(format!(
-                "(LOWER(CAST(COALESCE(number, '') AS TEXT)) LIKE ?{idx} OR LOWER(COALESCE(notes, '')) LIKE ?{idx})",
+                "(LOWER(CAST(COALESCE(i.number, '') AS TEXT)) LIKE ?{idx} OR LOWER(COALESCE(i.notes, '')) LIKE ?{idx})",
                 idx = binds.len() + 1
             ));
             binds.push(Box::new(search));
         }
-        if !clauses.is_empty() {
-            where_clause = format!(" WHERE {}", clauses.join(" AND "));
+        if let Some(payment_filter) = query.payment_filter {
+            // `Unpaid` collapses Unpaid + Partial — see InvoicePaymentFilter.
+            // The `ps.payment_status` column is the string output of the
+            // view's CASE expression, so we compare against literal labels.
+            match payment_filter {
+                InvoicePaymentFilter::Paid => {
+                    clauses.push("ps.payment_status = 'Paid'".into());
+                }
+                InvoicePaymentFilter::Unpaid => {
+                    clauses
+                        .push("ps.payment_status IN ('Unpaid', 'Partial')".into());
+                }
+                InvoicePaymentFilter::Late => {
+                    clauses.push("ps.payment_status = 'Overdue'".into());
+                }
+            }
         }
+        let where_clause = if clauses.is_empty() {
+            String::new()
+        } else {
+            format!(" WHERE {}", clauses.join(" AND "))
+        };
 
         let params_ref: Vec<&dyn rusqlite::ToSql> =
             binds.iter().map(|b| b.as_ref()).collect();
 
         // Count total matching rows.
-        let count_sql = format!("SELECT COUNT(*) FROM invoices{where_clause}");
+        let count_sql = format!(
+            "SELECT COUNT(*) FROM invoices i{payment_join}{where_clause}"
+        );
         let total: u64 = conn
             .query_row(&count_sql, params_ref.as_slice(), |r| r.get::<_, i64>(0))
             .map_err(map_err)? as u64;
 
-        // Fetch the page.
+        // Fetch the page. The SELECT_HEAD column list is unqualified
+        // because it predates the alias — qualify each column with `i.`
+        // when injecting into a query that joins another table.
         let offset = query.pagination.offset();
         let limit = query.pagination.per_page as u64;
+        let head_qualified = SELECT_HEAD
+            .split(", ")
+            .map(|c| format!("i.{}", c.trim()))
+            .collect::<Vec<_>>()
+            .join(", ");
         let select_sql = format!(
-            "SELECT {SELECT_HEAD} FROM invoices{where_clause} \
-             ORDER BY date DESC, created_at DESC LIMIT {limit} OFFSET {offset}"
+            "SELECT {head_qualified} FROM invoices i{payment_join}{where_clause} \
+             ORDER BY i.date DESC, i.created_at DESC LIMIT {limit} OFFSET {offset}"
         );
         let mut stmt = conn.prepare(&select_sql).map_err(map_err)?;
         let heads_iter = stmt

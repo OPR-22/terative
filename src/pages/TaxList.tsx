@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Archive, ArchiveRestore, Edit, Plus } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Checkbox } from "../components/ui/Checkbox";
@@ -14,6 +15,7 @@ import { useTaxStore } from "../stores/taxStore";
 
 export function TaxList() {
   const { t } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const {
     taxes,
@@ -34,9 +36,9 @@ export function TaxList() {
 
   return (
     <Page
-      crumbs={["Cabinet Lemaire", t("taxes.title")]}
+      crumbs={[workspaceName, t("taxes.title")]}
       title={t("taxes.title")}
-      subtitle={`${activeCount} ${activeCount > 1 ? "taxes actives" : "taxe active"}`}
+      subtitle={t("taxes.summary_active", { count: activeCount })}
       actions={
         <Button
           variant="primary"
@@ -86,12 +88,16 @@ export function TaxList() {
                       {tax.archived_at ? (
                         <>
                           <StatusDot status="idle" />
-                          <span className="text-ink-3">Archivée</span>
+                          <span className="text-ink-3">
+                            {t("common.archived_status")}
+                          </span>
                         </>
                       ) : (
                         <>
                           <StatusDot status="ok" />
-                          <span className="text-ok-ink">Active</span>
+                          <span className="text-ok-ink">
+                            {t("common.active_status")}
+                          </span>
                         </>
                       )}
                     </span>

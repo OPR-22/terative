@@ -36,7 +36,8 @@ use commands::{
     },
     invoice_commands::{
         invoice_cancel, invoice_create_draft, invoice_duplicate, invoice_finalize, invoice_get,
-        invoice_list, invoice_update_draft,
+        invoice_list, invoice_open_external, invoice_pdf_bytes, invoice_print,
+        invoice_update_draft,
     },
     notebook_commands::{
         client_notebook_get, client_notebook_save, journal_entry_create, journal_entry_delete,
@@ -186,6 +187,9 @@ fn build_specta() -> Builder<tauri::Wry> {
                 invoice_cancel,
                 invoice_list,
                 invoice_get,
+                invoice_pdf_bytes,
+                invoice_print,
+                invoice_open_external,
                 settings_update_email_config,
                 settings_update_email_password,
                 email_test_connection,

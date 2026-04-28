@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "../stores/toastStore";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { Page } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHead } from "../components/ui/Card";
 import { Field, Input, Select, Textarea } from "../components/ui/Input";
@@ -28,6 +30,7 @@ const empty: NewClientDto = {
 
 export function ClientEditor() {
   const { t } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
   const editing = Boolean(id);
@@ -79,7 +82,7 @@ export function ClientEditor() {
         navigate("/clients");
       }
     } catch (e) {
-      setErr(String(e));
+      toast.error(String(e));
     } finally {
       setSubmitting(false);
     }
@@ -88,7 +91,7 @@ export function ClientEditor() {
   return (
     <Page
       crumbs={[
-        "Cabinet Lemaire",
+        workspaceName,
         t("clients.title"),
         editing ? existing?.name ?? "—" : t("clients.new"),
       ]}

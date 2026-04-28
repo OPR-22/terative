@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Archive, ArchiveRestore, Edit, Plus } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -20,6 +21,7 @@ type KindFilter = "All" | CatalogItemKindDto;
 
 export function CatalogList() {
   const { t } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const {
     items,
@@ -50,9 +52,13 @@ export function CatalogList() {
 
   return (
     <Page
-      crumbs={["Cabinet Lemaire", t("catalog.title")]}
+      crumbs={[workspaceName, t("catalog.title")]}
       title={t("catalog.title")}
-      subtitle={`${counts.All} articles · ${counts.Product} produits · ${counts.Service} prestations`}
+      subtitle={[
+        t("catalog.summary_total", { count: counts.All }),
+        t("catalog.summary_products", { count: counts.Product }),
+        t("catalog.summary_services", { count: counts.Service }),
+      ].join(" · ")}
       actions={
         <Button
           variant="primary"
@@ -125,12 +131,16 @@ export function CatalogList() {
                       {s.archived_at ? (
                         <>
                           <StatusDot status="idle" />
-                          <span className="text-ink-3">Archivé</span>
+                          <span className="text-ink-3">
+                            {t("common.archived_status")}
+                          </span>
                         </>
                       ) : (
                         <>
                           <StatusDot status="ok" />
-                          <span className="text-ok-ink">Actif</span>
+                          <span className="text-ok-ink">
+                            {t("common.active_status")}
+                          </span>
                         </>
                       )}
                     </span>

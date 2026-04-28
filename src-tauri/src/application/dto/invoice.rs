@@ -7,7 +7,7 @@ use super::DtoConvertError;
 use super::accounting::DerivedPaymentStatusDto;
 use super::common::MoneyDto;
 use crate::application::invoice_usecases::UpdateDraftInvoiceInput;
-use crate::application::ports::ListInvoicesQuery;
+use crate::application::ports::{InvoicePaymentFilter, ListInvoicesQuery};
 use crate::domain::client::ClientId;
 use crate::application::dto::email_template::EmailTemplateTypeDto;
 use crate::domain::invoice::{
@@ -148,6 +148,7 @@ pub struct InvoiceDto {
     pub id: Uuid,
     pub number: Option<u64>,
     pub client_id: Uuid,
+    pub client_name: Option<String>,
     pub template_id: Option<Uuid>,
     pub date: NaiveDate,
     pub due_date: Option<NaiveDate>,
@@ -159,9 +160,6 @@ pub struct InvoiceDto {
     pub amount_paid: MoneyDto,
     pub currency: String,
     pub status: InvoiceStatusDto,
-    /// Populated by the list/get read paths, where the repo can afford to
-    /// fetch the allocated total alongside the invoice. `None` on write paths
-    /// (create/update/finalize/send/cancel) where callers don't need it.
     pub payment_status: Option<DerivedPaymentStatusDto>,
     pub pdf_path: Option<String>,
     pub notes: Option<String>,
@@ -171,34 +169,38 @@ pub struct InvoiceDto {
 }
 
 impl InvoiceDto {
-    /// Conversion for write paths where payment state is unknown. Sets
-    /// `amount_paid` to zero and `payment_status` to `None`.
+    /// Conversion for write paths where payment state and joined client
+    /// fields are unknown. Sets `amount_paid` to zero and leaves
+    /// `payment_status` / `client_name` as `None`.
     pub fn from_invoice_basic(invoice: &Invoice) -> Self {
         let zero = Money::new(0, invoice.currency);
-        Self::build(invoice, zero, None)
+        Self::build(invoice, zero, None, None)
     }
 
-    /// Conversion for read paths that know the allocated total. Computes the
-    /// derived payment status via [`Invoice::payment_status`] so the domain
-    /// owns the classification.
+    /// Conversion for read paths that know the allocated total *and* the
+    /// joined client name. Computes the derived payment status via
+    /// [`Invoice::payment_status`] so the domain owns the classification.
     pub fn from_invoice_enriched(
         invoice: &Invoice,
         amount_paid: Money,
         today: NaiveDate,
+        client_name: Option<String>,
     ) -> Self {
         let status = invoice.payment_status(amount_paid, today).into();
-        Self::build(invoice, amount_paid, Some(status))
+        Self::build(invoice, amount_paid, Some(status), client_name)
     }
 
     fn build(
         i: &Invoice,
         amount_paid: Money,
         payment_status: Option<DerivedPaymentStatusDto>,
+        client_name: Option<String>,
     ) -> Self {
         Self {
             id: i.id.0,
             number: i.number.map(|n| n.0),
             client_id: i.client_id.0,
+            client_name,
             template_id: i.template_id.map(|t| t.0),
             date: i.date,
             due_date: i.due_date,
@@ -290,6 +292,25 @@ impl TryFrom<UpdateDraftInvoiceDto> for UpdateDraftInvoiceInput {
     }
 }
 
+// ---- InvoicePaymentFilterDto ----
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub enum InvoicePaymentFilterDto {
+    Paid,
+    Unpaid,
+    Late,
+}
+
+impl From<InvoicePaymentFilterDto> for InvoicePaymentFilter {
+    fn from(dto: InvoicePaymentFilterDto) -> Self {
+        match dto {
+            InvoicePaymentFilterDto::Paid => Self::Paid,
+            InvoicePaymentFilterDto::Unpaid => Self::Unpaid,
+            InvoicePaymentFilterDto::Late => Self::Late,
+        }
+    }
+}
+
 // ---- ListInvoicesQueryDto ----
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
@@ -300,6 +321,8 @@ pub struct ListInvoicesQueryDto {
     pub client_id: Option<Uuid>,
     #[serde(default)]
     pub search: Option<String>,
+    #[serde(default)]
+    pub payment_filter: Option<InvoicePaymentFilterDto>,
     #[serde(default)]
     pub pagination: Option<super::PaginationParamsDto>,
 }
@@ -316,6 +339,7 @@ impl From<ListInvoicesQueryDto> for ListInvoicesQuery {
             status: dto.status.map(Into::into),
             client_id: dto.client_id.map(ClientId),
             search: dto.search,
+            payment_filter: dto.payment_filter.map(Into::into),
             pagination: dto.pagination.into(),
         }
     }
@@ -394,8 +418,10 @@ mod tests {
             &domain,
             Money::new(1000, eur()),
             today,
+            Some("Acme Corp".into()),
         );
         assert_eq!(dto.amount_paid.amount_minor, 1000);
+        assert_eq!(dto.client_name.as_deref(), Some("Acme Corp"));
         assert!(matches!(
             dto.payment_status,
             Some(DerivedPaymentStatusDto::Partial)

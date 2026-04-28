@@ -1,9 +1,10 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { Calendar, Download, Edit, Plus, Search, Trash2 } from "lucide-react";
+import { Calendar, Edit, Plus, Search, Trash2 } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -13,7 +14,6 @@ import { Input } from "../components/ui/Input";
 import { Table, Td, Th, THead, Tr } from "../components/ui/Table";
 import { useMoneyFormat } from "../lib/money";
 import { usePaymentStore } from "../stores/paymentStore";
-import { useClientStore } from "../stores/clientStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import type { PaymentMethodDto } from "../ipc";
 
@@ -34,17 +34,15 @@ function paymentMethodLabel(method: PaymentMethodDto, t: (k: string) => string):
 
 export function PaymentList() {
   const { t } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { payments, loading, error, refresh, remove } = usePaymentStore();
-  const ensureDirectory = useClientStore((s) => s.ensureDirectory);
-  const clientName = useClientStore((s) => s.clientName);
   const { snapshot, load } = useSettingsStore();
 
   useEffect(() => {
     void refresh();
-    void ensureDirectory();
     if (!snapshot) void load();
-  }, [refresh, ensureDirectory, load, snapshot]);
+  }, [refresh, load, snapshot]);
 
   const { formatMinor } = useMoneyFormat();
   const currencyCode = snapshot?.currency.code ?? "EUR";
@@ -53,22 +51,17 @@ export function PaymentList() {
 
   return (
     <Page
-      crumbs={["Cabinet Lemaire", t("payments.title")]}
+      crumbs={[workspaceName, t("payments.title")]}
       title={t("payments.title")}
-      subtitle={`${payments.length} paiements · ${formatMinor(totalAmount, currencyCode)} encaissés`}
+      subtitle={`${t("payments.summary_count", { count: payments.length })} · ${t("payments.summary_collected", { total: formatMinor(totalAmount, currencyCode) })}`}
       actions={
-        <>
-          <Button leadingIcon={<Download size={13} strokeWidth={1.5} />}>
-            Exporter
-          </Button>
-          <Button
-            variant="primary"
-            leadingIcon={<Plus size={13} strokeWidth={1.5} />}
-            onClick={() => navigate("/payments/create")}
-          >
-            {t("payments.new")}
-          </Button>
-        </>
+        <Button
+          variant="primary"
+          leadingIcon={<Plus size={13} strokeWidth={1.5} />}
+          onClick={() => navigate("/payments/create")}
+        >
+          {t("payments.new")}
+        </Button>
       }
     >
       <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
@@ -78,10 +71,13 @@ export function PaymentList() {
             strokeWidth={1.5}
             className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3"
           />
-          <Input className="pl-8" placeholder="Client, référence…" />
+          <Input
+            className="pl-8"
+            placeholder={t("payments.search_placeholder") ?? ""}
+          />
         </div>
         <Button leadingIcon={<Calendar size={13} strokeWidth={1.5} />}>
-          Période
+          {t("common.period")}
         </Button>
       </div>
 
@@ -113,7 +109,7 @@ export function PaymentList() {
                   0,
                 );
                 const rest = p.amount.amount_minor - allocated;
-                const name = clientName(p.client_id);
+                const name = p.client_name ?? "—";
                 return (
                   <Tr key={p.id}>
                     <Td muted mono>

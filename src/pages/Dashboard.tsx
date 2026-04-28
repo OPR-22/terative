@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "../stores/toastStore";
 import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   ArrowUp,
-  Download,
   FileText,
   Plus,
   Send,
@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { Page, SectionTitle } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -22,7 +23,6 @@ import { Table, Td, Th, THead, Tr } from "../components/ui/Table";
 import { ipc, type DashboardSummaryDto, type InvoicePaymentRowDto } from "../ipc";
 import { useMoneyFormat } from "../lib/money";
 import { useSettingsStore } from "../stores/settingsStore";
-import { useClientStore } from "../stores/clientStore";
 
 function daysOverdue(dueDate: string | null): number | null {
   if (!dueDate) return null;
@@ -34,17 +34,14 @@ function daysOverdue(dueDate: string | null): number | null {
 
 export function Dashboard() {
   const { t } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { snapshot, load } = useSettingsStore();
-  const ensureDirectory = useClientStore((s) => s.ensureDirectory);
-  const clientName = useClientStore((s) => s.clientName);
   const [summary, setSummary] = useState<DashboardSummaryDto | null>(null);
   const [overdue, setOverdue] = useState<InvoicePaymentRowDto[]>([]);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!snapshot) void load();
-    void ensureDirectory();
     let cancelled = false;
     Promise.all([ipc.accountingDashboardSummary(), ipc.accountingListOverdue()])
       .then(([s, o]) => {
@@ -53,35 +50,30 @@ export function Dashboard() {
         setOverdue(o);
       })
       .catch((e) => {
-        if (!cancelled) setError(String(e));
+        if (!cancelled) toast.error(String(e));
       });
     return () => {
       cancelled = true;
     };
-  }, [snapshot, load, ensureDirectory]);
+  }, [snapshot, load]);
 
   const { format } = useMoneyFormat();
 
   return (
     <Page
-      crumbs={["Cabinet Lemaire", t("dashboard.title")]}
+      crumbs={[workspaceName, t("dashboard.title")]}
       title={t("dashboard.title")}
-      subtitle="Vue d'ensemble"
+      subtitle={t("dashboard.subtitle")}
       actions={
-        <>
-          <Button leadingIcon={<Download size={13} strokeWidth={1.5} />}>Exporter</Button>
-          <Button
-            variant="primary"
-            leadingIcon={<Plus size={13} strokeWidth={1.5} />}
-            onClick={() => navigate("/invoices/create")}
-          >
-            {t("invoices.new")}
-          </Button>
-        </>
+        <Button
+          variant="primary"
+          leadingIcon={<Plus size={13} strokeWidth={1.5} />}
+          onClick={() => navigate("/invoices/create")}
+        >
+          {t("invoices.new")}
+        </Button>
       }
     >
-      {error ? <p className="mb-4 text-[13px] text-danger">{error}</p> : null}
-
       {summary ? (
         <>
           <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
@@ -91,7 +83,7 @@ export function Dashboard() {
               meta={
                 <span className="inline-flex items-center gap-1">
                   <ArrowUp size={11} strokeWidth={1.5} className="text-ok" />
-                  Vs. année précédente
+                  {t("dashboard.kpi_revenue_meta")}
                 </span>
               }
             />
@@ -99,7 +91,7 @@ export function Dashboard() {
               label={t("dashboard.outstanding")}
               value={format(summary.outstanding_total)}
               tone="warn"
-              meta="Factures envoyées"
+              meta={t("dashboard.kpi_outstanding_meta")}
             />
             <Kpi
               label={t("dashboard.overdue_count")}
@@ -109,21 +101,21 @@ export function Dashboard() {
                 summary.overdue_count > 0 ? (
                   <span className="inline-flex items-center gap-1">
                     <AlertCircle size={11} strokeWidth={1.5} />
-                    À relancer
+                    {t("dashboard.kpi_overdue_meta_some")}
                   </span>
                 ) : (
-                  "Aucun retard"
+                  t("dashboard.kpi_overdue_meta_none")
                 )
               }
             />
             <Kpi
               label={t("dashboard.draft_count")}
               value={String(summary.draft_count)}
-              meta="En cours d'édition"
+              meta={t("dashboard.kpi_drafts_meta")}
             />
           </div>
 
-          <SectionTitle>À traiter</SectionTitle>
+          <SectionTitle>{t("dashboard.action_required")}</SectionTitle>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.6fr_1fr]">
             <Card>
@@ -132,11 +124,13 @@ export function Dashboard() {
                 subtitle={
                   overdue.length === 0
                     ? t("dashboard.no_overdue")
-                    : `${overdue.length} factures à relancer`
+                    : t("dashboard.overdue_to_follow_up_count", {
+                        count: overdue.length,
+                      })
                 }
                 actions={
                   <Button size="sm" onClick={() => navigate("/invoices")}>
-                    Voir tout
+                    {t("common.see_all")}
                   </Button>
                 }
               />
@@ -149,7 +143,7 @@ export function Dashboard() {
                       <Th>N°</Th>
                       <Th>{t("invoices.client")}</Th>
                       <Th>{t("invoices.due_date")}</Th>
-                      <Th>Retard</Th>
+                      <Th>{t("dashboard.overdue_days_label")}</Th>
                       <Th numeric>{t("accounting.amount_due")}</Th>
                       <Th />
                     </Tr>
@@ -157,7 +151,7 @@ export function Dashboard() {
                   <tbody>
                     {overdue.slice(0, 6).map((row) => {
                       const days = daysOverdue(row.due_date);
-                      const name = clientName(row.client_id);
+                      const name = row.client_name;
                       return (
                         <Tr key={row.invoice_id}>
                           <Td muted mono>
@@ -188,7 +182,7 @@ export function Dashboard() {
                                 navigate(`/invoices/${row.invoice_id}/edit`)
                               }
                             >
-                              Relance
+                              {t("dashboard.follow_up_action")}
                             </Button>
                           </Td>
                         </Tr>
@@ -200,32 +194,32 @@ export function Dashboard() {
             </Card>
 
             <Card>
-              <CardHead title="Activité récente" />
+              <CardHead title={t("dashboard.recent_activity")} />
               <div className="py-1.5">
                 {[
                   {
                     Ic: Wallet,
-                    title: "Paiement reçu",
-                    detail: "Voir Paiements pour le détail",
-                    when: "il y a quelques min",
+                    title: t("dashboard.activity_payment_received"),
+                    detail: t("dashboard.activity_payment_received_detail"),
+                    when: t("dashboard.activity_when_recent_minutes"),
                   },
                   {
                     Ic: Send,
-                    title: "Facture envoyée",
-                    detail: "Suivi des envois dans Factures",
-                    when: "aujourd'hui",
+                    title: t("dashboard.activity_invoice_sent"),
+                    detail: t("dashboard.activity_invoice_sent_detail"),
+                    when: t("dashboard.activity_when_today"),
                   },
                   {
                     Ic: FileText,
-                    title: "Brouillon modifié",
-                    detail: "Voir Factures > brouillons",
-                    when: "récemment",
+                    title: t("dashboard.activity_draft_modified"),
+                    detail: t("dashboard.activity_draft_modified_detail"),
+                    when: t("dashboard.activity_when_recently"),
                   },
                   {
                     Ic: User,
-                    title: "Nouveau client",
-                    detail: "Voir la liste des clients",
-                    when: "récemment",
+                    title: t("dashboard.activity_new_client"),
+                    detail: t("dashboard.activity_new_client_detail"),
+                    when: t("dashboard.activity_when_recently"),
                   },
                 ].map((a, i, arr) => (
                   <div

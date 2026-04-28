@@ -47,6 +47,7 @@ use crate::application::email_usecases::{
 };
 use crate::application::invoice_usecases::{
     CancelInvoice, CreateDraftInvoice, DuplicateInvoice, FinalizeInvoice, GetInvoice,
+    GetInvoicePdf, OpenInvoiceExternally, PrintInvoice,
     ListInvoices, UpdateDraftInvoice,
 };
 use crate::application::notebook_usecases::{
@@ -118,6 +119,9 @@ pub struct AppState {
     pub cancel_invoice: CancelInvoice,
     pub list_invoices: ListInvoices,
     pub get_invoice: GetInvoice,
+    pub get_invoice_pdf: GetInvoicePdf,
+    pub print_invoice: PrintInvoice,
+    pub open_invoice_externally: OpenInvoiceExternally,
 
     pub update_email_config: UpdateEmailConfig,
     pub update_email_password: UpdateEmailPassword,
@@ -293,10 +297,21 @@ impl AppState {
                 template_repo,
                 settings_repo.clone(),
                 pdf,
-                pdf_storage,
+                pdf_storage.clone(),
             ),
-            list_invoices: ListInvoices::new(invoice_repo.clone(), payment_repo.clone()),
-            get_invoice: GetInvoice::new(invoice_repo.clone(), payment_repo.clone()),
+            list_invoices: ListInvoices::new(
+                invoice_repo.clone(),
+                payment_repo.clone(),
+                client_repo.clone(),
+            ),
+            get_invoice: GetInvoice::new(
+                invoice_repo.clone(),
+                payment_repo.clone(),
+                client_repo.clone(),
+            ),
+            get_invoice_pdf: GetInvoicePdf::new(invoice_repo.clone(), pdf_storage),
+            print_invoice: PrintInvoice::new(invoice_repo.clone()),
+            open_invoice_externally: OpenInvoiceExternally::new(invoice_repo.clone()),
 
             update_email_config: UpdateEmailConfig::new(settings_repo.clone()),
             update_email_password: UpdateEmailPassword::new(credentials.clone()),
@@ -307,7 +322,7 @@ impl AppState {
             ),
             send_invoice: SendInvoice::new(
                 invoice_repo.clone(),
-                client_repo,
+                client_repo.clone(),
                 settings_repo,
                 credentials,
                 email_sender,
@@ -323,8 +338,8 @@ impl AppState {
             record_payment: RecordPayment::new(payment_repo.clone(), invoice_repo.clone()),
             update_payment: UpdatePayment::new(payment_repo.clone(), invoice_repo.clone()),
             delete_payment: DeletePayment::new(payment_repo.clone()),
-            list_payments: ListPayments::new(payment_repo.clone()),
-            get_payment: GetPayment::new(payment_repo),
+            list_payments: ListPayments::new(payment_repo.clone(), client_repo.clone()),
+            get_payment: GetPayment::new(payment_repo, client_repo),
 
             accounting: AccountingService::new(accounting_repo),
 

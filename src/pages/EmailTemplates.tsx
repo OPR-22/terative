@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "../stores/toastStore";
 import { ArrowLeft, Edit, Mail, Plus, Star, Trash2 } from "lucide-react";
 
 import { Page, SectionTitle } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHead } from "../components/ui/Card";
@@ -29,6 +31,7 @@ type EditorState =
 
 export function EmailTemplates() {
   const { t } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const { templates, loading, error, refresh, create, update, remove, setDefault } =
     useEmailTemplateStore();
   const [editor, setEditor] = useState<EditorState>({ mode: "closed" });
@@ -84,7 +87,7 @@ export function EmailTemplates() {
       }
       closeEditor();
     } catch (e) {
-      setSaveErr(String(e));
+      toast.error(String(e));
     }
   };
 
@@ -104,7 +107,7 @@ export function EmailTemplates() {
     return (
       <Page
         crumbs={[
-          "Cabinet Lemaire",
+          workspaceName,
           t("email_templates.title"),
           editor.mode === "edit" ? editor.template.name : t("email_templates.new_template"),
         ]}
@@ -184,7 +187,7 @@ export function EmailTemplates() {
 
   return (
     <Page
-      crumbs={["Cabinet Lemaire", t("email_templates.title")]}
+      crumbs={[workspaceName, t("email_templates.title")]}
       title={t("email_templates.title")}
       subtitle={t("email_templates.page_desc")}
     >
@@ -263,7 +266,7 @@ export function EmailTemplates() {
                                 leadingIcon={<Star size={11} strokeWidth={1.5} />}
                                 onClick={() =>
                                   void setDefault(tmpl.id).catch((e) =>
-                                    alert(String(e)),
+                                    toast.error(String(e)),
                                   )
                                 }
                               >
@@ -277,7 +280,7 @@ export function EmailTemplates() {
                                 onClick={() => {
                                   if (confirm(t("common.confirm_delete"))) {
                                     void remove(tmpl.id).catch((e) =>
-                                      alert(String(e)),
+                                      toast.error(String(e)),
                                     );
                                   }
                                 }}

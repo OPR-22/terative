@@ -11,10 +11,27 @@ pub trait InvoiceRepository: Send + Sync {
     fn delete(&self, id: InvoiceId) -> Result<(), RepoError>;
 }
 
+/// User-facing groupings over the underlying `DerivedPaymentStatus` —
+/// the InvoiceList page exposes these as a second pills filter, in
+/// addition to lifecycle status. Defined here (alongside the query)
+/// because it's a read-path concept driven entirely by repo SQL.
+///
+/// `Unpaid` deliberately groups `DerivedPaymentStatus::Unpaid` with
+/// `Partial`: from a "money still owed" perspective they're the same
+/// thing to a user, and surfacing two near-identical pills would be
+/// noise. `Late` is the renamed `Overdue` for the same UX reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InvoicePaymentFilter {
+    Paid,
+    Unpaid,
+    Late,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ListInvoicesQuery {
     pub status: Option<InvoiceStatus>,
     pub client_id: Option<ClientId>,
     pub search: Option<String>,
+    pub payment_filter: Option<InvoicePaymentFilter>,
     pub pagination: PaginationParams,
 }

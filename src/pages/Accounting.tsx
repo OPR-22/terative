@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "../stores/toastStore";
 import { Download } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Avatar } from "../components/ui/Avatar";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHead } from "../components/ui/Card";
@@ -29,22 +31,21 @@ const THIS_YEAR_END = `${new Date().getFullYear()}-12-31`;
 
 export function Accounting() {
   const { t } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const [tab, setTab] = useState<Tab>("revenue");
 
   return (
     <Page
-      crumbs={["Cabinet Lemaire", t("accounting.title")]}
+      crumbs={[workspaceName, t("accounting.title")]}
       title={t("accounting.title")}
-      subtitle={`Période — ${THIS_YEAR_START} → ${THIS_YEAR_END}`}
+      subtitle={t("accounting.period_range", {
+        start: THIS_YEAR_START,
+        end: THIS_YEAR_END,
+      })}
       actions={
-        <>
-          <Button leadingIcon={<Download size={13} strokeWidth={1.5} />}>
-            CSV
-          </Button>
-          <Button leadingIcon={<Download size={13} strokeWidth={1.5} />}>
-            PDF
-          </Button>
-        </>
+        <Button leadingIcon={<Download size={13} strokeWidth={1.5} />}>
+          {t("common.pdf")}
+        </Button>
       }
     >
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -73,7 +74,6 @@ function RevenueTab() {
   const [grouping, setGrouping] = useState<RevenueGroupingDto>("Month");
   const [buckets, setBuckets] = useState<RevenueBucketDto[]>([]);
   const [byClient, setByClient] = useState<RevenueByClientDto[]>([]);
-  const [error, setError] = useState<string | null>(null);
 
   const { formatMinor } = useMoneyFormat();
   const currencyCode = useSettingsStore().snapshot?.currency.code ?? "EUR";
@@ -91,7 +91,7 @@ function RevenueTab() {
         setByClient(c);
       })
       .catch((e) => {
-        if (!cancelled) setError(String(e));
+        if (!cancelled) toast.error(String(e));
       });
     return () => {
       cancelled = true;
@@ -143,7 +143,6 @@ function RevenueTab() {
         </CardBody>
       </Card>
 
-      {error ? <p className="text-[13px] text-danger mb-3">{error}</p> : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-5">
         <Card>
@@ -233,7 +232,6 @@ function RevenueTab() {
 function AgingTab() {
   const { t } = useTranslation();
   const [rows, setRows] = useState<AgingRowDto[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const { formatMinor } = useMoneyFormat();
   const currencyCode = useSettingsStore().snapshot?.currency.code ?? "EUR";
   const fmt = (minor: number) => formatMinor(minor, currencyCode);
@@ -243,7 +241,7 @@ function AgingTab() {
     ipc
       .accountingAgingReport()
       .then((r) => !cancelled && setRows(r))
-      .catch((e) => !cancelled && setError(String(e)));
+      .catch((e) => !cancelled && toast.error(String(e)));
     return () => {
       cancelled = true;
     };
@@ -283,7 +281,6 @@ function AgingTab() {
 
   return (
     <div className="flex flex-col">
-      {error ? <p className="text-[13px] text-danger mb-3">{error}</p> : null}
 
       <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-5 mb-5">
         {BUCKETS.map((b) => (
@@ -344,7 +341,6 @@ function AgingTab() {
 function BalancesTab() {
   const { t } = useTranslation();
   const [rows, setRows] = useState<ClientBalanceDto[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const { formatMinor } = useMoneyFormat();
   const currencyCode = useSettingsStore().snapshot?.currency.code ?? "EUR";
   const fmt = (minor: number) => formatMinor(minor, currencyCode);
@@ -354,7 +350,7 @@ function BalancesTab() {
     ipc
       .accountingClientBalances()
       .then((r) => !cancelled && setRows(r))
-      .catch((e) => !cancelled && setError(String(e)));
+      .catch((e) => !cancelled && toast.error(String(e)));
     return () => {
       cancelled = true;
     };
@@ -362,7 +358,6 @@ function BalancesTab() {
 
   return (
     <Card>
-      {error ? <p className="px-5 pt-4 text-[13px] text-danger">{error}</p> : null}
       {rows.length === 0 ? (
         <EmptyState description={t("common.empty")} />
       ) : (

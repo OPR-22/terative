@@ -313,6 +313,42 @@ impl ClientRepository for SqliteClientRepository {
         Ok(Page::new(out, total, &query.pagination))
     }
 
+    fn names_for(
+        &self,
+        ids: &[ClientId],
+    ) -> Result<HashMap<ClientId, String>, RepoError> {
+        if ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let conn = self.db.lock();
+        // Bind each id as a numbered placeholder. SQLite's IN-list has no
+        // upper bound for our ~tens-of-rows reads, but if we ever batch
+        // thousands here we should chunk into IN(...) groups under the 999
+        // bind-variable default.
+        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{i}")).collect();
+        let sql = format!(
+            "SELECT id, name FROM clients WHERE id IN ({})",
+            placeholders.join(", ")
+        );
+        let id_strs: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+        let params: Vec<&dyn rusqlite::ToSql> =
+            id_strs.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+        let mut stmt = conn.prepare(&sql).map_err(map_err)?;
+        let rows = stmt
+            .query_map(params.as_slice(), |row| {
+                let id = parse_uuid(&row.get::<_, String>("id")?)?;
+                let name: String = row.get("name")?;
+                Ok((ClientId(id), name))
+            })
+            .map_err(map_err)?;
+        let mut out = HashMap::new();
+        for r in rows {
+            let (id, name) = r.map_err(map_err)?;
+            out.insert(id, name);
+        }
+        Ok(out)
+    }
+
     fn distinct_attribute_values(&self) -> Result<ClientAttributeValues, RepoError> {
         let conn = self.db.lock();
         let read = |column: &str| -> Result<Vec<String>, RepoError> {

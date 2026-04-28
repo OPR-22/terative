@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "../stores/toastStore";
 import { useNavigate } from "react-router-dom";
 import { Copy, Edit, Plus, Star, Trash2 } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody } from "../components/ui/Card";
@@ -12,6 +14,7 @@ import { useTemplateStore } from "../stores/templateStore";
 
 export function TemplateList() {
   const { t } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { templates, loading, error, refresh, remove, duplicate, setDefault } =
     useTemplateStore();
@@ -22,9 +25,9 @@ export function TemplateList() {
 
   return (
     <Page
-      crumbs={["Cabinet Lemaire", t("templates.title")]}
+      crumbs={[workspaceName, t("templates.title")]}
       title={t("templates.title")}
-      subtitle={`${templates.length} modèles`}
+      subtitle={t("templates.summary_count", { count: templates.length })}
       actions={
         <Button
           variant="primary"
@@ -133,7 +136,7 @@ export function TemplateList() {
                         aria-label={t("common.delete")}
                         onClick={() => {
                           if (confirm(t("common.confirm_delete"))) {
-                            void remove(tpl.id).catch((e) => alert(String(e)));
+                            void remove(tpl.id).catch((e) => toast.error(String(e)));
                           }
                         }}
                       >

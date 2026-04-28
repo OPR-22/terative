@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Archive, ArchiveRestore, Eye, Plus, Search, Upload } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -21,6 +22,7 @@ const defaultContact = (entries: ContactEntryDto[]): string =>
 
 export function ClientList() {
   const { t } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const {
     clients,
@@ -47,13 +49,13 @@ export function ClientList() {
 
   return (
     <Page
-      crumbs={["Cabinet Lemaire", t("clients.title")]}
+      crumbs={[workspaceName, t("clients.title")]}
       title={t("clients.title")}
-      subtitle={`${activeCount} clients actifs · ${archivedCount} archivés`}
+      subtitle={`${t("clients.summary_active", { count: activeCount })} · ${t("clients.summary_archived", { count: archivedCount })}`}
       actions={
         <>
           <Button leadingIcon={<Upload size={13} strokeWidth={1.5} />}>
-            Importer
+            {t("common.import")}
           </Button>
           <Button
             variant="primary"
@@ -149,7 +151,7 @@ export function ClientList() {
                         leadingIcon={<Eye size={11} strokeWidth={1.5} />}
                         onClick={() => navigate(`/clients/${c.id}`)}
                       >
-                        Ouvrir
+                        {t("common.view")}
                       </Button>
                       {c.archived_at ? (
                         <Button

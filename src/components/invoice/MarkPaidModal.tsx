@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "../../stores/toastStore";
 
 import { Button } from "../ui/Button";
 import { Field, Input, Select } from "../ui/Input";
@@ -74,7 +75,7 @@ export function MarkPaidModal({ invoice, onClose, onPaid }: Props) {
       })
       .catch((e) => {
         if (!cancelled) {
-          setErr(String(e));
+          toast.error(String(e));
           setLoading(false);
         }
       });
@@ -123,7 +124,7 @@ export function MarkPaidModal({ invoice, onClose, onPaid }: Props) {
       onPaid();
       onClose();
     } catch (e) {
-      setErr(String(e));
+      toast.error(String(e));
     } finally {
       setSubmitting(false);
     }

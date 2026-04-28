@@ -172,12 +172,48 @@ impl PaymentRepository for SqlitePaymentRepository {
 
     fn list(&self, query: ListPaymentsQuery) -> Result<Vec<Payment>, RepoError> {
         let conn = self.db.lock();
-        let mut sql = format!("SELECT {SELECT_HEAD} FROM payments");
+        // Filtering by invoice requires joining payment_allocations.
+        // SELECT DISTINCT because a payment can have multiple allocations
+        // (different invoices), but we only want it once even if more than
+        // one of those allocations matches.
+        let (table_clause, distinct) = if query.invoice_id.is_some() {
+            (
+                " p INNER JOIN payment_allocations pa ON pa.payment_id = p.id",
+                "DISTINCT ",
+            )
+        } else {
+            ("", "")
+        };
+        // Qualify the selected columns when joining so SQLite knows which
+        // table they come from. Otherwise use the bare names from before.
+        let head_clause = if query.invoice_id.is_some() {
+            SELECT_HEAD
+                .split(", ")
+                .map(|c| format!("p.{}", c.trim()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        } else {
+            SELECT_HEAD.to_string()
+        };
+        let mut sql = format!(
+            "SELECT {distinct}{head_clause} FROM payments{table_clause}"
+        );
         let mut clauses: Vec<String> = Vec::new();
         let mut binds: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        let qualify = |col: &str| {
+            if query.invoice_id.is_some() {
+                format!("p.{col}")
+            } else {
+                col.to_string()
+            }
+        };
         if let Some(cid) = query.client_id {
-            clauses.push(format!("client_id = ?{}", binds.len() + 1));
+            clauses.push(format!("{} = ?{}", qualify("client_id"), binds.len() + 1));
             binds.push(Box::new(cid.to_string()));
+        }
+        if let Some(iid) = query.invoice_id {
+            clauses.push(format!("pa.invoice_id = ?{}", binds.len() + 1));
+            binds.push(Box::new(iid.to_string()));
         }
         if let Some(pattern) = query.search.as_ref().and_then(|s| {
             let t = s.trim();
@@ -188,7 +224,9 @@ impl PaymentRepository for SqlitePaymentRepository {
             }
         }) {
             clauses.push(format!(
-                "(LOWER(COALESCE(reference, '')) LIKE ?{idx} OR LOWER(COALESCE(notes, '')) LIKE ?{idx})",
+                "(LOWER(COALESCE({ref_col}, '')) LIKE ?{idx} OR LOWER(COALESCE({notes_col}, '')) LIKE ?{idx})",
+                ref_col = qualify("reference"),
+                notes_col = qualify("notes"),
                 idx = binds.len() + 1
             ));
             binds.push(Box::new(pattern));
@@ -197,7 +235,11 @@ impl PaymentRepository for SqlitePaymentRepository {
             sql.push_str(" WHERE ");
             sql.push_str(&clauses.join(" AND "));
         }
-        sql.push_str(" ORDER BY date DESC, created_at DESC");
+        sql.push_str(&format!(
+            " ORDER BY {date} DESC, {created} DESC",
+            date = qualify("date"),
+            created = qualify("created_at"),
+        ));
         let mut stmt = conn.prepare(&sql).map_err(map_err)?;
         let params_ref: Vec<&dyn rusqlite::ToSql> =
             binds.iter().map(|b| b.as_ref()).collect();
@@ -593,6 +635,7 @@ mod tests {
         let client_a_list = repo
             .list(ListPaymentsQuery {
                 client_id: Some(client_a),
+                invoice_id: None,
                 search: None,
             })
             .unwrap();
@@ -601,6 +644,7 @@ mod tests {
         let search = repo
             .list(ListPaymentsQuery {
                 client_id: None,
+                invoice_id: None,
                 search: Some("OTHER".into()),
             })
             .unwrap();

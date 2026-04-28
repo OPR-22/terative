@@ -93,7 +93,9 @@ pub fn invoice_list(
         .execute(query.unwrap_or_default().into())
         .map_err(to_ipc_err)?;
     Ok(page
-        .map(|(i, paid)| InvoiceDto::from_invoice_enriched(&i, paid, today))
+        .map(|(i, paid, client_name)| {
+            InvoiceDto::from_invoice_enriched(&i, paid, today, client_name)
+        })
         .into())
 }
 
@@ -107,6 +109,50 @@ pub fn invoice_get(
     state
         .get_invoice
         .execute(InvoiceId(id))
-        .map(|(i, paid)| InvoiceDto::from_invoice_enriched(&i, paid, today))
+        .map(|(i, paid, client_name)| {
+            InvoiceDto::from_invoice_enriched(&i, paid, today, client_name)
+        })
+        .map_err(to_ipc_err)
+}
+
+/// Returns the rendered PDF bytes for an invoice that has already been
+/// finalized (or sent / cancelled). Errors with `NotFound` for drafts or
+/// when the file is missing — the UI renders an empty state in that case.
+#[tauri::command]
+#[specta::specta]
+pub fn invoice_pdf_bytes(
+    state: State<'_, AppState>,
+    id: Uuid,
+) -> Result<Vec<u8>, String> {
+    state
+        .get_invoice_pdf
+        .execute(InvoiceId(id))
+        .map_err(to_ipc_err)
+}
+
+/// Sends the invoice's rendered PDF to the OS default printer. No print
+/// dialog — users pick their default printer at the OS level.
+#[tauri::command]
+#[specta::specta]
+pub fn invoice_print(state: State<'_, AppState>, id: Uuid) -> Result<(), String> {
+    state
+        .print_invoice
+        .execute(InvoiceId(id))
+        .map_err(to_ipc_err)
+}
+
+/// Opens the invoice PDF in the OS default application. Unlike
+/// `tauri-plugin-opener`'s `openPath`, this routes through the native
+/// `open` / `xdg-open` / `cmd start` commands, which reliably brings the
+/// target app to the foreground on macOS.
+#[tauri::command]
+#[specta::specta]
+pub fn invoice_open_external(
+    state: State<'_, AppState>,
+    id: Uuid,
+) -> Result<(), String> {
+    state
+        .open_invoice_externally
+        .execute(InvoiceId(id))
         .map_err(to_ipc_err)
 }

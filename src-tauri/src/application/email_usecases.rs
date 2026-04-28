@@ -290,6 +290,16 @@ mod tests {
         ) -> Result<Page<Client>, RepoError> {
             Ok(Page::new(vec![], 0, &PaginationParams::default()))
         }
+        fn names_for(
+            &self,
+            ids: &[ClientId],
+        ) -> Result<std::collections::HashMap<ClientId, String>, RepoError> {
+            let g = self.0.lock();
+            Ok(ids
+                .iter()
+                .filter_map(|id| g.get(id).map(|c| (*id, c.name.clone())))
+                .collect())
+        }
         fn distinct_attribute_values(
             &self,
         ) -> Result<crate::application::ports::ClientAttributeValues, RepoError> {

@@ -38,6 +38,16 @@ impl PdfStorage for FilesystemPdfStorage {
         fs::write(&path, bytes).map_err(|e| RepoError::Storage(e.to_string()))?;
         Ok(path.to_string_lossy().to_string())
     }
+
+    fn read(&self, path: &str) -> Result<Vec<u8>, RepoError> {
+        match fs::read(path) {
+            Ok(bytes) => Ok(bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                Err(RepoError::NotFound)
+            }
+            Err(e) => Err(RepoError::Storage(e.to_string())),
+        }
+    }
 }
 
 #[cfg(test)]

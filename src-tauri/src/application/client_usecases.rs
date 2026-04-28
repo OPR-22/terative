@@ -217,6 +217,16 @@ mod tests {
             let total = v.len() as u64;
             Ok(Page::new(v, total, &PaginationParams::default()))
         }
+        fn names_for(
+            &self,
+            ids: &[ClientId],
+        ) -> Result<HashMap<ClientId, String>, RepoError> {
+            let g = self.inner.lock();
+            Ok(ids
+                .iter()
+                .filter_map(|id| g.get(id).map(|c| (*id, c.name.clone())))
+                .collect())
+        }
         fn distinct_attribute_values(
             &self,
         ) -> Result<crate::application::ports::ClientAttributeValues, RepoError> {

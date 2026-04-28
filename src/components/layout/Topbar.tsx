@@ -1,9 +1,11 @@
 import { Fragment } from "react";
+import { useTranslation } from "react-i18next";
 import { Search } from "lucide-react";
 
 import { usePageMeta } from "./PageMeta";
 
 export function Topbar() {
+  const { t } = useTranslation();
   const { crumbs } = usePageMeta();
   return (
     <div className="flex items-center justify-between px-7 py-3.5 border-b border-line bg-paper">
@@ -25,7 +27,7 @@ export function Topbar() {
           className="flex items-center gap-2 px-2.5 py-1.5 bg-paper-2 border border-line rounded-sm text-[12px] text-ink-3 min-w-[220px] hover:border-ink-4"
         >
           <Search size={13} strokeWidth={1.5} />
-          <span>Rechercher partout</span>
+          <span>{t("topbar.search_placeholder")}</span>
           <kbd className="ml-auto font-mono text-[10px] px-1.5 py-px bg-paper-3 border border-line-soft text-ink-3 rounded-sm">
             ⌘K
           </kbd>

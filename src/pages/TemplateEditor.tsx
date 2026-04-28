@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "../stores/toastStore";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { Page } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody } from "../components/ui/Card";
 import { Field, Input } from "../components/ui/Input";
@@ -44,6 +46,7 @@ function defaults(): NewInvoiceTemplateDto {
 
 export function TemplateEditor() {
   const { t } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
   const editing = Boolean(id);
@@ -141,7 +144,7 @@ export function TemplateEditor() {
       }
       navigate("/templates");
     } catch (e) {
-      setSaveError(String(e));
+      toast.error(String(e));
     } finally {
       setSubmitting(false);
     }
@@ -150,12 +153,12 @@ export function TemplateEditor() {
   return (
     <Page
       crumbs={[
-        "Cabinet Lemaire",
+        workspaceName,
         t("templates.title"),
         editing ? existing?.name ?? t("templates.edit") : t("templates.new"),
       ]}
       title={editing ? t("templates.edit") : t("templates.new")}
-      subtitle="Aperçu mis à jour automatiquement"
+      subtitle={t("templates.editor_subtitle")}
       actions={
         <>
           <Button onClick={() => navigate("/templates")}>{t("common.cancel")}</Button>

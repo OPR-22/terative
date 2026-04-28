@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "../stores/toastStore";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { Page } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHead } from "../components/ui/Card";
 import { Checkbox } from "../components/ui/Checkbox";
@@ -28,6 +30,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export function PaymentEditor() {
   const { t } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
   const editing = Boolean(id);
@@ -81,7 +84,7 @@ export function PaymentEditor() {
         if (!cancelled) setOutstanding(rows);
       })
       .catch((e) => {
-        if (!cancelled) setErr(String(e));
+        if (!cancelled) toast.error(String(e));
       });
     return () => {
       cancelled = true;
@@ -165,7 +168,7 @@ export function PaymentEditor() {
       }
       navigate("/payments");
     } catch (e) {
-      setErr(String(e));
+      toast.error(String(e));
     } finally {
       setSubmitting(false);
     }
@@ -174,7 +177,7 @@ export function PaymentEditor() {
   return (
     <Page
       crumbs={[
-        "Cabinet Lemaire",
+        workspaceName,
         t("payments.title"),
         editing ? t("payments.edit") : t("payments.new"),
       ]}
@@ -182,7 +185,7 @@ export function PaymentEditor() {
     >
       <form onSubmit={submit} className="max-w-3xl">
         <Card>
-          <CardHead title="Détails" />
+          <CardHead title={t("common.details")} />
           <CardBody>
             <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-3">
               <Field label={t("invoices.client")}>

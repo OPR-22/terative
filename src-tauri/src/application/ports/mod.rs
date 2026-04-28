@@ -32,7 +32,9 @@ pub use data_management::{BackupKind, BackupMetadata, BackupScope, DataManagemen
 pub use email_sender::{EmailAttachment, EmailError, EmailSender, OutboundEmail};
 pub use email_template_repository::EmailTemplateRepository;
 pub use invoice_number_generator::InvoiceNumberGenerator;
-pub use invoice_repository::{InvoiceRepository, ListInvoicesQuery};
+pub use invoice_repository::{
+    InvoicePaymentFilter, InvoiceRepository, ListInvoicesQuery,
+};
 pub use payment_repository::{ListPaymentsQuery, PaymentRepository};
 pub use pdf_generator::{PdfError, PdfGenerator, PdfRenderInput};
 pub use pdf_storage::PdfStorage;

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::application::RepoError;
 use crate::application::ports::pagination::{Page, PaginationParams};
 use crate::domain::client::{Client, ClientId};
@@ -12,6 +14,16 @@ pub trait ClientRepository: Send + Sync {
     /// (autocomplete) for free-form fields without forcing a fixed list —
     /// new entries grow the catalogue automatically.
     fn distinct_attribute_values(&self) -> Result<ClientAttributeValues, RepoError>;
+    /// Batch lookup of display names for the given client ids. Used by
+    /// invoice / payment list paths to populate `client_name` on each row
+    /// without N+1 round trips. Missing ids are simply absent from the map
+    /// (callers treat that as "client not found", same fallback as a
+    /// `LEFT JOIN`). Includes archived clients — old invoices reference
+    /// them and we still want to display the name.
+    fn names_for(
+        &self,
+        ids: &[ClientId],
+    ) -> Result<HashMap<ClientId, String>, RepoError>;
 }
 
 #[derive(Debug, Clone, Default)]

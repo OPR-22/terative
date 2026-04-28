@@ -1,14 +1,40 @@
 import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Bookmark, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import {
+  BookOpen,
+  Bookmark,
+  FileText,
+  LayoutDashboard,
+  LayoutTemplate,
+  Mail,
+  Package,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Percent,
+  Settings as SettingsIcon,
+  Users,
+  Wallet,
+  type LucideIcon,
+} from "lucide-react";
 
 import { useBookmarkStore } from "../../stores/bookmarkStore";
 import { useSidebarStore } from "../../stores/sidebarStore";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { useWorkspaceName } from "../../hooks/useWorkspaceName";
+
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "—";
+  const first = parts[0][0] ?? "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return (first + last).toUpperCase();
+}
 
 interface NavItem {
   to: string;
   label: string;
+  icon: LucideIcon;
   end?: boolean;
 }
 
@@ -18,22 +44,23 @@ export function Sidebar() {
   const toggle = useSidebarStore((s) => s.toggle);
   const bookmarks = useBookmarkStore((s) => s.bookmarks);
   const ensureLoaded = useBookmarkStore((s) => s.ensureLoaded);
+  const sellerName = useSettingsStore((s) => s.snapshot?.seller.name);
+  const workspaceName = useWorkspaceName();
 
   useEffect(() => {
     void ensureLoaded();
   }, [ensureLoaded]);
 
   const items: NavItem[] = [
-    { to: "/dashboard", label: t("nav.dashboard") },
-    { to: "/invoices", label: t("nav.invoices") },
-    { to: "/payments", label: t("nav.payments") },
-    { to: "/clients", label: t("nav.clients") },
-    { to: "/catalog", label: t("nav.catalog") },
-    { to: "/taxes", label: t("nav.taxes") },
-    { to: "/accounting", label: t("nav.accounting") },
-    { to: "/templates", label: t("nav.templates") },
-    { to: "/email-templates", label: t("nav.email_templates") },
-    { to: "/settings", label: t("nav.settings") },
+    { to: "/dashboard", label: t("nav.dashboard"), icon: LayoutDashboard },
+    { to: "/invoices", label: t("nav.invoices"), icon: FileText },
+    { to: "/payments", label: t("nav.payments"), icon: Wallet },
+    { to: "/clients", label: t("nav.clients"), icon: Users },
+    { to: "/catalog", label: t("nav.catalog"), icon: Package },
+    { to: "/taxes", label: t("nav.taxes"), icon: Percent },
+    { to: "/accounting", label: t("nav.accounting"), icon: BookOpen },
+    { to: "/templates", label: t("nav.templates"), icon: LayoutTemplate },
+    { to: "/email-templates", label: t("nav.email_templates"), icon: Mail },
   ];
 
   return (
@@ -81,9 +108,7 @@ export function Sidebar() {
                 key={b.id}
                 to={`/bookmarks/${b.id}`}
                 title={b.label}
-                className={({ isActive }) =>
-                  navItemClass(isActive, false, true)
-                }
+                className={({ isActive }) => navItemClass(isActive, false)}
               >
                 <Bookmark className="w-3.5 h-3.5 shrink-0" strokeWidth={1.5} />
                 <span className="truncate">{b.label}</span>
@@ -93,21 +118,41 @@ export function Sidebar() {
         </div>
       ) : null}
 
-      <div
-        className={[
-          "mt-auto border-t border-line-soft",
-          collapsed ? "p-2 flex justify-center" : "px-3 py-3 flex items-center gap-2.5",
-        ].join(" ")}
-      >
-        <span className="grid place-items-center w-[26px] h-[26px] bg-accent-soft text-accent-ink text-[11px] font-semibold rounded-full shrink-0">
-          CL
-        </span>
-        {collapsed ? null : (
-          <div className="leading-tight min-w-0">
-            <div className="text-ink font-medium text-[12px] truncate">Camille L.</div>
-            <div className="text-[11px] text-ink-3 truncate">Cabinet Lemaire</div>
-          </div>
-        )}
+      <div className="mt-auto border-t border-line-soft">
+        <div className="px-2.5 pt-2 pb-1.5">
+          <NavList
+            items={[
+              {
+                to: "/settings",
+                label: t("nav.settings"),
+                icon: SettingsIcon,
+              },
+            ]}
+            collapsed={collapsed}
+          />
+        </div>
+        <div
+          className={[
+            "border-t border-line-soft",
+            collapsed
+              ? "p-2 flex justify-center"
+              : "px-3 py-3 flex items-center gap-2.5",
+          ].join(" ")}
+        >
+          <span className="grid place-items-center w-[26px] h-[26px] bg-accent-soft text-accent-ink text-[11px] font-semibold rounded-full shrink-0">
+            {initialsOf(sellerName?.trim() || workspaceName)}
+          </span>
+          {collapsed ? null : (
+            <div className="leading-tight min-w-0">
+              <div className="text-ink font-medium text-[12px] truncate">
+                {sellerName?.trim() || workspaceName}
+              </div>
+              <div className="text-[11px] text-ink-3 truncate">
+                {workspaceName}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </aside>
   );
@@ -116,29 +161,31 @@ export function Sidebar() {
 function NavList({ items, collapsed }: { items: NavItem[]; collapsed: boolean }) {
   return (
     <nav className="flex flex-col gap-px">
-      {items.map((item) => (
-        <NavLink
-          key={item.to}
-          to={item.to}
-          end={item.end}
-          title={collapsed ? item.label : undefined}
-          className={({ isActive }) => navItemClass(isActive, collapsed)}
-        >
-          <span className="truncate">{collapsed ? item.label.charAt(0) : item.label}</span>
-        </NavLink>
-      ))}
+      {items.map((item) => {
+        const Icon = item.icon;
+        return (
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.end}
+            title={collapsed ? item.label : undefined}
+            className={({ isActive }) => navItemClass(isActive, collapsed)}
+          >
+            <Icon className="w-4 h-4 shrink-0" strokeWidth={1.5} />
+            {collapsed ? null : <span className="truncate">{item.label}</span>}
+          </NavLink>
+        );
+      })}
     </nav>
   );
 }
 
-function navItemClass(isActive: boolean, collapsed = false, withIcon = false): string {
+function navItemClass(isActive: boolean, collapsed = false): string {
   return [
     "flex items-center text-[13px] cursor-pointer transition-colors border-l-2 -ml-[2px]",
     collapsed
       ? "justify-center w-10 h-10 px-0 -ml-0 border-l-0"
-      : withIcon
-        ? "gap-2.5 pl-[14px] pr-2.5 py-[7px]"
-        : "pl-[14px] pr-2.5 py-[7px]",
+      : "gap-2.5 pl-[14px] pr-2.5 py-[7px]",
     isActive
       ? "bg-paper text-ink font-medium border-l-accent"
       : "text-ink-2 border-l-transparent hover:bg-paper-3 hover:text-ink",

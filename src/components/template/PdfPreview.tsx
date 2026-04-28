@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 
 interface Props {
@@ -7,9 +14,22 @@ interface Props {
   error?: string | null;
 }
 
-export function PdfPreview({ bytes, loading, error }: Props) {
+/// Imperative handle exposed to parents that want to drive the embedded
+/// viewer (e.g. a "Print" button in the surrounding chrome). Callers
+/// access it via `ref` — see `InvoiceEditor` for an example.
+export interface PdfPreviewHandle {
+  /// Trigger the browser's print dialog targeting the iframe content.
+  /// No-op if the PDF hasn't loaded yet.
+  print(): void;
+}
+
+export const PdfPreview = forwardRef<PdfPreviewHandle, Props>(function PdfPreview(
+  { bytes, loading, error },
+  ref,
+) {
   const { t } = useTranslation();
   const previousUrlRef = useRef<string | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -30,10 +50,21 @@ export function PdfPreview({ bytes, loading, error }: Props) {
     };
   }, [bytes]);
 
+  useImperativeHandle(ref, () => ({
+    print() {
+      // Same-origin blob URL means the iframe's contentWindow is reachable.
+      // If the PDF hasn't loaded yet (or the user clicked print before the
+      // first byte arrived), silently no-op rather than throwing.
+      iframeRef.current?.contentWindow?.focus();
+      iframeRef.current?.contentWindow?.print();
+    },
+  }));
+
   return (
     <div className="relative h-full w-full overflow-hidden rounded-card border border-border bg-surface-muted">
       {url ? (
         <iframe
+          ref={iframeRef}
           title="pdf-preview"
           src={url}
           className="h-full w-full border-0"
@@ -55,7 +86,7 @@ export function PdfPreview({ bytes, loading, error }: Props) {
       ) : null}
     </div>
   );
-}
+});
 
 export function useDebounced<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);

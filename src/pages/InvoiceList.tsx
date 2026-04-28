@@ -1,21 +1,19 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "../stores/toastStore";
 import { useNavigate } from "react-router-dom";
-import {
-  Copy,
-  Download,
-  Edit,
-  Eye,
-  MoreHorizontal,
-  Plus,
-  Send,
-  Trash2,
-} from "lucide-react";
+import { Coins, Copy, Edit, Eye, Plus, Send, Trash2 } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Avatar } from "../components/ui/Avatar";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
+import { ConfirmModal } from "../components/ui/ConfirmModal";
+import {
+  DropdownMenu,
+  type DropdownMenuItem,
+} from "../components/ui/DropdownMenu";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Pills } from "../components/ui/Pills";
 import { Table, Td, Th, THead, Tr } from "../components/ui/Table";
@@ -25,13 +23,18 @@ import { PaymentStatusBadge } from "../components/invoice/PaymentStatusBadge";
 import { MarkPaidModal } from "../components/invoice/MarkPaidModal";
 import { useMoneyFormat } from "../lib/money";
 import { useInvoiceStore } from "../stores/invoiceStore";
-import { useClientStore } from "../stores/clientStore";
-import type { InvoiceDto, InvoiceStatusDto } from "../ipc";
+import type {
+  InvoiceDto,
+  InvoicePaymentFilterDto,
+  InvoiceStatusDto,
+} from "../ipc";
 
 type FilterValue = "all" | InvoiceStatusDto;
+type PaymentFilterValue = "all" | InvoicePaymentFilterDto;
 
 export function InvoiceList() {
   const { t } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const {
     invoices,
@@ -50,53 +53,66 @@ export function InvoiceList() {
     cancel,
     send,
   } = useInvoiceStore();
-  const ensureDirectory = useClientStore((s) => s.ensureDirectory);
-  const clientName = useClientStore((s) => s.clientName);
   const { format } = useMoneyFormat();
   const [payFor, setPayFor] = useState<InvoiceDto | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<InvoiceDto | null>(null);
 
   useEffect(() => {
     void refresh();
-    void ensureDirectory();
-  }, [refresh, ensureDirectory]);
+  }, [refresh]);
   const filterValue: FilterValue = query.status ?? "all";
+  const paymentFilterValue: PaymentFilterValue = query.payment_filter ?? "all";
 
   return (
     <Page
-      crumbs={["Cabinet Lemaire", t("invoices.title")]}
+      crumbs={[workspaceName, t("invoices.title")]}
       title={t("invoices.title")}
       subtitle={
-        page ? `${page.total} factures au total · ${invoices.length} affichées` : undefined
+        page
+          ? `${t("invoices.summary_total", { count: page.total })} · ${t("invoices.summary_displayed", { count: invoices.length })}`
+          : undefined
       }
       actions={
-        <>
-          <Button leadingIcon={<Download size={13} strokeWidth={1.5} />}>
-            Exporter
-          </Button>
-          <Button
-            variant="primary"
-            leadingIcon={<Plus size={13} strokeWidth={1.5} />}
-            onClick={() => navigate("/invoices/create")}
-          >
-            {t("invoices.new")}
-          </Button>
-        </>
+        <Button
+          variant="primary"
+          leadingIcon={<Plus size={13} strokeWidth={1.5} />}
+          onClick={() => navigate("/invoices/create")}
+        >
+          {t("invoices.new")}
+        </Button>
       }
     >
       <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
-        <Pills<FilterValue>
-          value={filterValue}
-          onChange={(id) =>
-            setQuery({ ...query, status: id === "all" ? null : id })
-          }
-          options={[
-            { id: "all", label: t("invoices.all") },
-            { id: "Draft", label: t("invoices.status_draft") },
-            { id: "Finalized", label: t("invoices.status_finalized") },
-            { id: "Sent", label: t("invoices.status_sent") },
-            { id: "Cancelled", label: t("invoices.status_cancelled") },
-          ]}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <Pills<FilterValue>
+            value={filterValue}
+            onChange={(id) =>
+              setQuery({ ...query, status: id === "all" ? null : id })
+            }
+            options={[
+              { id: "all", label: t("invoices.all") },
+              { id: "Draft", label: t("invoices.status_draft") },
+              { id: "Finalized", label: t("invoices.status_finalized") },
+              { id: "Sent", label: t("invoices.status_sent") },
+              { id: "Cancelled", label: t("invoices.status_cancelled") },
+            ]}
+          />
+          <Pills<PaymentFilterValue>
+            value={paymentFilterValue}
+            onChange={(id) =>
+              setQuery({
+                ...query,
+                payment_filter: id === "all" ? null : id,
+              })
+            }
+            options={[
+              { id: "all", label: t("invoices.all") },
+              { id: "Paid", label: t("invoices.payment_filter_paid") },
+              { id: "Unpaid", label: t("invoices.payment_filter_unpaid") },
+              { id: "Late", label: t("invoices.payment_filter_late") },
+            ]}
+          />
+        </div>
       </div>
 
       {error ? <p className="mb-3 text-[13px] text-danger">{error}</p> : null}
@@ -121,9 +137,63 @@ export function InvoiceList() {
             </THead>
             <tbody>
               {invoices.map((inv) => {
-                const name = clientName(inv.client_id);
+                const name = inv.client_name ?? "—";
+                const cancellable =
+                  inv.status === "Finalized" || inv.status === "Sent";
+                const sendable =
+                  inv.status === "Finalized" || inv.status === "Sent";
+                const unpaid =
+                  (inv.status === "Finalized" || inv.status === "Sent") &&
+                  inv.payment_status !== "Paid";
+
+                // Build the overflow menu: every action valid in this
+                // state that isn't the row's primary. Open-in-editor
+                // first (mirrors the row click), then secondary workflow
+                // actions, with destructive last.
+                const editable = inv.status === "Draft";
+                const menuItems: DropdownMenuItem[] = [
+                  {
+                    id: "open",
+                    label: editable ? t("common.edit") : t("common.view"),
+                    icon: editable ? (
+                      <Edit size={13} strokeWidth={1.5} />
+                    ) : (
+                      <Eye size={13} strokeWidth={1.5} />
+                    ),
+                    onSelect: () => navigate(`/invoices/${inv.id}/edit`),
+                  },
+                ];
+                if (sendable && unpaid && inv.email_sends.length > 0) {
+                  menuItems.push({
+                    id: "remind",
+                    label: t("invoices.send_reminder"),
+                    icon: <Send size={13} strokeWidth={1.5} />,
+                    onSelect: () =>
+                      void send(inv.id).catch((e) => toast.error(String(e))),
+                  });
+                }
+                menuItems.push({
+                  id: "duplicate",
+                  label: t("invoices.duplicate"),
+                  icon: <Copy size={13} strokeWidth={1.5} />,
+                  onSelect: () => void duplicate(inv.id),
+                });
+                if (cancellable) {
+                  menuItems.push({
+                    id: "cancel",
+                    label: t("invoices.cancel"),
+                    icon: <Trash2 size={13} strokeWidth={1.5} />,
+                    tone: "danger",
+                    onSelect: () => setCancelTarget(inv),
+                  });
+                }
+
                 return (
-                  <Tr key={inv.id}>
+                  <Tr
+                    key={inv.id}
+                    className="cursor-pointer"
+                    onClick={() => navigate(`/invoices/${inv.id}/edit`)}
+                  >
                     <Td mono className={inv.number == null ? "text-ink-4" : ""}>
                       {inv.number ?? "—"}
                     </Td>
@@ -148,79 +218,62 @@ export function InvoiceList() {
                     <Td numeric className="font-medium">
                       {format(inv.total)}
                     </Td>
-                    <Td className="text-right whitespace-nowrap">
+                    <Td
+                      className="text-right whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <div className="flex justify-end gap-1">
-                        <Button
-                          size="sm"
-                          leadingIcon={
-                            inv.status === "Draft" ? (
-                              <Edit size={11} strokeWidth={1.5} />
-                            ) : (
-                              <Eye size={11} strokeWidth={1.5} />
-                            )
-                          }
-                          onClick={() => navigate(`/invoices/${inv.id}/edit`)}
-                        >
-                          {t(inv.status === "Draft" ? "common.edit" : "common.view")}
-                        </Button>
+                        {/* Slot 1: state-aware primary action */}
                         {inv.status === "Draft" ? (
                           <Button
                             size="sm"
                             variant="primary"
                             onClick={() =>
-                              void finalize(inv.id).catch((e) => alert(String(e)))
+                              void finalize(inv.id).catch((e) => toast.error(String(e)))
                             }
                           >
                             {t("invoices.finalize")}
                           </Button>
                         ) : null}
-                        {inv.status === "Finalized" || inv.status === "Sent" ? (
+                        {inv.status === "Finalized" ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="accent"
+                              leadingIcon={<Send size={11} strokeWidth={1.5} />}
+                              onClick={() =>
+                                void send(inv.id).catch((e) => toast.error(String(e)))
+                              }
+                            >
+                              {t("invoices.send")}
+                            </Button>
+                            {unpaid ? (
+                              <Button
+                                size="sm"
+                                leadingIcon={<Coins size={11} strokeWidth={1.5} />}
+                                onClick={() => setPayFor(inv)}
+                              >
+                                {t("invoices.mark_paid")}
+                              </Button>
+                            ) : null}
+                          </>
+                        ) : null}
+                        {inv.status === "Sent" && unpaid ? (
                           <Button
                             size="sm"
-                            variant="accent"
-                            leadingIcon={<Send size={11} strokeWidth={1.5} />}
-                            onClick={() =>
-                              void send(inv.id).catch((e) => alert(String(e)))
-                            }
+                            variant="primary"
+                            leadingIcon={<Coins size={11} strokeWidth={1.5} />}
+                            onClick={() => setPayFor(inv)}
                           >
-                            {inv.email_sends.length === 0
-                              ? t("invoices.send")
-                              : t("invoices.send_reminder")}
-                          </Button>
-                        ) : null}
-                        {(inv.status === "Finalized" || inv.status === "Sent") &&
-                        inv.payment_status !== "Paid" ? (
-                          <Button size="sm" onClick={() => setPayFor(inv)}>
                             {t("invoices.mark_paid")}
                           </Button>
                         ) : null}
-                        <Button
-                          size="sm"
-                          iconOnly
-                          aria-label={t("invoices.duplicate")}
-                          onClick={() => void duplicate(inv.id)}
-                        >
-                          <Copy size={12} strokeWidth={1.5} />
-                        </Button>
-                        {inv.status === "Finalized" || inv.status === "Sent" ? (
-                          <Button
-                            size="sm"
-                            iconOnly
-                            variant="danger"
-                            aria-label={t("invoices.cancel")}
-                            onClick={() => {
-                              if (confirm(t("invoices.confirm_cancel"))) {
-                                void cancel(inv.id).catch((e) => alert(String(e)));
-                              }
-                            }}
-                          >
-                            <Trash2 size={12} strokeWidth={1.5} />
-                          </Button>
-                        ) : (
-                          <Button size="sm" iconOnly aria-label="Plus">
-                            <MoreHorizontal size={12} strokeWidth={1.5} />
-                          </Button>
-                        )}
+
+                        {/* Slot 2: overflow menu */}
+                        <DropdownMenu
+                          triggerLabel={t("invoices.more_actions")}
+                          items={menuItems}
+                        />
                       </div>
                     </Td>
                   </Tr>
@@ -251,6 +304,18 @@ export function InvoiceList() {
           onPaid={() => void refresh()}
         />
       ) : null}
+
+      <ConfirmModal
+        open={cancelTarget !== null}
+        title={t("invoices.cancel")}
+        description={t("invoices.confirm_cancel")}
+        confirmLabel={t("invoices.cancel")}
+        tone="danger"
+        onConfirm={async () => {
+          if (cancelTarget) await cancel(cancelTarget.id);
+        }}
+        onClose={() => setCancelTarget(null)}
+      />
     </Page>
   );
 }

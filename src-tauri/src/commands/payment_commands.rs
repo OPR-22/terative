@@ -59,7 +59,11 @@ pub fn payment_list(
     state
         .list_payments
         .execute(query.unwrap_or_default().into())
-        .map(|list| list.iter().map(Into::into).collect())
+        .map(|list| {
+            list.iter()
+                .map(|(p, name)| PaymentDto::from_payment_enriched(p, name.clone()))
+                .collect()
+        })
         .map_err(to_ipc_err)
 }
 
@@ -72,6 +76,6 @@ pub fn payment_get(
     state
         .get_payment
         .execute(PaymentId(id))
-        .map(|p| (&p).into())
+        .map(|(p, name)| PaymentDto::from_payment_enriched(&p, name))
         .map_err(to_ipc_err)
 }

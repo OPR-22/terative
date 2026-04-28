@@ -7,7 +7,7 @@ use crate::application::ports::{
     PaymentRepository, PdfGenerator, PdfRenderInput, PdfStorage, SettingsRepository,
     TaxRepository, TemplateRepository,
 };
-use crate::application::AppError;
+use crate::application::{AppError, RepoError};
 use crate::domain::invoice::{Invoice, InvoiceId, InvoiceStatus, NewInvoice};
 use crate::domain::money::Money;
 use crate::domain::line_item::NewLineItem;
@@ -292,32 +292,45 @@ impl CancelInvoice {
 pub struct ListInvoices {
     invoices: Arc<dyn InvoiceRepository>,
     payments: Arc<dyn PaymentRepository>,
+    clients: Arc<dyn ClientRepository>,
 }
 
 impl ListInvoices {
     pub fn new(
         invoices: Arc<dyn InvoiceRepository>,
         payments: Arc<dyn PaymentRepository>,
+        clients: Arc<dyn ClientRepository>,
     ) -> Self {
-        Self { invoices, payments }
+        Self {
+            invoices,
+            payments,
+            clients,
+        }
     }
 
-    /// Returns each invoice alongside its currently allocated amount. The
-    /// allocated amount's currency matches the invoice's currency when
-    /// payments exist, or defaults to the invoice currency with zero cents.
+    /// Returns each invoice alongside its currently allocated amount and
+    /// the joined client display name. The allocated amount's currency
+    /// matches the invoice's currency when payments exist, or defaults
+    /// to the invoice currency with zero cents. `client_name` is `None`
+    /// only when the FK target was deleted out from under us — the data
+    /// model normally enforces it.
     pub fn execute(
         &self,
         query: ListInvoicesQuery,
-    ) -> Result<Page<(Invoice, Money)>, AppError> {
+    ) -> Result<Page<(Invoice, Money, Option<String>)>, AppError> {
         let page = self.invoices.list(query)?;
         let ids: Vec<InvoiceId> = page.data.iter().map(|i| i.id).collect();
         let totals = self.payments.allocated_for_invoices(&ids)?;
+        let client_ids: Vec<crate::domain::client::ClientId> =
+            page.data.iter().map(|i| i.client_id).collect();
+        let names = self.clients.names_for(&client_ids)?;
         Ok(page.map(|inv| {
             let paid = totals
                 .get(&inv.id)
                 .copied()
                 .unwrap_or_else(|| Money::new(0, inv.currency));
-            (inv, paid)
+            let client_name = names.get(&inv.client_id).cloned();
+            (inv, paid, client_name)
         }))
     }
 }
@@ -325,20 +338,204 @@ impl ListInvoices {
 pub struct GetInvoice {
     invoices: Arc<dyn InvoiceRepository>,
     payments: Arc<dyn PaymentRepository>,
+    clients: Arc<dyn ClientRepository>,
+}
+
+/// Reads the rendered PDF for a finalized/sent/cancelled invoice from disk.
+/// The path is taken from `Invoice::pdf_path` so the frontend never needs
+/// to know the storage layout (and can't read arbitrary files). Returns
+/// `NotFound` if the invoice has no PDF (still a Draft) or the file has
+/// since been moved/deleted.
+pub struct GetInvoicePdf {
+    invoices: Arc<dyn InvoiceRepository>,
+    pdf_storage: Arc<dyn PdfStorage>,
+}
+
+impl GetInvoicePdf {
+    pub fn new(
+        invoices: Arc<dyn InvoiceRepository>,
+        pdf_storage: Arc<dyn PdfStorage>,
+    ) -> Self {
+        Self {
+            invoices,
+            pdf_storage,
+        }
+    }
+
+    pub fn execute(&self, id: InvoiceId) -> Result<Vec<u8>, AppError> {
+        let invoice = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
+        let path = invoice.pdf_path.as_deref().ok_or(AppError::NotFound)?;
+        Ok(self.pdf_storage.read(path)?)
+    }
+}
+
+/// Opens the system print dialog for the invoice PDF so the user can
+/// pick a printer, page range, copies, etc. before sending the job.
+/// We deliberately do *not* shell out to `lpr` — that would silently
+/// queue a print without UI, which is bad UX when the user wants to
+/// confirm settings.
+///
+/// Platform notes:
+/// - macOS drives Preview via AppleScript (`print … with print dialog`),
+///   which brings Preview forward and shows its print panel modally.
+/// - Linux: there is no portable "show print dialog" CLI. We open the
+///   PDF in the default viewer (`xdg-open`) and the user triggers the
+///   dialog from there with Ctrl+P. Best we can do without bundling a
+///   GTK print dialog ourselves.
+/// - Windows: `Start-Process -Verb Print` invokes the file's registered
+///   print handler, which for PDFs typically opens the viewer's print
+///   dialog (Adobe / Edge / Acrobat all behave this way).
+pub struct PrintInvoice {
+    invoices: Arc<dyn InvoiceRepository>,
+}
+
+impl PrintInvoice {
+    pub fn new(invoices: Arc<dyn InvoiceRepository>) -> Self {
+        Self { invoices }
+    }
+
+    pub fn execute(&self, id: InvoiceId) -> Result<(), AppError> {
+        let invoice = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
+        let path = invoice.pdf_path.as_deref().ok_or(AppError::NotFound)?;
+
+        #[cfg(target_os = "macos")]
+        {
+            // Escape the path for an AppleScript string literal: backslash
+            // → `\\`, double quote → `\"`. POSIX paths typically need
+            // neither, but this keeps us safe if a user ever picks an
+            // output dir with a quote in its name.
+            let escaped = path.replace('\\', "\\\\").replace('"', "\\\"");
+            // `with print dialog` makes Preview show its print panel
+            // (printer picker, copies, page range) instead of sending
+            // straight to the default queue.
+            let script = format!(
+                "tell application \"Preview\"\n  activate\n  print POSIX file \"{escaped}\" with print dialog\nend tell",
+            );
+            let output = std::process::Command::new("osascript")
+                .args(["-e", &script])
+                .output()
+                .map_err(|e| RepoError::Storage(format!("spawn osascript: {e}")))?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(RepoError::Storage(format!(
+                    "osascript exited with {} — stderr: {}",
+                    output.status,
+                    stderr.trim()
+                ))
+                .into());
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // No portable Linux "show print dialog" CLI. Open in default
+            // viewer; the user triggers print with Ctrl+P.
+            std::process::Command::new("xdg-open")
+                .arg(path)
+                .spawn()
+                .map_err(|e| RepoError::Storage(format!("spawn xdg-open: {e}")))?;
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            // `Start-Process -Verb Print` invokes the print verb registered
+            // for `.pdf`, which on every common PDF viewer (Adobe, Edge,
+            // Acrobat) shows its print dialog.
+            let escaped = path.replace('\'', "''");
+            let cmd = format!("Start-Process -FilePath '{}' -Verb Print", escaped);
+            let output = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-Command", &cmd])
+                .output()
+                .map_err(|e| RepoError::Storage(format!("spawn powershell: {e}")))?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(RepoError::Storage(format!(
+                    "powershell exited with {} — stderr: {}",
+                    output.status,
+                    stderr.trim()
+                ))
+                .into());
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Opens the invoice PDF in the OS default application and brings that
+/// app to the foreground. We shell out to the platform-native opener
+/// (`open` on macOS, `xdg-open` on Linux, `start` via cmd on Windows)
+/// rather than going through `tauri-plugin-opener`, because the plugin's
+/// path on macOS sometimes leaves the target window behind our webview.
+/// Spawning the native command directly preserves the OS focus rules.
+pub struct OpenInvoiceExternally {
+    invoices: Arc<dyn InvoiceRepository>,
+}
+
+impl OpenInvoiceExternally {
+    pub fn new(invoices: Arc<dyn InvoiceRepository>) -> Self {
+        Self { invoices }
+    }
+
+    pub fn execute(&self, id: InvoiceId) -> Result<(), AppError> {
+        let invoice = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
+        let path = invoice.pdf_path.as_deref().ok_or(AppError::NotFound)?;
+
+        // We deliberately use `spawn()` (not `output()`) and don't wait
+        // on the child. Blocking the IPC thread until the opener exits
+        // keeps the webview "active" from the OS's perspective, which
+        // in turn keeps focus on us instead of the launched app.
+        // Detaching lets LaunchServices hand focus to the target.
+        #[cfg(target_os = "macos")]
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| RepoError::Storage(format!("spawn open: {e}")))?;
+
+        #[cfg(target_os = "linux")]
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| RepoError::Storage(format!("spawn xdg-open: {e}")))?;
+
+        #[cfg(target_os = "windows")]
+        {
+            // `cmd /C start "" <path>` is the canonical way to open a
+            // file in its default app on Windows. The empty `""` is the
+            // title argument that `start` consumes when the path is
+            // quoted.
+            std::process::Command::new("cmd")
+                .args(["/C", "start", "", path])
+                .spawn()
+                .map_err(|e| RepoError::Storage(format!("spawn cmd: {e}")))?;
+        }
+
+        Ok(())
+    }
 }
 
 impl GetInvoice {
     pub fn new(
         invoices: Arc<dyn InvoiceRepository>,
         payments: Arc<dyn PaymentRepository>,
+        clients: Arc<dyn ClientRepository>,
     ) -> Self {
-        Self { invoices, payments }
+        Self {
+            invoices,
+            payments,
+            clients,
+        }
     }
 
-    pub fn execute(&self, id: InvoiceId) -> Result<(Invoice, Money), AppError> {
+    pub fn execute(
+        &self,
+        id: InvoiceId,
+    ) -> Result<(Invoice, Money, Option<String>), AppError> {
         let invoice = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
         let paid = self.payments.allocated_for_invoice(id)?;
-        Ok((invoice, paid))
+        let names = self.clients.names_for(&[invoice.client_id])?;
+        let client_name = names.get(&invoice.client_id).cloned();
+        Ok((invoice, paid, client_name))
     }
 }
 
@@ -800,14 +997,15 @@ mod tests {
             inv.finalize(crate::domain::invoice::InvoiceNumber(1), chrono::Utc::now())
                 .unwrap();
         }
-        let drafts = ListInvoices::new(inv_repo.clone(), stub_payments())
-            .execute(ListInvoicesQuery {
-                status: Some(InvoiceStatus::Draft),
-                ..Default::default()
-            })
-            .unwrap();
+        let drafts =
+            ListInvoices::new(inv_repo.clone(), stub_payments(), stub_clients())
+                .execute(ListInvoicesQuery {
+                    status: Some(InvoiceStatus::Draft),
+                    ..Default::default()
+                })
+                .unwrap();
         assert_eq!(drafts.data.len(), 1);
-        let finalized = ListInvoices::new(inv_repo, stub_payments())
+        let finalized = ListInvoices::new(inv_repo, stub_payments(), stub_clients())
             .execute(ListInvoicesQuery {
                 status: Some(InvoiceStatus::Finalized),
                 ..Default::default()
@@ -819,7 +1017,7 @@ mod tests {
     #[test]
     fn get_invoice_returns_not_found() {
         let (inv_repo, _, _) = setup();
-        let err = GetInvoice::new(inv_repo, stub_payments())
+        let err = GetInvoice::new(inv_repo, stub_payments(), stub_clients())
             .execute(InvoiceId::new())
             .unwrap_err();
         assert!(matches!(err, AppError::NotFound));
@@ -865,11 +1063,25 @@ mod tests {
         ) -> Result<Page<Client>, RepoError> {
             Ok(Page::new(vec![], 0, &PaginationParams::default()))
         }
+        fn names_for(
+            &self,
+            ids: &[ClientId],
+        ) -> Result<HashMap<ClientId, String>, RepoError> {
+            let g = self.0.lock();
+            Ok(ids
+                .iter()
+                .filter_map(|id| g.get(id).map(|c| (*id, c.name.clone())))
+                .collect())
+        }
         fn distinct_attribute_values(
             &self,
         ) -> Result<crate::application::ports::ClientAttributeValues, RepoError> {
             Ok(Default::default())
         }
+    }
+
+    fn stub_clients() -> Arc<dyn ClientRepository> {
+        Arc::new(FakeClientRepo(Mutex::new(HashMap::new())))
     }
 
     struct FakeTemplateRepo(Mutex<HashMap<TemplateId, InvoiceTemplate>>);
@@ -994,6 +1206,18 @@ mod tests {
                 .lock()
                 .push((file_name.to_string(), bytes.to_vec()));
             Ok(format!("/tmp/{file_name}"))
+        }
+        fn read(&self, path: &str) -> Result<Vec<u8>, RepoError> {
+            // Look up the most recent store call that produced this path.
+            // The mock returns "/tmp/{file_name}", so reverse that.
+            let file_name = path.strip_prefix("/tmp/").unwrap_or(path);
+            self.calls
+                .lock()
+                .iter()
+                .rev()
+                .find(|(name, _)| name == file_name)
+                .map(|(_, bytes)| bytes.clone())
+                .ok_or(RepoError::NotFound)
         }
     }
 

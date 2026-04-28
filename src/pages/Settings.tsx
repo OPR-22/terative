@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "../stores/toastStore";
 
 import { open } from "@tauri-apps/plugin-dialog";
 
 import { Page } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Button } from "../components/common/Button";
+import { ConfirmModal } from "../components/ui/ConfirmModal";
 import { ImageUploader } from "../components/common/ImageUploader";
 import { Input } from "../components/common/Input";
 import { Money } from "../lib/money";
@@ -30,6 +33,7 @@ const languageToI18n = (lang: LanguageDto): string =>
 
 export function Settings() {
   const { t, i18n } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const {
     snapshot,
     load,
@@ -49,14 +53,14 @@ export function Settings() {
 
   if (loading && !snapshot) {
     return (
-      <Page crumbs={["Cabinet Lemaire", t("settings.title")]} title={t("settings.title")}>
+      <Page crumbs={[workspaceName, t("settings.title")]} title={t("settings.title")}>
         <p className="text-[13px] text-ink-3">{t("common.loading")}</p>
       </Page>
     );
   }
   if (!snapshot) {
     return (
-      <Page crumbs={["Cabinet Lemaire", t("settings.title")]} title={t("settings.title")}>
+      <Page crumbs={[workspaceName, t("settings.title")]} title={t("settings.title")}>
         {error ? <p className="text-[13px] text-danger">{error}</p> : null}
       </Page>
     );
@@ -64,9 +68,9 @@ export function Settings() {
 
   return (
     <Page
-      crumbs={["Cabinet Lemaire", t("settings.title")]}
+      crumbs={[workspaceName, t("settings.title")]}
       title={t("settings.title")}
-      subtitle="Profil, préférences et sauvegardes du cabinet"
+      subtitle={t("settings.subtitle")}
     >
       <div className="max-w-3xl space-y-10">
       <SellerSection seller={snapshot.seller} onSave={saveSeller} />
@@ -103,6 +107,8 @@ function DataSection() {
   >({ kind: "idle" });
   const [busy, setBusy] = useState<"backup" | "restore" | "delete" | null>(null);
   const [backups, setBackups] = useState<BackupDto[]>([]);
+  const [restoreTarget, setRestoreTarget] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const flash = (kind: "ok" | "err", message: string) => {
     setStatus({ kind, message });
@@ -136,8 +142,11 @@ function DataSection() {
     }
   };
 
-  const runRestoreFromPath = async (source: string) => {
-    if (!confirm(t("settings.data_restore_warning"))) return;
+  const requestRestore = (source: string) => {
+    setRestoreTarget(source);
+  };
+
+  const performRestore = async (source: string) => {
     setBusy("restore");
     try {
       await ipc.dataRestore(source);
@@ -145,6 +154,7 @@ function DataSection() {
     } catch (e) {
       flash("err", String(e));
       setBusy(null);
+      throw e;
     }
   };
 
@@ -156,11 +166,14 @@ function DataSection() {
       filters: [{ name: "SQLite", extensions: ["sqlite"] }],
     });
     if (!source || Array.isArray(source)) return;
-    await runRestoreFromPath(source);
+    requestRestore(source);
   };
 
-  const runDelete = async (path: string) => {
-    if (!confirm(t("settings.backup_delete_confirm"))) return;
+  const requestDelete = (path: string) => {
+    setDeleteTarget(path);
+  };
+
+  const performDelete = async (path: string) => {
     setBusy("delete");
     try {
       await ipc.dataDeleteBackup(path);
@@ -168,6 +181,7 @@ function DataSection() {
       await loadBackups();
     } catch (e) {
       flash("err", String(e));
+      throw e;
     } finally {
       setBusy(null);
     }
@@ -201,8 +215,34 @@ function DataSection() {
       <BackupHistory
         backups={backups}
         busy={busy !== null}
-        onRestore={runRestoreFromPath}
-        onDelete={runDelete}
+        onRestore={requestRestore}
+        onDelete={requestDelete}
+      />
+
+      <ConfirmModal
+        open={restoreTarget !== null}
+        title={t("settings.data_restore")}
+        description={t("settings.data_restore_warning")}
+        confirmLabel={t("settings.data_restore")}
+        tone="danger"
+        requireText={t("settings.confirm_restore_phrase")}
+        onConfirm={async () => {
+          if (restoreTarget) await performRestore(restoreTarget);
+        }}
+        onClose={() => setRestoreTarget(null)}
+      />
+
+      <ConfirmModal
+        open={deleteTarget !== null}
+        title={t("common.delete")}
+        description={t("settings.backup_delete_confirm")}
+        confirmLabel={t("common.delete")}
+        tone="danger"
+        requireText={t("settings.confirm_delete_phrase")}
+        onConfirm={async () => {
+          if (deleteTarget) await performDelete(deleteTarget);
+        }}
+        onClose={() => setDeleteTarget(null)}
       />
     </section>
   );
@@ -417,7 +457,7 @@ function CurrencySection({ currency, onSave }: CurrencyProps) {
             setSaved(true);
             setTimeout(() => setSaved(false), 1500);
           } catch (e) {
-            setErr(String(e));
+            toast.error(String(e));
           }
         }}
       >
@@ -586,7 +626,7 @@ function EmailSection({
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } catch (e) {
-      setErr(String(e));
+      toast.error(String(e));
     }
   };
 
@@ -598,7 +638,7 @@ function EmailSection({
       setPwSaved(true);
       setTimeout(() => setPwSaved(false), 1500);
     } catch (e) {
-      setErr(String(e));
+      toast.error(String(e));
     }
   };
 
@@ -611,7 +651,7 @@ function EmailSection({
       setTimeout(() => setTestState("idle"), 2500);
     } catch (e) {
       setTestState("err");
-      setErr(String(e));
+      toast.error(String(e));
     }
   };
 
@@ -738,7 +778,7 @@ function NotebookSectionsSection() {
       await create(trimmed);
       setNewName("");
     } catch (e) {
-      setLocalErr(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -762,7 +802,7 @@ function NotebookSectionsSection() {
       await rename(editingId, trimmed);
       setEditingId(null);
     } catch (e) {
-      setLocalErr(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -788,7 +828,7 @@ function NotebookSectionsSection() {
     try {
       await remove(id);
     } catch (e) {
-      setLocalErr(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -804,7 +844,7 @@ function NotebookSectionsSection() {
     try {
       await reorder(ordered);
     } catch (e) {
-      setLocalErr(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -933,7 +973,7 @@ function BookmarksSection() {
       setNewLabel("");
       setNewUrl("");
     } catch (e) {
-      setLocalErr(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -959,7 +999,7 @@ function BookmarksSection() {
       await update({ id: editingId, label, url });
       setEditingId(null);
     } catch (e) {
-      setLocalErr(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -972,7 +1012,7 @@ function BookmarksSection() {
     try {
       await remove(id);
     } catch (e) {
-      setLocalErr(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -988,7 +1028,7 @@ function BookmarksSection() {
     try {
       await reorder(ordered);
     } catch (e) {
-      setLocalErr(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }

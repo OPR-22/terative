@@ -56,9 +56,28 @@ export const commands = {
 	status?: InvoiceStatusDto | null,
 	client_id?: string | null,
 	search?: string | null,
+	payment_filter?: InvoicePaymentFilterDto | null,
 	pagination?: PaginationParamsDto | null,
 } | null) => typedError<PageDto<InvoiceDto>, string>(__TAURI_INVOKE("invoice_list", { query })),
 	invoiceGet: (id: string) => typedError<InvoiceDto, string>(__TAURI_INVOKE("invoice_get", { id })),
+	/**
+	 *  Returns the rendered PDF bytes for an invoice that has already been
+	 *  finalized (or sent / cancelled). Errors with `NotFound` for drafts or
+	 *  when the file is missing — the UI renders an empty state in that case.
+	 */
+	invoicePdfBytes: (id: string) => typedError<number[], string>(__TAURI_INVOKE("invoice_pdf_bytes", { id })),
+	/**
+	 *  Sends the invoice's rendered PDF to the OS default printer. No print
+	 *  dialog — users pick their default printer at the OS level.
+	 */
+	invoicePrint: (id: string) => typedError<null, string>(__TAURI_INVOKE("invoice_print", { id })),
+	/**
+	 *  Opens the invoice PDF in the OS default application. Unlike
+	 *  `tauri-plugin-opener`'s `openPath`, this routes through the native
+	 *  `open` / `xdg-open` / `cmd start` commands, which reliably brings the
+	 *  target app to the foreground on macOS.
+	 */
+	invoiceOpenExternal: (id: string) => typedError<null, string>(__TAURI_INVOKE("invoice_open_external", { id })),
 	settingsUpdateEmailConfig: (config: EmailConfigDto) => typedError<EmailConfigDto, string>(__TAURI_INVOKE("settings_update_email_config", { config })),
 	settingsUpdateEmailPassword: (password: string) => typedError<null, string>(__TAURI_INVOKE("settings_update_email_password", { password })),
 	emailTestConnection: () => typedError<null, string>(__TAURI_INVOKE("email_test_connection")),
@@ -73,6 +92,7 @@ export const commands = {
 	paymentDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("payment_delete", { id })),
 	paymentList: (query: {
 	client_id?: string | null,
+	invoice_id?: string | null,
 	search?: string | null,
 } | null) => typedError<PaymentDto[], string>(__TAURI_INVOKE("payment_list", { query })),
 	paymentGet: (id: string) => typedError<PaymentDto, string>(__TAURI_INVOKE("payment_get", { id })),
@@ -330,6 +350,7 @@ export type InvoiceDto = {
 	id: string,
 	number: number | null,
 	client_id: string,
+	client_name: string | null,
 	template_id: string | null,
 	date: string,
 	due_date: string | null,
@@ -341,11 +362,6 @@ export type InvoiceDto = {
 	amount_paid: MoneyDto,
 	currency: string,
 	status: InvoiceStatusDto,
-	/**
-	 *  Populated by the list/get read paths, where the repo can afford to
-	 *  fetch the allocated total alongside the invoice. `None` on write paths
-	 *  (create/update/finalize/send/cancel) where callers don't need it.
-	 */
 	payment_status: DerivedPaymentStatusDto | null,
 	pdf_path: string | null,
 	notes: string | null,
@@ -353,6 +369,8 @@ export type InvoiceDto = {
 	created_at: string,
 	updated_at: string,
 };
+
+export type InvoicePaymentFilterDto = "Paid" | "Unpaid" | "Late";
 
 export type InvoicePaymentRowDto = {
 	invoice_id: string,
@@ -409,11 +427,13 @@ export type ListInvoicesQueryDto = {
 	status?: InvoiceStatusDto | null,
 	client_id?: string | null,
 	search?: string | null,
+	payment_filter?: InvoicePaymentFilterDto | null,
 	pagination?: PaginationParamsDto | null,
 };
 
 export type ListPaymentsQueryDto = {
 	client_id?: string | null,
+	invoice_id?: string | null,
 	search?: string | null,
 };
 
@@ -558,6 +578,7 @@ export type PaymentAllocationDto = {
 export type PaymentDto = {
 	id: string,
 	client_id: string,
+	client_name: string | null,
 	date: string,
 	amount: MoneyDto,
 	method: PaymentMethodDto,

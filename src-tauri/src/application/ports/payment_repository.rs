@@ -26,5 +26,8 @@ pub trait PaymentRepository: Send + Sync {
 #[derive(Debug, Clone, Default)]
 pub struct ListPaymentsQuery {
     pub client_id: Option<ClientId>,
+    /// Filter to payments that have at least one allocation pointing at
+    /// this invoice. Used by the invoice viewer's "Payments" section.
+    pub invoice_id: Option<InvoiceId>,
     pub search: Option<String>,
 }

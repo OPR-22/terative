@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "../stores/toastStore";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { Page } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHead } from "../components/ui/Card";
 import { Field, Input } from "../components/ui/Input";
@@ -14,6 +16,7 @@ import type { CatalogItemKindDto, MoneyDto } from "../ipc";
 
 export function CatalogEditor() {
   const { t } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
   const editing = Boolean(id);
@@ -75,7 +78,7 @@ export function CatalogEditor() {
       }
       navigate("/catalog");
     } catch (e) {
-      setErr(String(e));
+      toast.error(String(e));
     } finally {
       setSubmitting(false);
     }
@@ -84,7 +87,7 @@ export function CatalogEditor() {
   return (
     <Page
       crumbs={[
-        "Cabinet Lemaire",
+        workspaceName,
         t("catalog.title"),
         editing ? t("catalog.edit") : t("catalog.new"),
       ]}

@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use chrono::{NaiveDate, Utc};
 
-use crate::application::ports::{InvoiceRepository, ListPaymentsQuery, PaymentRepository};
+use crate::application::ports::{
+    ClientRepository, InvoiceRepository, ListPaymentsQuery, PaymentRepository,
+};
 use crate::application::AppError;
 use crate::domain::invoice::InvoiceId;
 use crate::domain::money::Money;
@@ -150,27 +152,56 @@ impl DeletePayment {
 
 pub struct ListPayments {
     repo: Arc<dyn PaymentRepository>,
+    clients: Arc<dyn ClientRepository>,
 }
 
 impl ListPayments {
-    pub fn new(repo: Arc<dyn PaymentRepository>) -> Self {
-        Self { repo }
+    pub fn new(
+        repo: Arc<dyn PaymentRepository>,
+        clients: Arc<dyn ClientRepository>,
+    ) -> Self {
+        Self { repo, clients }
     }
-    pub fn execute(&self, query: ListPaymentsQuery) -> Result<Vec<Payment>, AppError> {
-        Ok(self.repo.list(query)?)
+
+    /// Returns each payment paired with its joined client display name.
+    /// `None` only when the FK target was deleted (defensive — the schema
+    /// normally enforces it).
+    pub fn execute(
+        &self,
+        query: ListPaymentsQuery,
+    ) -> Result<Vec<(Payment, Option<String>)>, AppError> {
+        let payments = self.repo.list(query)?;
+        let ids: Vec<crate::domain::client::ClientId> =
+            payments.iter().map(|p| p.client_id).collect();
+        let names = self.clients.names_for(&ids)?;
+        Ok(payments
+            .into_iter()
+            .map(|p| {
+                let name = names.get(&p.client_id).cloned();
+                (p, name)
+            })
+            .collect())
     }
 }
 
 pub struct GetPayment {
     repo: Arc<dyn PaymentRepository>,
+    clients: Arc<dyn ClientRepository>,
 }
 
 impl GetPayment {
-    pub fn new(repo: Arc<dyn PaymentRepository>) -> Self {
-        Self { repo }
+    pub fn new(
+        repo: Arc<dyn PaymentRepository>,
+        clients: Arc<dyn ClientRepository>,
+    ) -> Self {
+        Self { repo, clients }
     }
-    pub fn execute(&self, id: PaymentId) -> Result<Payment, AppError> {
-        self.repo.get(id)?.ok_or(AppError::NotFound)
+
+    pub fn execute(&self, id: PaymentId) -> Result<(Payment, Option<String>), AppError> {
+        let payment = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        let names = self.clients.names_for(&[payment.client_id])?;
+        let name = names.get(&payment.client_id).cloned();
+        Ok((payment, name))
     }
 }
 
@@ -250,6 +281,43 @@ mod tests {
                 }
             }
             Ok(out)
+        }
+    }
+
+    /// Minimal client repo for tests — only `names_for` is exercised by
+    /// the read paths under test, so the rest are no-ops.
+    #[derive(Default)]
+    struct StubClientRepo;
+
+    impl ClientRepository for StubClientRepo {
+        fn insert(&self, _: &crate::domain::client::Client) -> Result<(), RepoError> {
+            Ok(())
+        }
+        fn update(&self, _: &crate::domain::client::Client) -> Result<(), RepoError> {
+            Ok(())
+        }
+        fn get(
+            &self,
+            _: ClientId,
+        ) -> Result<Option<crate::domain::client::Client>, RepoError> {
+            Ok(None)
+        }
+        fn list(
+            &self,
+            _: crate::application::ports::ListClientsQuery,
+        ) -> Result<Page<crate::domain::client::Client>, RepoError> {
+            Ok(Page::new(vec![], 0, &PaginationParams::default()))
+        }
+        fn names_for(
+            &self,
+            _: &[ClientId],
+        ) -> Result<HashMap<ClientId, String>, RepoError> {
+            Ok(HashMap::new())
+        }
+        fn distinct_attribute_values(
+            &self,
+        ) -> Result<crate::application::ports::ClientAttributeValues, RepoError> {
+            Ok(Default::default())
         }
     }
 
@@ -423,9 +491,10 @@ mod tests {
         record.execute(a.clone()).unwrap();
         let b = new_input(500, vec![]);
         record.execute(b).unwrap();
-        let filtered = ListPayments::new(payments)
+        let filtered = ListPayments::new(payments, Arc::new(StubClientRepo))
             .execute(ListPaymentsQuery {
                 client_id: Some(client_a),
+                invoice_id: None,
                 search: None,
             })
             .unwrap();

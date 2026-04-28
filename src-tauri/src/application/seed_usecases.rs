@@ -271,8 +271,8 @@ impl SeedDatabase {
     ) -> Result<Vec<TaxId>, AppError> {
         // Reasonable picks. Indexing avoids dup names if n>list len.
         let candidates = [
-            ("TVH 21%", dec!(21.0)),
-            ("TVA 6%", dec!(6.0)),
+            ("Tax 1 21%", dec!(21.0)),
+            ("Tax 2 6%", dec!(6.0)),
         ];
         let mut ids = Vec::with_capacity(n as usize);
         for i in 0..n {

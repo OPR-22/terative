@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "../stores/toastStore";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Edit, Plus, Trash2 } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -51,11 +53,11 @@ function computeAgeLabel(
 
 export function ClientDetail() {
   const { t } = useTranslation();
+  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [tab, setTab] = useState<Tab>("info");
   const [client, setClient] = useState<ClientDto | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -66,7 +68,7 @@ export function ClientDetail() {
         if (!cancelled) setClient(c);
       })
       .catch((e) => {
-        if (!cancelled) setError(String(e));
+        if (!cancelled) toast.error(String(e));
       });
     return () => {
       cancelled = true;
@@ -74,16 +76,9 @@ export function ClientDetail() {
   }, [id]);
 
   if (!id) return null;
-  if (error) {
-    return (
-      <Page crumbs={["Cabinet Lemaire", t("clients.title")]} title="—">
-        <p className="text-[13px] text-danger">{error}</p>
-      </Page>
-    );
-  }
   if (!client) {
     return (
-      <Page crumbs={["Cabinet Lemaire", t("clients.title")]} title="—">
+      <Page crumbs={[workspaceName, t("clients.title")]} title="—">
         <EmptyState description={t("common.loading")} />
       </Page>
     );
@@ -98,7 +93,7 @@ export function ClientDetail() {
 
   return (
     <Page
-      crumbs={["Cabinet Lemaire", t("clients.title"), client.name]}
+      crumbs={[workspaceName, t("clients.title"), client.name]}
       title={
         <span className="inline-flex items-center gap-3">
           <Avatar name={client.name} size={32} />
@@ -229,7 +224,7 @@ function InfoTab({
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } catch (e) {
-      setErr(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -242,7 +237,7 @@ function InfoTab({
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card>
           <CardHead
-            title="Identité"
+            title={t("clients.identity")}
             actions={
               saved ? (
                 <span className="inline-flex items-center gap-1.5 text-[12px] text-ok-ink">
@@ -287,7 +282,7 @@ function InfoTab({
         </Card>
 
         <Card>
-          <CardHead title="Démographie" />
+          <CardHead title={t("clients.demographics")} />
           <CardBody>
             <div className="grid grid-cols-2 gap-3.5">
               <Field label={t("clients.date_of_birth")}>
@@ -387,7 +382,7 @@ function NotebookTab({ clientId }: { clientId: string }) {
         setContents(map);
         setDirty(false);
       })
-      .catch((e) => setErr(String(e)));
+      .catch((e) => toast.error(String(e)));
   };
 
   useEffect(() => {
@@ -416,7 +411,7 @@ function NotebookTab({ clientId }: { clientId: string }) {
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } catch (e) {
-      setErr(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }
@@ -489,7 +484,7 @@ function JournalTab({ clientId }: { clientId: string }) {
     ipc
       .journalListForClient(clientId)
       .then(setEntries)
-      .catch((e) => setErr(String(e)));
+      .catch((e) => toast.error(String(e)));
   };
 
   useEffect(() => {
@@ -503,7 +498,7 @@ function JournalTab({ clientId }: { clientId: string }) {
       await ipc.journalEntryDelete(id);
       refresh();
     } catch (e) {
-      setErr(String(e));
+      toast.error(String(e));
     }
   };
 
@@ -626,7 +621,7 @@ function JournalEntryModal({
       }
       onClose();
     } catch (e) {
-      setErr(String(e));
+      toast.error(String(e));
     } finally {
       setBusy(false);
     }

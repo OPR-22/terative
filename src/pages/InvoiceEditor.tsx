@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "../stores/toastStore";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   Check,
-  Download,
   GripVertical,
   Plus,
   Send,
@@ -12,14 +12,22 @@ import {
 } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
+import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHead } from "../components/ui/Card";
 import { Checkbox } from "../components/ui/Checkbox";
 import { Field, Input, Select, Textarea } from "../components/ui/Input";
 import { StatusDot } from "../components/ui/StatusDot";
+import { Tabs, type TabOption } from "../components/ui/Tabs";
+import { EmptyState } from "../components/ui/EmptyState";
 import { MoneyInput } from "../components/common/MoneyInput";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { ExternalLink, Folder, Printer } from "lucide-react";
+
+import { ConfirmModal } from "../components/ui/ConfirmModal";
 import { MarkPaidModal } from "../components/invoice/MarkPaidModal";
+import { PdfPreview } from "../components/template/PdfPreview";
 import { useMoneyFormat } from "../lib/money";
 import { useInvoiceStore } from "../stores/invoiceStore";
 import { useClientStore } from "../stores/clientStore";
@@ -27,11 +35,14 @@ import { useCatalogStore } from "../stores/catalogStore";
 import { useTaxStore } from "../stores/taxStore";
 import { useTemplateStore } from "../stores/templateStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import type {
-  InvoiceDto,
-  NewInvoiceDto,
-  NewLineItemDto,
-  UpdateDraftInvoiceDto,
+import {
+  ipc,
+  type InvoiceDto,
+  type NewInvoiceDto,
+  type NewLineItemDto,
+  type PaymentDto,
+  type PaymentMethodDto,
+  type UpdateDraftInvoiceDto,
 } from "../ipc";
 
 interface LineRow {
@@ -51,6 +62,24 @@ interface FormState {
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+function paymentMethodLabel(
+  method: PaymentMethodDto,
+  t: (k: string) => string,
+): string {
+  switch (method.kind) {
+    case "BankTransfer":
+      return t("payments.method_banktransfer");
+    case "Cash":
+      return t("payments.method_cash");
+    case "Check":
+      return t("payments.method_check");
+    case "Card":
+      return t("payments.method_card");
+    case "Other":
+      return method.detail || t("payments.method_other");
+  }
+}
 
 function computeDueDate(issueDate: string, days: string): string | null {
   if (days === "") return null;
@@ -103,6 +132,7 @@ export function InvoiceEditor() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
+  const workspaceName = useWorkspaceName();
 
   const {
     get: getInvoice,
@@ -123,6 +153,13 @@ export function InvoiceEditor() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [markingPaid, setMarkingPaid] = useState(false);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [pdfBytes, setPdfBytes] = useState<Uint8Array | null>(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [invoicePayments, setInvoicePayments] = useState<PaymentDto[]>([]);
+  type ViewerTab = "summary" | "preview" | "payments" | "email";
+  const [tab, setTab] = useState<ViewerTab>("summary");
 
   // Load the invoice when an id is present.
   useEffect(() => {
@@ -139,12 +176,65 @@ export function InvoiceEditor() {
         setForm(initialForm(inv));
       })
       .catch((e) => {
-        if (!cancelled) setError(String(e));
+        if (!cancelled) toast.error(String(e));
       });
     return () => {
       cancelled = true;
     };
   }, [id, getInvoice]);
+
+  // Pull the list of payments allocated to this invoice once the
+  // invoice loads. Drafts can't have payments, so skip the round-trip.
+  // Refetch when the invoice id changes (navigating between invoices).
+  useEffect(() => {
+    if (!invoice || invoice.status === "Draft") {
+      setInvoicePayments([]);
+      return;
+    }
+    let cancelled = false;
+    ipc
+      .paymentList({ invoice_id: invoice.id })
+      .then((rows) => {
+        if (!cancelled) setInvoicePayments(rows);
+      })
+      .catch(() => {
+        // Non-critical — the section just shows empty if the fetch fails.
+        if (!cancelled) setInvoicePayments([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [invoice?.id, invoice?.status]);
+
+  // Load the rendered PDF whenever the invoice gains a `pdf_path`. This
+  // covers both opening an already-finalized invoice and a fresh finalize
+  // that mutates the invoice in place (we re-fetch the bytes when the
+  // path changes). Drafts have no PDF — skip the call.
+  useEffect(() => {
+    if (!invoice || !invoice.pdf_path) {
+      setPdfBytes(null);
+      setPdfError(null);
+      return;
+    }
+    let cancelled = false;
+    setPdfLoading(true);
+    setPdfError(null);
+    ipc
+      .invoicePdfBytes(invoice.id)
+      .then((bytes) => {
+        if (cancelled) return;
+        setPdfBytes(new Uint8Array(bytes));
+      })
+      .catch((e) => {
+        if (!cancelled) toast.error(String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setPdfLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [invoice?.id, invoice?.pdf_path]);
 
   useEffect(() => {
     if (clients.length === 0) void refreshClients();
@@ -189,7 +279,8 @@ export function InvoiceEditor() {
   const appCurrency = snapshot?.currency;
   const { formatMinor } = useMoneyFormat();
   const readOnly = invoice !== null && invoice.status !== "Draft";
-  const selectedClient = clients.find((c) => c.id === form.client_id);
+  const selectedClientName =
+    invoice?.client_name ?? clients.find((c) => c.id === form.client_id)?.name ?? null;
 
   const subtotalCents = useMemo(
     () =>
@@ -296,7 +387,7 @@ export function InvoiceEditor() {
       await persistDraft();
       goBack();
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setSubmitting(false);
     }
@@ -310,7 +401,7 @@ export function InvoiceEditor() {
       await finalize(newId);
       goBack();
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setSubmitting(false);
     }
@@ -318,13 +409,13 @@ export function InvoiceEditor() {
 
   const cancelInvoice = async () => {
     if (!invoice) return;
-    if (!confirm(t("invoices.confirm_cancel"))) return;
     setSubmitting(true);
     try {
       await cancel(invoice.id);
       goBack();
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
+      throw e;
     } finally {
       setSubmitting(false);
     }
@@ -338,7 +429,7 @@ export function InvoiceEditor() {
       await send(invoice.id);
       goBack();
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e));
     } finally {
       setSubmitting(false);
     }
@@ -357,23 +448,25 @@ export function InvoiceEditor() {
 
   const subtitleNode = invoice ? (
     <span className="inline-flex items-center gap-2">
-      Émise le {invoice.date}
-      {invoice.due_date ? ` · Échéance ${invoice.due_date}` : null}
+      {t("invoices.issued_on", { date: invoice.date })}
+      {invoice.due_date
+        ? ` · ${t("invoices.due_on", { date: invoice.due_date })}`
+        : null}
       <Badge dot kind={invoice.status === "Draft" ? "draft" : invoice.status === "Cancelled" ? "cancel" : invoice.status === "Sent" ? "sent" : "final"}>
         {t(`invoices.status_${invoice.status.toLowerCase()}`)}
       </Badge>
     </span>
   ) : (
-    "Nouvelle facture · brouillon"
+    t("invoices.draft_subtitle")
   );
 
   return (
     <Page
       crumbs={[
-        "Cabinet Lemaire",
+        workspaceName,
         t("invoices.title"),
         invoice
-          ? `#${invoice.number ?? "—"}${selectedClient ? ` — ${selectedClient.name}` : ""}`
+          ? `#${invoice.number ?? "—"}${selectedClientName ? ` — ${selectedClientName}` : ""}`
           : t("invoices.new"),
       ]}
       title={titleNode}
@@ -417,14 +510,13 @@ export function InvoiceEditor() {
               {t("invoices.mark_paid")}
             </Button>
           ) : null}
-          {invoice ? (
-            <Button leadingIcon={<Download size={13} strokeWidth={1.5} />}>
-              PDF
-            </Button>
-          ) : null}
           {invoice &&
           (invoice.status === "Finalized" || invoice.status === "Sent") ? (
-            <Button variant="danger" onClick={cancelInvoice} disabled={submitting}>
+            <Button
+              variant="danger"
+              onClick={() => setConfirmingCancel(true)}
+              disabled={submitting}
+            >
               {t("invoices.cancel")}
             </Button>
           ) : null}
@@ -433,6 +525,31 @@ export function InvoiceEditor() {
     >
       {error ? <p className="mb-3 text-[13px] text-danger">{error}</p> : null}
 
+      <Tabs<ViewerTab>
+        value={tab}
+        onChange={setTab}
+        className="mb-5"
+        options={
+          [
+            { id: "summary", label: t("invoices.tab_summary") },
+            { id: "preview", label: t("invoices.tab_preview") },
+            {
+              id: "payments",
+              label: t("invoices.tab_payments"),
+              count: invoice && invoice.status !== "Draft"
+                ? invoicePayments.length
+                : null,
+            },
+            {
+              id: "email",
+              label: t("invoices.tab_email"),
+              count: invoice ? invoice.email_sends.length : null,
+            },
+          ] as TabOption<ViewerTab>[]
+        }
+      />
+
+      {tab === "summary" ? (
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_380px]">
         <Card>
           <CardHead
@@ -441,7 +558,7 @@ export function InvoiceEditor() {
               invoice ? (
                 <span className="inline-flex items-center gap-1.5 text-[12px] text-ink-3">
                   <StatusDot status="ok" />
-                  Enregistré
+                  {t("invoices.saved")}
                 </span>
               ) : null
             }
@@ -640,7 +757,32 @@ export function InvoiceEditor() {
 
         <div className="flex flex-col gap-3.5">
           <Card>
-            <CardHead title="Totaux" />
+            <CardHead title={t("invoices.section_taxes")} />
+            <CardBody>
+              {taxes.length === 0 ? (
+                <p className="text-[12px] text-ink-4">{t("invoices.no_taxes")}</p>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {taxes.map((tax) => (
+                    <Checkbox
+                      key={tax.id}
+                      checked={form.tax_ids.includes(tax.id)}
+                      disabled={readOnly}
+                      onChange={() => toggleTax(tax.id)}
+                    >
+                      <span className="flex-1">{tax.name}</span>
+                      <span className="ml-auto font-mono tabular text-ink-3 text-[12px]">
+                        {tax.percentage}&nbsp;%
+                      </span>
+                    </Checkbox>
+                  ))}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHead title={t("invoices.totals")} />
             <CardBody>
               <div className="flex justify-between py-1.5 text-[13px] text-ink-3">
                 <span>{t("invoices.subtotal")}</span>
@@ -667,64 +809,184 @@ export function InvoiceEditor() {
             </CardBody>
           </Card>
 
-          <Card>
-            <CardHead title={t("invoices.section_taxes")} />
-            <CardBody>
-              {taxes.length === 0 ? (
-                <p className="text-[12px] text-ink-4">{t("invoices.no_taxes")}</p>
-              ) : (
-                <div className="flex flex-col gap-1.5">
-                  {taxes.map((tax) => (
-                    <Checkbox
-                      key={tax.id}
-                      checked={form.tax_ids.includes(tax.id)}
-                      disabled={readOnly}
-                      onChange={() => toggleTax(tax.id)}
-                    >
-                      <span className="flex-1">{tax.name}</span>
-                      <span className="ml-auto font-mono tabular text-ink-3 text-[12px]">
-                        {tax.percentage}&nbsp;%
-                      </span>
-                    </Checkbox>
-                  ))}
-                </div>
-              )}
-            </CardBody>
-          </Card>
-
-          {invoice && invoice.email_sends.length > 0 ? (
-            <Card>
-              <CardHead title="Historique d'envoi" />
-              <CardBody>
-                {invoice.email_sends.map((s) => (
-                  <div
-                    key={s.id}
-                    className="flex items-start gap-2.5 py-2 border-b border-line-soft last:border-b-0"
-                  >
-                    <Send size={13} strokeWidth={1.5} className="text-ink-3 mt-0.5" />
-                    <div className="flex-1 text-[12.5px]">
-                      <div>
-                        {s.template_type === "InitialContact"
-                          ? "Premier contact"
-                          : "Relance"}
-                      </div>
-                      <div className="text-[11px] text-ink-3 font-mono">
-                        {s.sent_at}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </CardBody>
-            </Card>
-          ) : null}
-
           {invoice ? (
             <div className="text-[11px] text-ink-3">
-              Créée le {invoice.created_at}
+              {t("invoices.created_at", { date: invoice.created_at })}
             </div>
           ) : null}
         </div>
       </div>
+      ) : null}
+
+      {tab === "preview" ? (
+        invoice && invoice.pdf_path ? (
+          <Card className="overflow-hidden">
+            <CardHead
+              title={t("invoices.preview_title")}
+              subtitle={invoice.pdf_path}
+              actions={
+                <>
+                  <Button
+                    size="sm"
+                    leadingIcon={<Folder size={11} strokeWidth={1.5} />}
+                    onClick={() => {
+                      if (!invoice.pdf_path) return;
+                      void revealItemInDir(invoice.pdf_path).catch((e) =>
+                        toast.error(String(e)),
+                      );
+                    }}
+                  >
+                    {t("invoices.preview_open_folder")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    leadingIcon={<ExternalLink size={11} strokeWidth={1.5} />}
+                    onClick={() => {
+                      void ipc
+                        .invoiceOpenExternal(invoice.id)
+                        .catch((e) => toast.error(String(e)));
+                    }}
+                  >
+                    {t("invoices.preview_open_externally")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    leadingIcon={<Printer size={11} strokeWidth={1.5} />}
+                    onClick={() => {
+                      void ipc
+                        .invoicePrint(invoice.id)
+                        .catch((e) => toast.error(String(e)));
+                    }}
+                  >
+                    {t("invoices.preview_print")}
+                  </Button>
+                </>
+              }
+            />
+            <div className="h-[820px] bg-paper-3">
+              <PdfPreview
+                bytes={pdfBytes}
+                loading={pdfLoading}
+                error={pdfError}
+              />
+            </div>
+          </Card>
+        ) : (
+          <Card>
+            <EmptyState description={t("invoices.preview_unavailable")} />
+          </Card>
+        )
+      ) : null}
+
+      {tab === "payments" && invoice ? (
+        <Card>
+          <CardHead
+            title={t("invoices.payments_section")}
+            actions={
+              (() => {
+                const dueCents =
+                  invoice.total.amount_minor - invoice.amount_paid.amount_minor;
+                const fullyPaid = dueCents <= 0;
+                return (
+                  <span className="inline-flex items-baseline gap-2 text-[12px]">
+                    <span className="text-ink-3">
+                      {fullyPaid
+                        ? t("invoices.fully_paid")
+                        : t("invoices.remaining_due")}
+                    </span>
+                    <span
+                      className={[
+                        "font-mono tabular text-[14px] font-medium",
+                        fullyPaid ? "text-ok-ink" : "text-ink",
+                      ].join(" ")}
+                    >
+                      {formatMinor(
+                        Math.max(0, dueCents),
+                        invoice.total.currency,
+                      )}
+                    </span>
+                  </span>
+                );
+              })()
+            }
+          />
+          {invoicePayments.length === 0 ? (
+            <EmptyState description={t("invoices.payments_none")} />
+          ) : (
+            <div className="flex flex-col">
+              {invoicePayments.map((p) => {
+                const allocation = p.allocations.find(
+                  (a) => a.invoice_id === invoice.id,
+                );
+                const amount = allocation
+                  ? formatMinor(
+                      allocation.amount.amount_minor,
+                      allocation.amount.currency,
+                    )
+                  : null;
+                return (
+                  <button
+                    type="button"
+                    key={p.id}
+                    onClick={() => navigate(`/payments/${p.id}/edit`)}
+                    className="flex items-start justify-between gap-3 px-5 py-3 border-b border-line-soft last:border-b-0 cursor-pointer hover:bg-paper-2 transition-colors text-left"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-[13px] text-ink">
+                        {paymentMethodLabel(p.method, t)}
+                        {p.reference ? (
+                          <span className="ml-1.5 text-ink-3 font-mono">
+                            · {p.reference}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="text-[11px] text-ink-3 font-mono mt-0.5">
+                        {p.date}
+                      </div>
+                    </div>
+                    {amount ? (
+                      <span className="font-mono tabular text-[14px] font-medium text-ink shrink-0">
+                        {amount}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+      ) : null}
+
+      {tab === "email" && invoice ? (
+        <Card>
+          <CardHead title={t("invoices.send_history")} />
+          {invoice.email_sends.length === 0 ? (
+            <EmptyState description={t("invoices.email_none")} />
+          ) : (
+            <div className="flex flex-col">
+              {invoice.email_sends.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-start gap-3 px-5 py-3 border-b border-line-soft last:border-b-0"
+                >
+                  <Send size={13} strokeWidth={1.5} className="text-ink-3 mt-0.5 shrink-0" />
+                  <div className="flex-1 text-[13px] min-w-0">
+                    <div>
+                      {s.template_type === "InitialContact"
+                        ? t("invoices.email_kind_initial")
+                        : t("invoices.email_kind_follow_up")}
+                    </div>
+                    <div className="text-[11px] text-ink-3 font-mono mt-0.5">
+                      {s.sent_at}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      ) : null}
 
       {markingPaid && invoice ? (
         <MarkPaidModal
@@ -733,6 +995,16 @@ export function InvoiceEditor() {
           onPaid={goBack}
         />
       ) : null}
+
+      <ConfirmModal
+        open={confirmingCancel}
+        title={t("invoices.cancel")}
+        description={t("invoices.confirm_cancel")}
+        confirmLabel={t("invoices.cancel")}
+        tone="danger"
+        onConfirm={cancelInvoice}
+        onClose={() => setConfirmingCancel(false)}
+      />
     </Page>
   );
 }
