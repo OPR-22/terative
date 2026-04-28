@@ -5,7 +5,6 @@ import { useNavigate } from "react-router-dom";
 import { Coins, Copy, Edit, Eye, Plus, Send, Trash2 } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
-import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Avatar } from "../components/ui/Avatar";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -34,7 +33,6 @@ type PaymentFilterValue = "all" | InvoicePaymentFilterDto;
 
 export function InvoiceList() {
   const { t } = useTranslation();
-  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const {
     invoices,
@@ -65,7 +63,7 @@ export function InvoiceList() {
 
   return (
     <Page
-      crumbs={[workspaceName, t("invoices.title")]}
+      crumbs={[t("invoices.title")]}
       title={t("invoices.title")}
       subtitle={
         page

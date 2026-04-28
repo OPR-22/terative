@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { Archive, ArchiveRestore, Eye, Plus, Search, Upload } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
-import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -22,7 +21,6 @@ const defaultContact = (entries: ContactEntryDto[]): string =>
 
 export function ClientList() {
   const { t } = useTranslation();
-  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const {
     clients,
@@ -49,7 +47,7 @@ export function ClientList() {
 
   return (
     <Page
-      crumbs={[workspaceName, t("clients.title")]}
+      crumbs={[t("clients.title")]}
       title={t("clients.title")}
       subtitle={`${t("clients.summary_active", { count: activeCount })} · ${t("clients.summary_archived", { count: archivedCount })}`}
       actions={

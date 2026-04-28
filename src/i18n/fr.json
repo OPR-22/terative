@@ -4,7 +4,9 @@
     "workspace_fallback": "Mon cabinet"
   },
   "topbar": {
-    "search_placeholder": "Rechercher partout"
+    "search_placeholder": "Rechercher partout",
+    "back": "Retour",
+    "forward": "Suivant"
   },
   "nav": {
     "dashboard": "Tableau de bord",
@@ -121,6 +123,8 @@
     "occupation": "Profession",
     "language": "Langue préférée",
     "no_language": "Non renseignée",
+    "language_fr": "Français",
+    "language_en": "Anglais",
     "age_years_one": "{{count}} an",
     "age_years_other": "{{count}} ans",
     "summary_active": "{{count}} clients actifs",

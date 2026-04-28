@@ -4,7 +4,6 @@ import { toast } from "../stores/toastStore";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { Page } from "../components/layout/Page";
-import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHead } from "../components/ui/Card";
 import { Checkbox } from "../components/ui/Checkbox";
@@ -30,7 +29,6 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export function PaymentEditor() {
   const { t } = useTranslation();
-  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
   const editing = Boolean(id);
@@ -177,8 +175,7 @@ export function PaymentEditor() {
   return (
     <Page
       crumbs={[
-        workspaceName,
-        t("payments.title"),
+        { label: t("payments.title"), to: "/payments" },
         editing ? t("payments.edit") : t("payments.new"),
       ]}
       title={editing ? t("payments.edit") : t("payments.new")}

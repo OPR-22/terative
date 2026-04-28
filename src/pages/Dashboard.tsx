@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 
 import { Page, SectionTitle } from "../components/layout/Page";
-import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -34,7 +33,6 @@ function daysOverdue(dueDate: string | null): number | null {
 
 export function Dashboard() {
   const { t } = useTranslation();
-  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { snapshot, load } = useSettingsStore();
   const [summary, setSummary] = useState<DashboardSummaryDto | null>(null);
@@ -61,7 +59,6 @@ export function Dashboard() {
 
   return (
     <Page
-      crumbs={[workspaceName, t("dashboard.title")]}
       title={t("dashboard.title")}
       subtitle={t("dashboard.subtitle")}
       actions={

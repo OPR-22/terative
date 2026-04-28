@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { Archive, ArchiveRestore, Edit, Plus } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
-import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Checkbox } from "../components/ui/Checkbox";
@@ -15,7 +14,6 @@ import { useTaxStore } from "../stores/taxStore";
 
 export function TaxList() {
   const { t } = useTranslation();
-  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const {
     taxes,
@@ -36,7 +34,7 @@ export function TaxList() {
 
   return (
     <Page
-      crumbs={[workspaceName, t("taxes.title")]}
+      crumbs={[t("taxes.title")]}
       title={t("taxes.title")}
       subtitle={t("taxes.summary_active", { count: activeCount })}
       actions={

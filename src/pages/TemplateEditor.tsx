@@ -4,7 +4,6 @@ import { toast } from "../stores/toastStore";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { Page } from "../components/layout/Page";
-import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody } from "../components/ui/Card";
 import { Field, Input } from "../components/ui/Input";
@@ -46,7 +45,6 @@ function defaults(): NewInvoiceTemplateDto {
 
 export function TemplateEditor() {
   const { t } = useTranslation();
-  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
   const editing = Boolean(id);
@@ -153,8 +151,7 @@ export function TemplateEditor() {
   return (
     <Page
       crumbs={[
-        workspaceName,
-        t("templates.title"),
+        { label: t("templates.title"), to: "/templates" },
         editing ? existing?.name ?? t("templates.edit") : t("templates.new"),
       ]}
       title={editing ? t("templates.edit") : t("templates.new")}

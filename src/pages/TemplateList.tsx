@@ -5,7 +5,6 @@ import { useNavigate } from "react-router-dom";
 import { Copy, Edit, Plus, Star, Trash2 } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
-import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody } from "../components/ui/Card";
@@ -14,7 +13,6 @@ import { useTemplateStore } from "../stores/templateStore";
 
 export function TemplateList() {
   const { t } = useTranslation();
-  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { templates, loading, error, refresh, remove, duplicate, setDefault } =
     useTemplateStore();
@@ -25,7 +23,7 @@ export function TemplateList() {
 
   return (
     <Page
-      crumbs={[workspaceName, t("templates.title")]}
+      crumbs={[t("templates.title")]}
       title={t("templates.title")}
       subtitle={t("templates.summary_count", { count: templates.length })}
       actions={

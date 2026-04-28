@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 
-import { usePageCrumbs } from "./PageMeta";
+import { usePageCrumbs, type CrumbInput } from "./PageMeta";
 
 interface PageProps {
-  crumbs?: ReactNode[];
+  crumbs?: CrumbInput[];
   title?: ReactNode;
   subtitle?: ReactNode;
   actions?: ReactNode;

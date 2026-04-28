@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { Calendar, Edit, Plus, Search, Trash2 } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
-import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -34,7 +33,6 @@ function paymentMethodLabel(method: PaymentMethodDto, t: (k: string) => string):
 
 export function PaymentList() {
   const { t } = useTranslation();
-  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { payments, loading, error, refresh, remove } = usePaymentStore();
   const { snapshot, load } = useSettingsStore();
@@ -51,7 +49,7 @@ export function PaymentList() {
 
   return (
     <Page
-      crumbs={[workspaceName, t("payments.title")]}
+      crumbs={[t("payments.title")]}
       title={t("payments.title")}
       subtitle={`${t("payments.summary_count", { count: payments.length })} · ${t("payments.summary_collected", { total: formatMinor(totalAmount, currencyCode) })}`}
       actions={

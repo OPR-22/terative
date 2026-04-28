@@ -4,7 +4,6 @@ import { toast } from "../stores/toastStore";
 import { Download } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
-import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Avatar } from "../components/ui/Avatar";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHead } from "../components/ui/Card";
@@ -31,12 +30,11 @@ const THIS_YEAR_END = `${new Date().getFullYear()}-12-31`;
 
 export function Accounting() {
   const { t } = useTranslation();
-  const workspaceName = useWorkspaceName();
   const [tab, setTab] = useState<Tab>("revenue");
 
   return (
     <Page
-      crumbs={[workspaceName, t("accounting.title")]}
+      crumbs={[t("accounting.title")]}
       title={t("accounting.title")}
       subtitle={t("accounting.period_range", {
         start: THIS_YEAR_START,

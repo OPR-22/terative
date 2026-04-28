@@ -2,12 +2,10 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "../stores/toastStore";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Edit, Plus, Trash2 } from "lucide-react";
+import { Edit, Plus, Trash2 } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
-import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Avatar } from "../components/ui/Avatar";
-import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHead } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
@@ -53,7 +51,6 @@ function computeAgeLabel(
 
 export function ClientDetail() {
   const { t } = useTranslation();
-  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [tab, setTab] = useState<Tab>("info");
@@ -78,13 +75,16 @@ export function ClientDetail() {
   if (!id) return null;
   if (!client) {
     return (
-      <Page crumbs={[workspaceName, t("clients.title")]} title="—">
+      <Page crumbs={[t("clients.title")]} title="—">
         <EmptyState description={t("common.loading")} />
       </Page>
     );
   }
 
   const ageLabel = computeAgeLabel(client.date_of_birth, t);
+  const languageLabel = client.language
+    ? t(`clients.language_${client.language}`)
+    : null;
   const tabOptions: TabOption<Tab>[] = [
     { id: "info", label: t("clients.tab_info") },
     { id: "notebook", label: t("clients.tab_notebook") },
@@ -93,7 +93,7 @@ export function ClientDetail() {
 
   return (
     <Page
-      crumbs={[workspaceName, t("clients.title"), client.name]}
+      crumbs={[{ label: t("clients.title"), to: "/clients" }, client.name]}
       title={
         <span className="inline-flex items-center gap-3">
           <Avatar name={client.name} size={32} />
@@ -101,24 +101,14 @@ export function ClientDetail() {
         </span>
       }
       subtitle={
-        <span className="inline-flex items-center gap-2">
-          {client.language ? (
-            <Badge kind="outline">{client.language.toUpperCase()}</Badge>
-          ) : null}
-          <span className="text-ink-3">
-            {[ageLabel, client.occupation].filter(Boolean).join(" · ") ||
-              "—"}
-          </span>
+        <span className="text-ink-3">
+          {[ageLabel, client.occupation, languageLabel]
+            .filter(Boolean)
+            .join(" · ") || "—"}
         </span>
       }
       actions={
         <>
-          <Button
-            leadingIcon={<ArrowLeft size={13} strokeWidth={1.5} />}
-            onClick={() => navigate("/clients")}
-          >
-            {t("common.back")}
-          </Button>
           <Button
             leadingIcon={<Plus size={13} strokeWidth={1.5} />}
             onClick={() => navigate("/payments/create")}

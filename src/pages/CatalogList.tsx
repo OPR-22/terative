@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { Archive, ArchiveRestore, Edit, Plus } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
-import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
@@ -21,7 +20,6 @@ type KindFilter = "All" | CatalogItemKindDto;
 
 export function CatalogList() {
   const { t } = useTranslation();
-  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const {
     items,
@@ -52,7 +50,7 @@ export function CatalogList() {
 
   return (
     <Page
-      crumbs={[workspaceName, t("catalog.title")]}
+      crumbs={[t("catalog.title")]}
       title={t("catalog.title")}
       subtitle={[
         t("catalog.summary_total", { count: counts.All }),

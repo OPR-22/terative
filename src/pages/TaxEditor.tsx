@@ -4,7 +4,6 @@ import { toast } from "../stores/toastStore";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { Page } from "../components/layout/Page";
-import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHead } from "../components/ui/Card";
 import { Field, Input } from "../components/ui/Input";
@@ -13,7 +12,6 @@ import type { NewTaxDefinitionDto, UpdateTaxDto } from "../ipc";
 
 export function TaxEditor() {
   const { t } = useTranslation();
-  const workspaceName = useWorkspaceName();
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
   const editing = Boolean(id);
@@ -69,7 +67,10 @@ export function TaxEditor() {
 
   return (
     <Page
-      crumbs={[workspaceName, t("taxes.title"), editing ? t("taxes.edit") : t("taxes.new")]}
+      crumbs={[
+        { label: t("taxes.title"), to: "/taxes" },
+        editing ? t("taxes.edit") : t("taxes.new"),
+      ]}
       title={editing ? t("taxes.edit") : t("taxes.new")}
     >
       <form onSubmit={submit} className="max-w-lg">

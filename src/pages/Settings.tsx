@@ -5,7 +5,6 @@ import { toast } from "../stores/toastStore";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import { Page } from "../components/layout/Page";
-import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Button } from "../components/common/Button";
 import { ConfirmModal } from "../components/ui/ConfirmModal";
 import { ImageUploader } from "../components/common/ImageUploader";
@@ -33,7 +32,6 @@ const languageToI18n = (lang: LanguageDto): string =>
 
 export function Settings() {
   const { t, i18n } = useTranslation();
-  const workspaceName = useWorkspaceName();
   const {
     snapshot,
     load,
@@ -53,14 +51,14 @@ export function Settings() {
 
   if (loading && !snapshot) {
     return (
-      <Page crumbs={[workspaceName, t("settings.title")]} title={t("settings.title")}>
+      <Page crumbs={[t("settings.title")]} title={t("settings.title")}>
         <p className="text-[13px] text-ink-3">{t("common.loading")}</p>
       </Page>
     );
   }
   if (!snapshot) {
     return (
-      <Page crumbs={[workspaceName, t("settings.title")]} title={t("settings.title")}>
+      <Page crumbs={[t("settings.title")]} title={t("settings.title")}>
         {error ? <p className="text-[13px] text-danger">{error}</p> : null}
       </Page>
     );
@@ -68,7 +66,7 @@ export function Settings() {
 
   return (
     <Page
-      crumbs={[workspaceName, t("settings.title")]}
+      crumbs={[t("settings.title")]}
       title={t("settings.title")}
       subtitle={t("settings.subtitle")}
     >

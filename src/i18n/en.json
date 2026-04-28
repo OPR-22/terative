@@ -4,7 +4,9 @@
     "workspace_fallback": "My workspace"
   },
   "topbar": {
-    "search_placeholder": "Search everywhere"
+    "search_placeholder": "Search everywhere",
+    "back": "Go back",
+    "forward": "Go forward"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -121,6 +123,8 @@
     "occupation": "Occupation",
     "language": "Preferred language",
     "no_language": "Not set",
+    "language_fr": "French",
+    "language_en": "English",
     "age_years_one": "{{count}} year old",
     "age_years_other": "{{count}} years old",
     "summary_active": "{{count}} active clients",

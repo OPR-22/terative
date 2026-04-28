@@ -1,18 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "../stores/toastStore";
-import { useNavigate, useParams } from "react-router-dom";
-import {
-  ArrowLeft,
-  Check,
-  GripVertical,
-  Plus,
-  Send,
-  X,
-} from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { Check, GripVertical, Plus, Send, X } from "lucide-react";
 
 import { Page } from "../components/layout/Page";
-import { useWorkspaceName } from "../hooks/useWorkspaceName";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHead } from "../components/ui/Card";
@@ -132,7 +124,6 @@ export function InvoiceEditor() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
-  const workspaceName = useWorkspaceName();
 
   const {
     get: getInvoice,
@@ -281,6 +272,7 @@ export function InvoiceEditor() {
   const readOnly = invoice !== null && invoice.status !== "Draft";
   const selectedClientName =
     invoice?.client_name ?? clients.find((c) => c.id === form.client_id)?.name ?? null;
+  const selectedClientId = invoice?.client_id ?? form.client_id ?? null;
 
   const subtotalCents = useMemo(
     () =>
@@ -436,12 +428,25 @@ export function InvoiceEditor() {
   };
 
   const titleNode = invoice ? (
-    <>
-      Facture{" "}
-      <span className="text-ink-3 font-mono text-[20px]">
-        #{invoice.number ?? "—"}
+    <span className="inline-flex items-baseline gap-2">
+      <span>
+        Facture{" "}
+        <span className="text-ink-3 font-mono text-[20px]">
+          #{invoice.number ?? "—"}
+        </span>
       </span>
-    </>
+      {selectedClientName && selectedClientId ? (
+        <>
+          <span className="text-ink-4 text-[14px] font-normal">·</span>
+          <Link
+            to={`/clients/${selectedClientId}`}
+            className="text-[14px] font-normal text-ink-3 hover:text-ink hover:underline"
+          >
+            {selectedClientName}
+          </Link>
+        </>
+      ) : null}
+    </span>
   ) : (
     t("invoices.new")
   );
@@ -463,8 +468,7 @@ export function InvoiceEditor() {
   return (
     <Page
       crumbs={[
-        workspaceName,
-        t("invoices.title"),
+        { label: t("invoices.title"), to: "/invoices" },
         invoice
           ? `#${invoice.number ?? "—"}${selectedClientName ? ` — ${selectedClientName}` : ""}`
           : t("invoices.new"),
@@ -473,12 +477,6 @@ export function InvoiceEditor() {
       subtitle={subtitleNode}
       actions={
         <>
-          <Button
-            leadingIcon={<ArrowLeft size={13} strokeWidth={1.5} />}
-            onClick={goBack}
-          >
-            {t("common.back")}
-          </Button>
           {!readOnly ? (
             <>
               <Button onClick={submitDraft} disabled={submitting}>
