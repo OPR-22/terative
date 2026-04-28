@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
+import { ClientAttributeDatalists } from "../components/client/ClientAttributeDatalists";
 import { ContactListEditor } from "../components/client/ContactListEditor";
 import { useClientStore } from "../stores/clientStore";
 import {
@@ -120,6 +121,29 @@ function TabButton({
   );
 }
 
+/// Returns a localized "X years old" string for the given DOB, or null if
+/// no DOB or the date doesn't parse. Calendar-correct (rolls back a year
+/// if the birthday hasn't happened yet this year).
+function computeAgeLabel(
+  dob: string | null,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string | null {
+  if (!dob) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dob);
+  if (!m) return null;
+  const birthY = Number(m[1]);
+  const birthM = Number(m[2]);
+  const birthD = Number(m[3]);
+  const today = new Date();
+  let age = today.getFullYear() - birthY;
+  const monthDiff = today.getMonth() + 1 - birthM;
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthD)) {
+    age -= 1;
+  }
+  if (age < 0) return null;
+  return t("clients.age_years", { count: age });
+}
+
 // ---- Info tab ----
 
 function InfoTab({
@@ -130,7 +154,12 @@ function InfoTab({
   onSaved: (c: ClientDto) => void;
 }) {
   const { t } = useTranslation();
-  const { clients, refresh: refreshClients } = useClientStore();
+  const {
+    clients,
+    refresh: refreshClients,
+    attributeValues,
+    refreshAttributeValues,
+  } = useClientStore();
   const [name, setName] = useState(client.name);
   const [emails, setEmails] = useState<ContactEntryDto[]>(client.emails);
   const [phones, setPhones] = useState<ContactEntryDto[]>(client.phones);
@@ -139,6 +168,12 @@ function InfoTab({
   const [referredBy, setReferredBy] = useState<string | null>(
     client.referred_by,
   );
+  const [dateOfBirth, setDateOfBirth] = useState(client.date_of_birth ?? "");
+  const [sex, setSex] = useState(client.sex ?? "");
+  const [gender, setGender] = useState(client.gender ?? "");
+  const [pronouns, setPronouns] = useState(client.pronouns ?? "");
+  const [occupation, setOccupation] = useState(client.occupation ?? "");
+  const [language, setLanguage] = useState(client.language ?? "");
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -148,12 +183,22 @@ function InfoTab({
   }, [clients.length, refreshClients]);
 
   useEffect(() => {
+    void refreshAttributeValues();
+  }, [refreshAttributeValues]);
+
+  useEffect(() => {
     setName(client.name);
     setEmails(client.emails);
     setPhones(client.phones);
     setAddress(client.address ?? "");
     setNotes(client.notes ?? "");
     setReferredBy(client.referred_by);
+    setDateOfBirth(client.date_of_birth ?? "");
+    setSex(client.sex ?? "");
+    setGender(client.gender ?? "");
+    setPronouns(client.pronouns ?? "");
+    setOccupation(client.occupation ?? "");
+    setLanguage(client.language ?? "");
   }, [client]);
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -169,6 +214,12 @@ function InfoTab({
         address: address.trim() || null,
         notes: notes.trim() || null,
         referred_by: referredBy,
+        date_of_birth: dateOfBirth || null,
+        sex: sex || null,
+        gender: gender.trim() || null,
+        pronouns: pronouns.trim() || null,
+        occupation: occupation.trim() || null,
+        language: language || null,
       };
       const updated = await ipc.clientUpdate(payload);
       onSaved(updated);
@@ -180,6 +231,8 @@ function InfoTab({
       setBusy(false);
     }
   };
+
+  const ageLabel = computeAgeLabel(client.date_of_birth, t);
 
   const referrerOptions = clients.filter((c) => c.id !== client.id);
 
@@ -224,6 +277,67 @@ function InfoTab({
         onChange={(e) => setNotes(e.target.value)}
       />
 
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="flex flex-col gap-1">
+          <Input
+            type="date"
+            label={t("clients.date_of_birth") ?? ""}
+            value={dateOfBirth}
+            onChange={(e) => setDateOfBirth(e.target.value)}
+          />
+          {ageLabel ? (
+            <span className="text-xs text-fg-subtle">{ageLabel}</span>
+          ) : null}
+        </div>
+        <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
+          {t("clients.sex")}
+          <select
+            className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
+            value={sex}
+            onChange={(e) => setSex(e.target.value)}
+          >
+            <option value="">{t("clients.no_sex")}</option>
+            <option value="female">{t("clients.sex_female")}</option>
+            <option value="male">{t("clients.sex_male")}</option>
+            <option value="intersex">{t("clients.sex_intersex")}</option>
+          </select>
+        </label>
+        <Input
+          label={t("clients.gender") ?? ""}
+          value={gender}
+          onChange={(e) => setGender(e.target.value)}
+          placeholder={t("clients.gender_placeholder") ?? ""}
+          list="gender-suggestions"
+        />
+        <Input
+          label={t("clients.pronouns") ?? ""}
+          value={pronouns}
+          onChange={(e) => setPronouns(e.target.value)}
+          placeholder={t("clients.pronouns_placeholder") ?? ""}
+          list="pronouns-suggestions"
+        />
+        <Input
+          label={t("clients.occupation") ?? ""}
+          value={occupation}
+          onChange={(e) => setOccupation(e.target.value)}
+          list="occupation-suggestions"
+        />
+        <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
+          {t("clients.language")}
+          <select
+            className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+          >
+            <option value="">{t("clients.no_language")}</option>
+            <option value="fr">Français</option>
+            <option value="en">English</option>
+            <option value="nl">Nederlands</option>
+            <option value="de">Deutsch</option>
+          </select>
+        </label>
+      </div>
+
       <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
         {t("clients.referred_by")}
         <select
@@ -250,6 +364,7 @@ function InfoTab({
           <span className="text-sm text-success">{t("settings.saved")}</span>
         ) : null}
       </div>
+      <ClientAttributeDatalists values={attributeValues} />
     </form>
   );
 }

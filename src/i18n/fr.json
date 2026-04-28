@@ -91,7 +91,22 @@
     "contact_label_placeholder": "Étiquette",
     "referred_by": "Référé par",
     "no_referrer": "Aucun",
-    "archived": "archivé"
+    "archived": "archivé",
+    "date_of_birth": "Date de naissance",
+    "sex": "Sexe",
+    "no_sex": "Non renseigné",
+    "sex_female": "Femme",
+    "sex_male": "Homme",
+    "sex_intersex": "Intersexe",
+    "gender": "Genre",
+    "gender_placeholder": "ex. femme, non-binaire",
+    "pronouns": "Pronoms",
+    "pronouns_placeholder": "ex. elle, il, iel",
+    "occupation": "Profession",
+    "language": "Langue préférée",
+    "no_language": "Non renseignée",
+    "age_years_one": "{{count}} an",
+    "age_years_other": "{{count}} ans"
   },
   "catalog": {
     "title": "Catalogue",

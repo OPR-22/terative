@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "../components/common/Button";
 import { Input } from "../components/common/Input";
 import { Pagination } from "../components/common/Pagination";
+import { ClientAttributeDatalists } from "../components/client/ClientAttributeDatalists";
 import { ContactListEditor } from "../components/client/ContactListEditor";
 import { useClientStore } from "../stores/clientStore";
 import type { ClientDto, ContactEntryDto, NewClientDto } from "../ipc";
@@ -18,6 +19,12 @@ const emptyForm: NewClientDto = {
   address: null,
   notes: null,
   referred_by: null,
+  date_of_birth: null,
+  sex: null,
+  gender: null,
+  pronouns: null,
+  occupation: null,
+  language: null,
 };
 
 const defaultContact = (entries: ContactEntryDto[]): string =>
@@ -182,6 +189,12 @@ function ClientEditor({ initial, allClients, onCancel, onSubmit }: EditorProps) 
   const [form, setForm] = useState<NewClientDto>(initial);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const attributeValues = useClientStore((s) => s.attributeValues);
+  const refreshAttrs = useClientStore((s) => s.refreshAttributeValues);
+
+  useEffect(() => {
+    void refreshAttrs();
+  }, [refreshAttrs]);
 
   return (
     <div className="fixed inset-0 z-10 flex items-start justify-center overflow-y-auto bg-overlay p-4">
@@ -238,6 +251,74 @@ function ClientEditor({ initial, allClients, onCancel, onSubmit }: EditorProps) 
             onChange={(e) => setForm({ ...form, notes: e.target.value || null })}
           />
 
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Input
+              label={t("clients.date_of_birth") ?? ""}
+              type="date"
+              value={form.date_of_birth ?? ""}
+              onChange={(e) =>
+                setForm({ ...form, date_of_birth: e.target.value || null })
+              }
+            />
+            <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
+              {t("clients.sex")}
+              <select
+                className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
+                value={form.sex ?? ""}
+                onChange={(e) =>
+                  setForm({ ...form, sex: e.target.value || null })
+                }
+              >
+                <option value="">{t("clients.no_sex")}</option>
+                <option value="female">{t("clients.sex_female")}</option>
+                <option value="male">{t("clients.sex_male")}</option>
+                <option value="intersex">{t("clients.sex_intersex")}</option>
+              </select>
+            </label>
+            <Input
+              label={t("clients.gender") ?? ""}
+              value={form.gender ?? ""}
+              onChange={(e) =>
+                setForm({ ...form, gender: e.target.value || null })
+              }
+              placeholder={t("clients.gender_placeholder") ?? ""}
+              list="gender-suggestions"
+            />
+            <Input
+              label={t("clients.pronouns") ?? ""}
+              value={form.pronouns ?? ""}
+              onChange={(e) =>
+                setForm({ ...form, pronouns: e.target.value || null })
+              }
+              placeholder={t("clients.pronouns_placeholder") ?? ""}
+              list="pronouns-suggestions"
+            />
+            <Input
+              label={t("clients.occupation") ?? ""}
+              value={form.occupation ?? ""}
+              onChange={(e) =>
+                setForm({ ...form, occupation: e.target.value || null })
+              }
+              list="occupation-suggestions"
+            />
+            <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
+              {t("clients.language")}
+              <select
+                className="block w-full rounded-field border border-border bg-surface px-3 py-2 text-sm text-fg shadow-sm"
+                value={form.language ?? ""}
+                onChange={(e) =>
+                  setForm({ ...form, language: e.target.value || null })
+                }
+              >
+                <option value="">{t("clients.no_language")}</option>
+                <option value="fr">Français</option>
+                <option value="en">English</option>
+                <option value="nl">Nederlands</option>
+                <option value="de">Deutsch</option>
+              </select>
+            </label>
+          </div>
+
           <label className="flex flex-col gap-1 text-sm font-medium text-fg-muted">
             {t("clients.referred_by")}
             <select
@@ -266,6 +347,7 @@ function ClientEditor({ initial, allClients, onCancel, onSubmit }: EditorProps) 
             {t("common.save")}
           </Button>
         </div>
+        <ClientAttributeDatalists values={attributeValues} />
       </form>
     </div>
   );

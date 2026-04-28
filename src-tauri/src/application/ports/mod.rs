@@ -25,7 +25,7 @@ pub use accounting_queries::{
 };
 pub use client_journal_repository::ClientJournalRepository;
 pub use client_notebook_repository::ClientNotebookRepository;
-pub use client_repository::{ClientRepository, ListClientsQuery};
+pub use client_repository::{ClientAttributeValues, ClientRepository, ListClientsQuery};
 pub use notebook_section_repository::NotebookSectionRepository;
 pub use credential_store::CredentialStore;
 pub use data_management::{BackupKind, BackupMetadata, BackupScope, DataManagement};

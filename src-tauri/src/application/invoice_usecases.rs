@@ -862,6 +862,11 @@ mod tests {
         ) -> Result<Page<Client>, RepoError> {
             Ok(Page::new(vec![], 0, &PaginationParams::default()))
         }
+        fn distinct_attribute_values(
+            &self,
+        ) -> Result<crate::application::ports::ClientAttributeValues, RepoError> {
+            Ok(Default::default())
+        }
     }
 
     struct FakeTemplateRepo(Mutex<HashMap<TemplateId, InvoiceTemplate>>);

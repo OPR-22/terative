@@ -14,6 +14,7 @@ export const commands = {
 	pagination?: PaginationParamsDto | null,
 } | null) => typedError<PageDto<ClientDto>, string>(__TAURI_INVOKE("client_list", { query })),
 	clientGet: (id: string) => typedError<ClientDto, string>(__TAURI_INVOKE("client_get", { id })),
+	clientAttributeValues: () => typedError<ClientAttributeValuesDto, string>(__TAURI_INVOKE("client_attribute_values")),
 	catalogItemCreate: (input: NewCatalogItemDto) => typedError<CatalogItemDto, string>(__TAURI_INVOKE("catalog_item_create", { input })),
 	catalogItemUpdate: (input: UpdateCatalogItemDto) => typedError<CatalogItemDto, string>(__TAURI_INVOKE("catalog_item_update", { input })),
 	catalogItemArchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("catalog_item_archive", { id })),
@@ -203,6 +204,12 @@ export type CatalogItemDto = {
 
 export type CatalogItemKindDto = "Product" | "Service";
 
+export type ClientAttributeValuesDto = {
+	gender: string[],
+	pronouns: string[],
+	occupation: string[],
+};
+
 export type ClientBalanceDto = {
 	client_id: string,
 	client_name: string,
@@ -219,6 +226,12 @@ export type ClientDto = {
 	address: string | null,
 	notes: string | null,
 	referred_by: string | null,
+	date_of_birth: string | null,
+	sex: string | null,
+	gender: string | null,
+	pronouns: string | null,
+	occupation: string | null,
+	language: string | null,
 	active: boolean,
 	created_at: string,
 };
@@ -425,6 +438,12 @@ export type NewClientDto = {
 	address: string | null,
 	notes: string | null,
 	referred_by: string | null,
+	date_of_birth: string | null,
+	sex: string | null,
+	gender: string | null,
+	pronouns: string | null,
+	occupation: string | null,
+	language: string | null,
 };
 
 export type NewEmailTemplateDto = {
@@ -653,6 +672,12 @@ export type UpdateClientDto = {
 	address: string | null,
 	notes: string | null,
 	referred_by: string | null,
+	date_of_birth: string | null,
+	sex: string | null,
+	gender: string | null,
+	pronouns: string | null,
+	occupation: string | null,
+	language: string | null,
 };
 
 export type UpdateDraftInvoiceDto = {

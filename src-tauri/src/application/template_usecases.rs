@@ -294,6 +294,12 @@ fn sample_client() -> Client {
             address: Some("123 Example St\n1000 City".into()),
             notes: None,
             referred_by: None,
+            date_of_birth: None,
+            sex: None,
+            gender: None,
+            pronouns: None,
+            occupation: None,
+            language: None,
         },
         Utc::now(),
     )

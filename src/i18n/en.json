@@ -91,7 +91,22 @@
     "contact_label_placeholder": "Label",
     "referred_by": "Referred by",
     "no_referrer": "None",
-    "archived": "archived"
+    "archived": "archived",
+    "date_of_birth": "Date of birth",
+    "sex": "Sex",
+    "no_sex": "Not set",
+    "sex_female": "Female",
+    "sex_male": "Male",
+    "sex_intersex": "Intersex",
+    "gender": "Gender",
+    "gender_placeholder": "e.g. woman, non-binary",
+    "pronouns": "Pronouns",
+    "pronouns_placeholder": "e.g. she/her, they/them",
+    "occupation": "Occupation",
+    "language": "Preferred language",
+    "no_language": "Not set",
+    "age_years_one": "{{count}} year old",
+    "age_years_other": "{{count}} years old"
   },
   "catalog": {
     "title": "Catalog",

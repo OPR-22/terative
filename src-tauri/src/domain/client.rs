@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -67,6 +67,15 @@ pub struct Client {
     pub address: Option<String>,
     pub notes: Option<String>,
     pub referred_by: Option<ClientId>,
+    pub date_of_birth: Option<NaiveDate>,
+    pub sex: Option<String>,
+    pub gender: Option<String>,
+    pub pronouns: Option<String>,
+    pub occupation: Option<String>,
+    /// Preferred contact language as an ISO 639-1 code (e.g. "fr", "en",
+    /// "nl"). Free-form to accommodate languages outside the UI's two
+    /// supported locales.
+    pub language: Option<String>,
     pub active: bool,
     pub created_at: DateTime<Utc>,
 }
@@ -79,6 +88,8 @@ pub enum ClientError {
     EmptyContactValue,
     #[error("a client cannot refer itself")]
     SelfReferral,
+    #[error("date of birth cannot be in the future")]
+    FutureDateOfBirth,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -89,6 +100,12 @@ pub struct NewClient {
     pub address: Option<String>,
     pub notes: Option<String>,
     pub referred_by: Option<ClientId>,
+    pub date_of_birth: Option<NaiveDate>,
+    pub sex: Option<String>,
+    pub gender: Option<String>,
+    pub pronouns: Option<String>,
+    pub occupation: Option<String>,
+    pub language: Option<String>,
 }
 
 impl Client {
@@ -99,6 +116,7 @@ impl Client {
         }
         let emails = sanitize_contacts(input.emails)?;
         let phones = sanitize_contacts(input.phones)?;
+        let date_of_birth = validate_dob(input.date_of_birth, now)?;
         Ok(Self {
             id: ClientId::new(),
             name,
@@ -107,6 +125,12 @@ impl Client {
             address: input.address.and_then(non_empty),
             notes: input.notes.and_then(non_empty),
             referred_by: input.referred_by,
+            date_of_birth,
+            sex: input.sex.and_then(non_empty),
+            gender: input.gender.and_then(non_empty),
+            pronouns: input.pronouns.and_then(non_empty),
+            occupation: input.occupation.and_then(non_empty),
+            language: input.language.and_then(non_empty),
             active: true,
             created_at: now,
         })
@@ -194,6 +218,19 @@ fn non_empty(s: String) -> Option<String> {
         None
     } else {
         Some(trimmed.to_string())
+    }
+}
+
+/// Rejects a DOB strictly after `now`'s date. A DOB equal to today is allowed
+/// (newborns happen). No lower bound — the application doesn't care if the
+/// user types a clearly impossible date like 1700-01-01; that's a UI concern.
+fn validate_dob(
+    dob: Option<NaiveDate>,
+    now: DateTime<Utc>,
+) -> Result<Option<NaiveDate>, ClientError> {
+    match dob {
+        Some(d) if d > now.date_naive() => Err(ClientError::FutureDateOfBirth),
+        other => Ok(other),
     }
 }
 
@@ -382,5 +419,86 @@ mod tests {
         c.deactivate();
         c.reactivate();
         assert!(c.active);
+    }
+
+    #[test]
+    fn create_accepts_past_date_of_birth() {
+        let dob = NaiveDate::from_ymd_opt(1990, 5, 14).unwrap();
+        let c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                date_of_birth: Some(dob),
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        assert_eq!(c.date_of_birth, Some(dob));
+    }
+
+    #[test]
+    fn create_accepts_today_as_date_of_birth() {
+        let today = now().date_naive();
+        let c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                date_of_birth: Some(today),
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        assert_eq!(c.date_of_birth, Some(today));
+    }
+
+    #[test]
+    fn create_rejects_future_date_of_birth() {
+        let future = now().date_naive().succ_opt().unwrap();
+        let err = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                date_of_birth: Some(future),
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap_err();
+        assert_eq!(err, ClientError::FutureDateOfBirth);
+    }
+
+    #[test]
+    fn create_normalizes_pronouns_occupation_language() {
+        let c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                pronouns: Some("  she/her  ".into()),
+                occupation: Some("  Architect  ".into()),
+                language: Some("  fr  ".into()),
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        assert_eq!(c.pronouns.as_deref(), Some("she/her"));
+        assert_eq!(c.occupation.as_deref(), Some("Architect"));
+        assert_eq!(c.language.as_deref(), Some("fr"));
+    }
+
+    #[test]
+    fn create_drops_empty_pronouns_occupation_language() {
+        let c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                pronouns: Some("   ".into()),
+                occupation: Some("".into()),
+                language: Some("  ".into()),
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        assert!(c.pronouns.is_none());
+        assert!(c.occupation.is_none());
+        assert!(c.language.is_none());
     }
 }

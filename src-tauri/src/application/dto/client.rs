@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use super::DtoConvertError;
 use crate::application::client_usecases::UpdateClientInput;
-use crate::application::ports::ListClientsQuery;
+use crate::application::ports::{ClientAttributeValues, ListClientsQuery};
 use crate::domain::client::{Client, ClientId, ContactEntry, NewClient, NewContactEntry};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
@@ -45,6 +45,12 @@ pub struct ClientDto {
     pub address: Option<String>,
     pub notes: Option<String>,
     pub referred_by: Option<Uuid>,
+    pub date_of_birth: Option<chrono::NaiveDate>,
+    pub sex: Option<String>,
+    pub gender: Option<String>,
+    pub pronouns: Option<String>,
+    pub occupation: Option<String>,
+    pub language: Option<String>,
     pub active: bool,
     pub created_at: DateTime<Utc>,
 }
@@ -59,6 +65,12 @@ impl From<&Client> for ClientDto {
             address: c.address.clone(),
             notes: c.notes.clone(),
             referred_by: c.referred_by.map(|r| r.0),
+            date_of_birth: c.date_of_birth,
+            sex: c.sex.clone(),
+            gender: c.gender.clone(),
+            pronouns: c.pronouns.clone(),
+            occupation: c.occupation.clone(),
+            language: c.language.clone(),
             active: c.active,
             created_at: c.created_at,
         }
@@ -79,6 +91,12 @@ pub struct NewClientDto {
     pub address: Option<String>,
     pub notes: Option<String>,
     pub referred_by: Option<Uuid>,
+    pub date_of_birth: Option<chrono::NaiveDate>,
+    pub sex: Option<String>,
+    pub gender: Option<String>,
+    pub pronouns: Option<String>,
+    pub occupation: Option<String>,
+    pub language: Option<String>,
 }
 
 impl From<NewClientDto> for NewClient {
@@ -90,6 +108,12 @@ impl From<NewClientDto> for NewClient {
             address: dto.address,
             notes: dto.notes,
             referred_by: dto.referred_by.map(ClientId),
+            date_of_birth: dto.date_of_birth,
+            sex: dto.sex,
+            gender: dto.gender,
+            pronouns: dto.pronouns,
+            occupation: dto.occupation,
+            language: dto.language,
         }
     }
 }
@@ -103,6 +127,12 @@ pub struct UpdateClientDto {
     pub address: Option<String>,
     pub notes: Option<String>,
     pub referred_by: Option<Uuid>,
+    pub date_of_birth: Option<chrono::NaiveDate>,
+    pub sex: Option<String>,
+    pub gender: Option<String>,
+    pub pronouns: Option<String>,
+    pub occupation: Option<String>,
+    pub language: Option<String>,
 }
 
 impl From<UpdateClientDto> for UpdateClientInput {
@@ -115,6 +145,12 @@ impl From<UpdateClientDto> for UpdateClientInput {
             address: dto.address,
             notes: dto.notes,
             referred_by: dto.referred_by.map(ClientId),
+            date_of_birth: dto.date_of_birth,
+            sex: dto.sex,
+            gender: dto.gender,
+            pronouns: dto.pronouns,
+            occupation: dto.occupation,
+            language: dto.language,
         }
     }
 }
@@ -149,6 +185,23 @@ pub fn uuid_to_client_id(id: Uuid) -> ClientId {
     ClientId(id)
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct ClientAttributeValuesDto {
+    pub gender: Vec<String>,
+    pub pronouns: Vec<String>,
+    pub occupation: Vec<String>,
+}
+
+impl From<ClientAttributeValues> for ClientAttributeValuesDto {
+    fn from(v: ClientAttributeValues) -> Self {
+        Self {
+            gender: v.gender,
+            pronouns: v.pronouns,
+            occupation: v.occupation,
+        }
+    }
+}
+
 #[allow(dead_code)]
 pub(crate) fn _unused_convert_error() -> DtoConvertError {
     DtoConvertError::InvalidUuid("placeholder".into())
@@ -179,6 +232,12 @@ mod tests {
             address: Some("1 Way".into()),
             notes: None,
             referred_by: None,
+            date_of_birth: None,
+            sex: None,
+            gender: None,
+            pronouns: None,
+            occupation: None,
+            language: None,
             active: true,
             created_at: Utc.with_ymd_and_hms(2026, 4, 14, 9, 0, 0).unwrap(),
         }
@@ -217,6 +276,12 @@ mod tests {
             address: None,
             notes: None,
             referred_by: None,
+            date_of_birth: None,
+            sex: None,
+            gender: None,
+            pronouns: None,
+            occupation: None,
+            language: None,
         };
         let input: NewClient = dto.clone().into();
         assert_eq!(input.name, dto.name);
@@ -237,6 +302,12 @@ mod tests {
             address: None,
             notes: Some("hi".into()),
             referred_by: Some(referrer),
+            date_of_birth: None,
+            sex: None,
+            gender: None,
+            pronouns: None,
+            occupation: None,
+            language: None,
         };
         let input: UpdateClientInput = dto.into();
         assert_eq!(input.id.0, id);

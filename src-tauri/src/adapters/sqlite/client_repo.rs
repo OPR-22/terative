@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use uuid::Uuid;
 
 use crate::adapters::sqlite::connection::Db;
-use crate::application::ports::{ClientRepository, ListClientsQuery, Page};
+use crate::application::ports::{ClientAttributeValues, ClientRepository, ListClientsQuery, Page};
 use crate::application::RepoError;
 use crate::domain::client::{Client, ClientId, ContactEntry, ContactEntryId};
 
@@ -50,6 +50,12 @@ fn row_to_bare_client(row: &Row<'_>) -> rusqlite::Result<Client> {
         Some(s) => Some(ClientId(parse_uuid(&s)?)),
         None => None,
     };
+    let date_of_birth = match row.get::<_, Option<String>>("date_of_birth")? {
+        Some(s) => Some(NaiveDate::parse_from_str(&s, "%Y-%m-%d").map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        })?),
+        None => None,
+    };
     Ok(Client {
         id,
         name: row.get("name")?,
@@ -58,6 +64,12 @@ fn row_to_bare_client(row: &Row<'_>) -> rusqlite::Result<Client> {
         address: row.get("address")?,
         notes: row.get("notes")?,
         referred_by,
+        date_of_birth,
+        sex: row.get("sex")?,
+        gender: row.get("gender")?,
+        pronouns: row.get("pronouns")?,
+        occupation: row.get("occupation")?,
+        language: row.get("language")?,
         active: row.get::<_, i64>("active")? != 0,
         created_at,
     })
@@ -157,14 +169,22 @@ impl ClientRepository for SqliteClientRepository {
     fn insert(&self, c: &Client) -> Result<(), RepoError> {
         let conn = self.db.lock();
         conn.execute(
-            "INSERT INTO clients (id, name, address, notes, referred_by, active, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO clients
+             (id, name, address, notes, referred_by, date_of_birth, sex, gender,
+              pronouns, occupation, language, active, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 c.id.to_string(),
                 c.name,
                 c.address,
                 c.notes,
                 c.referred_by.map(|r| r.to_string()),
+                c.date_of_birth.map(|d| d.format("%Y-%m-%d").to_string()),
+                c.sex,
+                c.gender,
+                c.pronouns,
+                c.occupation,
+                c.language,
                 c.active as i64,
                 c.created_at.to_rfc3339(),
             ],
@@ -180,7 +200,10 @@ impl ClientRepository for SqliteClientRepository {
         let affected = conn
             .execute(
                 "UPDATE clients
-                 SET name = ?2, address = ?3, notes = ?4, referred_by = ?5, active = ?6
+                 SET name = ?2, address = ?3, notes = ?4, referred_by = ?5,
+                     date_of_birth = ?6, sex = ?7, gender = ?8,
+                     pronouns = ?9, occupation = ?10, language = ?11,
+                     active = ?12
                  WHERE id = ?1",
                 params![
                     c.id.to_string(),
@@ -188,6 +211,12 @@ impl ClientRepository for SqliteClientRepository {
                     c.address,
                     c.notes,
                     c.referred_by.map(|r| r.to_string()),
+                    c.date_of_birth.map(|d| d.format("%Y-%m-%d").to_string()),
+                    c.sex,
+                    c.gender,
+                    c.pronouns,
+                    c.occupation,
+                    c.language,
                     c.active as i64,
                 ],
             )
@@ -204,7 +233,7 @@ impl ClientRepository for SqliteClientRepository {
         let conn = self.db.lock();
         let mut client = conn
             .query_row(
-                "SELECT id, name, address, notes, referred_by, active, created_at
+                "SELECT id, name, address, notes, referred_by, date_of_birth, sex, gender, pronouns, occupation, language, active, created_at
                  FROM clients WHERE id = ?1",
                 params![id.to_string()],
                 row_to_bare_client,
@@ -250,7 +279,7 @@ impl ClientRepository for SqliteClientRepository {
         let offset = query.pagination.offset();
         let limit = query.pagination.per_page as u64;
         let select_sql = format!(
-            "SELECT id, name, address, notes, referred_by, active, created_at FROM clients{where_clause} \
+            "SELECT id, name, address, notes, referred_by, date_of_birth, sex, gender, pronouns, occupation, language, active, created_at FROM clients{where_clause} \
              ORDER BY name COLLATE NOCASE ASC LIMIT {limit} OFFSET {offset}"
         );
 
@@ -268,6 +297,34 @@ impl ClientRepository for SqliteClientRepository {
         drop(stmt);
         hydrate_contacts(&conn, &mut out)?;
         Ok(Page::new(out, total, &query.pagination))
+    }
+
+    fn distinct_attribute_values(&self) -> Result<ClientAttributeValues, RepoError> {
+        let conn = self.db.lock();
+        let read = |column: &str| -> Result<Vec<String>, RepoError> {
+            // Trim and ignore blank-after-trim values so historical whitespace
+            // entries don't pollute the suggestion list.
+            let sql = format!(
+                "SELECT DISTINCT TRIM({column}) AS v
+                 FROM clients
+                 WHERE {column} IS NOT NULL AND TRIM({column}) != ''
+                 ORDER BY v COLLATE NOCASE ASC"
+            );
+            let mut stmt = conn.prepare(&sql).map_err(map_err)?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>("v"))
+                .map_err(map_err)?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(r.map_err(map_err)?);
+            }
+            Ok(out)
+        };
+        Ok(ClientAttributeValues {
+            gender: read("gender")?,
+            pronouns: read("pronouns")?,
+            occupation: read("occupation")?,
+        })
     }
 }
 
@@ -445,5 +502,46 @@ mod tests {
             list.data.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
             vec!["alpha", "mid", "Zeta"]
         );
+    }
+
+    #[test]
+    fn distinct_attribute_values_returns_unique_sorted_non_null() {
+        let db = open_memory();
+        let repo = SqliteClientRepository::new(db);
+
+        let mut a = make_client("A");
+        a.gender = Some("woman".into());
+        a.pronouns = Some("she/her".into());
+        a.occupation = Some("Architect".into());
+        repo.insert(&a).unwrap();
+
+        let mut b = make_client("B");
+        b.gender = Some("man".into());
+        b.pronouns = Some("he/him".into());
+        b.occupation = Some("architect".into()); // dup, different case
+        repo.insert(&b).unwrap();
+
+        let mut c = make_client("C");
+        c.gender = Some("woman".into()); // dup
+        c.pronouns = Some("they/them".into());
+        c.occupation = None;
+        repo.insert(&c).unwrap();
+
+        let values = repo.distinct_attribute_values().unwrap();
+        assert_eq!(values.gender, vec!["man", "woman"]);
+        assert_eq!(values.pronouns, vec!["he/him", "she/her", "they/them"]);
+        // Case-insensitive sort but distinct keeps both spellings.
+        assert!(values.occupation.iter().any(|s| s == "Architect"));
+        assert!(values.occupation.iter().any(|s| s == "architect"));
+    }
+
+    #[test]
+    fn distinct_attribute_values_empty_db() {
+        let db = open_memory();
+        let repo = SqliteClientRepository::new(db);
+        let values = repo.distinct_attribute_values().unwrap();
+        assert!(values.gender.is_empty());
+        assert!(values.pronouns.is_empty());
+        assert!(values.occupation.is_empty());
     }
 }

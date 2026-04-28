@@ -1,7 +1,10 @@
 use tauri::State;
 use uuid::Uuid;
 
-use crate::application::dto::{ClientDto, ListClientsQueryDto, NewClientDto, PageDto, UpdateClientDto};
+use crate::application::dto::{
+    ClientAttributeValuesDto, ClientDto, ListClientsQueryDto, NewClientDto, PageDto,
+    UpdateClientDto,
+};
 use crate::domain::client::ClientId;
 
 use super::{to_ipc_err, AppState};
@@ -70,5 +73,17 @@ pub fn client_get(state: State<'_, AppState>, id: Uuid) -> Result<ClientDto, Str
         .get_client_detail
         .execute(ClientId(id))
         .map(|c| (&c).into())
+        .map_err(to_ipc_err)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn client_attribute_values(
+    state: State<'_, AppState>,
+) -> Result<ClientAttributeValuesDto, String> {
+    state
+        .list_client_attribute_values
+        .execute()
+        .map(Into::into)
         .map_err(to_ipc_err)
 }

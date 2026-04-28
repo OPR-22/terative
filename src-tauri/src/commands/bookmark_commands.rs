@@ -1,9 +1,12 @@
-#[cfg(target_os = "linux")]
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::Mutex;
-use tauri::webview::WebviewBuilder;
+use tauri::webview::{NewWindowResponse, WebviewBuilder, WebviewWindowBuilder};
 use tauri::{LogicalPosition, LogicalSize, Manager, Rect, Url, WebviewUrl};
+
+/// Monotonic counter for unique popup-window labels. Each popup spawned by
+/// `window.open` / target=_blank gets a fresh `bookmark-popup-N` label.
+static POPUP_LABEL_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// Last-known device-pixel ratio. Tauri's `window.scale_factor()` reports
 /// integer-only on some Wayland setups where the compositor does fractional
@@ -377,7 +380,45 @@ pub fn bookmark_nav_open(
     let main_webview = app
         .get_webview("main")
         .ok_or_else(|| "main webview not found".to_string())?;
-    let builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed));
+    // Native engine-level callback for `window.open` and `target=_blank`
+    // links. Tauri forwards this to wry's `with_new_window_req_handler`,
+    // which fires inside WKWebView/webkit2gtk/WebView2 *before* the popup
+    // is created. We host the popup in a fresh top-level Tauri window so
+    // OAuth flows (window.opener / postMessage round-trips) keep working —
+    // `window_features(features)` carries the platform-linking glue
+    // (related_view on Linux, environment on Windows, webview_configuration
+    // on macOS) that wry needs to keep the popup associated with its opener.
+    let app_for_popups = app.clone();
+    let builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed))
+        .on_new_window(move |target_url: tauri::Url, features| {
+            let n = POPUP_LABEL_SEQ.fetch_add(1, Ordering::Relaxed);
+            let popup_label = format!("bookmark-popup-{n}");
+            // Show the host as the initial title so the OS window doesn't
+            // briefly read "Tauri App" while the page is loading. Once the
+            // page sets its own document.title, mirror that to the window.
+            let initial_title = target_url
+                .host_str()
+                .unwrap_or("")
+                .to_string();
+            match WebviewWindowBuilder::new(
+                &app_for_popups,
+                popup_label,
+                WebviewUrl::External(target_url),
+            )
+            .window_features(features)
+            .title(initial_title)
+            .on_document_title_changed(|window, title| {
+                let _ = window.set_title(&title);
+            })
+            .build()
+            {
+                Ok(window) => NewWindowResponse::Create { window },
+                Err(e) => {
+                    eprintln!("[bookmark] popup window build failed: {e}");
+                    NewWindowResponse::Deny
+                }
+            }
+        });
     let bookmark = main_webview
         .window()
         .add_child(

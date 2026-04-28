@@ -30,7 +30,8 @@ pub use accounting::{
     RevenueByClientInputDto, RevenueByPeriodInputDto, RevenueGroupingDto,
 };
 pub use client::{
-    ClientDto, ContactEntryDto, ListClientsQueryDto, NewClientDto, UpdateClientDto,
+    ClientAttributeValuesDto, ClientDto, ContactEntryDto, ListClientsQueryDto, NewClientDto,
+    UpdateClientDto,
 };
 pub use common::{MoneyDto, PageDto, PaginationParamsDto};
 pub use email_template::{

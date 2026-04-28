@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
 
-use crate::application::ports::{ClientRepository, ListClientsQuery, Page};
+use crate::application::ports::{
+    ClientAttributeValues, ClientRepository, ListClientsQuery, Page,
+};
 use crate::application::AppError;
 use crate::domain::client::{Client, ClientId, NewClient, NewContactEntry};
 
@@ -35,6 +37,12 @@ pub struct UpdateClientInput {
     pub address: Option<String>,
     pub notes: Option<String>,
     pub referred_by: Option<ClientId>,
+    pub date_of_birth: Option<NaiveDate>,
+    pub sex: Option<String>,
+    pub gender: Option<String>,
+    pub pronouns: Option<String>,
+    pub occupation: Option<String>,
+    pub language: Option<String>,
 }
 
 impl UpdateClient {
@@ -48,12 +56,23 @@ impl UpdateClient {
         if name.is_empty() {
             return Err(crate::domain::client::ClientError::EmptyName.into());
         }
+        if let Some(d) = input.date_of_birth {
+            if d > Utc::now().date_naive() {
+                return Err(crate::domain::client::ClientError::FutureDateOfBirth.into());
+            }
+        }
         client.name = name;
         client.replace_emails(input.emails)?;
         client.replace_phones(input.phones)?;
         client.address = normalize(input.address);
         client.notes = normalize(input.notes);
         client.set_referred_by(input.referred_by)?;
+        client.date_of_birth = input.date_of_birth;
+        client.sex = normalize(input.sex);
+        client.gender = normalize(input.gender);
+        client.pronouns = normalize(input.pronouns);
+        client.occupation = normalize(input.occupation);
+        client.language = normalize(input.language);
         self.repo.update(&client)?;
         Ok(client)
     }
@@ -121,6 +140,24 @@ impl GetClientDetail {
     }
 }
 
+/// Returns the sets of values currently used on existing clients for the
+/// free-form attribute fields (sex, gender, pronouns, occupation). The UI
+/// uses this as a "previously used" autocomplete catalogue — new entries
+/// grow the list automatically without requiring a separate management UI.
+pub struct ListClientAttributeValues {
+    repo: Arc<dyn ClientRepository>,
+}
+
+impl ListClientAttributeValues {
+    pub fn new(repo: Arc<dyn ClientRepository>) -> Self {
+        Self { repo }
+    }
+
+    pub fn execute(&self) -> Result<ClientAttributeValues, AppError> {
+        Ok(self.repo.distinct_attribute_values()?)
+    }
+}
+
 fn normalize(s: Option<String>) -> Option<String> {
     s.and_then(|v| {
         let t = v.trim();
@@ -179,6 +216,26 @@ mod tests {
             let total = v.len() as u64;
             Ok(Page::new(v, total, &PaginationParams::default()))
         }
+        fn distinct_attribute_values(
+            &self,
+        ) -> Result<crate::application::ports::ClientAttributeValues, RepoError> {
+            let g = self.inner.lock();
+            let collect = |f: fn(&Client) -> Option<&str>| -> Vec<String> {
+                let mut v: Vec<String> = g
+                    .values()
+                    .filter_map(|c| f(c).map(|s| s.trim().to_string()))
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                v.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+                v.dedup();
+                v
+            };
+            Ok(crate::application::ports::ClientAttributeValues {
+                gender: collect(|c| c.gender.as_deref()),
+                pronouns: collect(|c| c.pronouns.as_deref()),
+                occupation: collect(|c| c.occupation.as_deref()),
+            })
+        }
     }
 
     fn make_repo() -> Arc<InMemoryClientRepo> {
@@ -226,6 +283,12 @@ mod tests {
                 address: None,
                 notes: None,
                 referred_by: None,
+                date_of_birth: None,
+                sex: None,
+                gender: None,
+                pronouns: None,
+                occupation: None,
+                language: None,
             })
             .unwrap();
         assert_eq!(updated.name, "New Name");
@@ -244,6 +307,12 @@ mod tests {
                 address: None,
                 notes: None,
                 referred_by: None,
+                date_of_birth: None,
+                sex: None,
+                gender: None,
+                pronouns: None,
+                occupation: None,
+                language: None,
             })
             .unwrap_err();
         assert!(matches!(err, AppError::NotFound));
@@ -267,6 +336,12 @@ mod tests {
                 address: None,
                 notes: None,
                 referred_by: None,
+                date_of_birth: None,
+                sex: None,
+                gender: None,
+                pronouns: None,
+                occupation: None,
+                language: None,
             })
             .unwrap_err();
         assert!(matches!(
@@ -293,6 +368,12 @@ mod tests {
                 address: None,
                 notes: None,
                 referred_by: Some(c.id),
+                date_of_birth: None,
+                sex: None,
+                gender: None,
+                pronouns: None,
+                occupation: None,
+                language: None,
             })
             .unwrap_err();
         assert!(matches!(
@@ -398,5 +479,43 @@ mod tests {
             .execute(ClientId::new())
             .unwrap_err();
         assert!(matches!(err, AppError::NotFound));
+    }
+
+    #[test]
+    fn list_attribute_values_dedupes_and_sorts_case_insensitively() {
+        let repo = make_repo();
+        // Two clients with overlapping pronouns and one new gender value.
+        {
+            let mut g = repo.inner.lock();
+            let mut a = Client::create(
+                NewClient {
+                    name: "A".into(),
+                    pronouns: Some("she/her".into()),
+                    gender: Some("woman".into()),
+                    ..Default::default()
+                },
+                Utc::now(),
+            )
+            .unwrap();
+            a.occupation = Some("Architect".into());
+            g.insert(a.id, a);
+
+            let mut b = Client::create(
+                NewClient {
+                    name: "B".into(),
+                    pronouns: Some("she/her".into()),
+                    gender: Some("man".into()),
+                    ..Default::default()
+                },
+                Utc::now(),
+            )
+            .unwrap();
+            b.occupation = Some("Architect".into());
+            g.insert(b.id, b);
+        }
+        let values = ListClientAttributeValues::new(repo).execute().unwrap();
+        assert_eq!(values.pronouns, vec!["she/her"]);
+        assert_eq!(values.gender, vec!["man", "woman"]);
+        assert_eq!(values.occupation, vec!["Architect"]);
     }
 }

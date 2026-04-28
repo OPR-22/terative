@@ -15,6 +15,7 @@ use commands::{
     client_commands::{
         client_archive, client_create, client_get, client_list, client_unarchive, client_update,
     },
+    client_commands::client_attribute_values,
     bookmark_commands::{
         bookmark_create, bookmark_delete, bookmark_layout_set_bounds,
         bookmark_layout_set_sidebar_width, bookmark_layout_set_toolbar_height, bookmark_list,
@@ -145,6 +146,7 @@ fn build_specta() -> Builder<tauri::Wry> {
         client_unarchive,
         client_list,
         client_get,
+        client_attribute_values,
         catalog_item_create,
         catalog_item_update,
         catalog_item_archive,

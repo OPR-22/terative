@@ -31,7 +31,8 @@ use crate::application::bookmark_usecases::{
     CreateBookmark, DeleteBookmark, ListBookmarks, ReorderBookmarks, UpdateBookmark,
 };
 use crate::application::client_usecases::{
-    ArchiveClient, CreateClient, GetClientDetail, ListClients, UnarchiveClient, UpdateClient,
+    ArchiveClient, CreateClient, GetClientDetail, ListClientAttributeValues, ListClients,
+    UnarchiveClient, UpdateClient,
 };
 use crate::application::email_template_usecases::{
     CreateEmailTemplate, DeleteEmailTemplate, ListEmailTemplates, SetDefaultEmailTemplate,
@@ -73,6 +74,7 @@ pub struct AppState {
     pub unarchive_client: UnarchiveClient,
     pub list_clients: ListClients,
     pub get_client_detail: GetClientDetail,
+    pub list_client_attribute_values: ListClientAttributeValues,
 
     pub create_catalog_item: CreateCatalogItem,
     pub update_catalog_item: UpdateCatalogItem,
@@ -197,6 +199,7 @@ impl AppState {
             unarchive_client: UnarchiveClient::new(client_repo.clone()),
             list_clients: ListClients::new(client_repo.clone()),
             get_client_detail: GetClientDetail::new(client_repo.clone()),
+            list_client_attribute_values: ListClientAttributeValues::new(client_repo.clone()),
 
             create_catalog_item: CreateCatalogItem::new(catalog_item_repo.clone()),
             update_catalog_item: UpdateCatalogItem::new(catalog_item_repo.clone()),

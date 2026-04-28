@@ -6,13 +6,19 @@
 PRAGMA application_id = 0x54455241;
 
 CREATE TABLE clients (
-    id          TEXT PRIMARY KEY,
-    name        TEXT NOT NULL,
-    address     TEXT,
-    notes       TEXT,
-    referred_by TEXT REFERENCES clients(id) ON DELETE SET NULL,
-    active      INTEGER NOT NULL DEFAULT 1,
-    created_at  TEXT NOT NULL
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    address         TEXT,
+    notes           TEXT,
+    referred_by     TEXT REFERENCES clients(id) ON DELETE SET NULL,
+    date_of_birth   TEXT,    -- ISO 8601 calendar date (YYYY-MM-DD)
+    sex             TEXT,    -- biological sex (male/female/intersex/...)
+    gender          TEXT,    -- gender identity (free-form)
+    pronouns        TEXT,
+    occupation      TEXT,
+    language        TEXT,    -- ISO 639-1 code (fr, en, nl, ...)
+    active          INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL
 );
 
 CREATE TABLE client_emails (
