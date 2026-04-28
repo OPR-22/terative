@@ -138,6 +138,14 @@ export const commands = {
 	journalEntryDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("journal_entry_delete", { id })),
 	journalListForClient: (clientId: string) => typedError<ClientJournalEntryDto[], string>(__TAURI_INVOKE("journal_list_for_client", { clientId })),
 	journalEntryGet: (id: string) => typedError<ClientJournalEntryDto, string>(__TAURI_INVOKE("journal_entry_get", { id })),
+	seedDatabase: (counts: {
+	clients: number | null,
+	catalog_items: number | null,
+	taxes: number | null,
+	invoices: number | null,
+	bookmarks: number | null,
+	journal_entries_per_client: number | null,
+} | null) => typedError<SeedReportDto, string>(__TAURI_INVOKE("seed_database", { counts })),
 };
 
 /* Types */
@@ -602,6 +610,28 @@ export type RevenueGroupingDto = "Day" | "Month" | "Year";
 export type SaveClientNotebookDto = {
 	client_id: string,
 	entries: NotebookEntryDto[],
+};
+
+// All counts optional from the frontend; defaults applied in `From`.
+export type SeedCountsDto = {
+	clients: number | null,
+	catalog_items: number | null,
+	taxes: number | null,
+	invoices: number | null,
+	bookmarks: number | null,
+	journal_entries_per_client: number | null,
+};
+
+export type SeedReportDto = {
+	clients_added: number,
+	catalog_items_added: number,
+	taxes_added: number,
+	invoices_drafted: number,
+	invoices_finalized: number,
+	invoices_cancelled: number,
+	payments_added: number,
+	bookmarks_added: number,
+	journal_entries_added: number,
 };
 
 export type SellerProfileDto = {

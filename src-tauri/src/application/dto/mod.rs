@@ -20,6 +20,8 @@ pub mod email_template;
 pub mod invoice;
 pub mod notebook;
 pub mod payment;
+#[cfg(debug_assertions)]
+pub mod seed;
 pub mod settings;
 pub mod tax;
 pub mod template;
@@ -50,6 +52,8 @@ pub use payment::{
     ListPaymentsQueryDto, NewPaymentAllocationDto, NewPaymentDto, PaymentAllocationDto,
     PaymentDto, PaymentMethodDto, UpdatePaymentDto,
 };
+#[cfg(debug_assertions)]
+pub use seed::{SeedCountsDto, SeedReportDto};
 pub use bookmark::{BookmarkDto, NewBookmarkDto, UpdateBookmarkDto};
 pub use catalog_item::{
     CatalogItemDto, CatalogItemKindDto, NewCatalogItemDto, UpdateCatalogItemDto,

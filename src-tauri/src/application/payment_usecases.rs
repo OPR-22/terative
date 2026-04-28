@@ -10,6 +10,7 @@ use crate::domain::payment::{
     NewPayment, NewPaymentAllocation, Payment, PaymentId, PaymentMethod,
 };
 
+#[derive(Clone)]
 pub struct RecordPayment {
     payments: Arc<dyn PaymentRepository>,
     invoices: Arc<dyn InvoiceRepository>,

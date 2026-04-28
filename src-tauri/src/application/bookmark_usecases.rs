@@ -9,6 +9,7 @@ pub struct CreateBookmarkInput {
     pub url: String,
 }
 
+#[derive(Clone)]
 pub struct CreateBookmark {
     repo: Arc<dyn BookmarkRepository>,
 }

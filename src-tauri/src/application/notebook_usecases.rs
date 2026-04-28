@@ -193,6 +193,7 @@ impl SaveClientNotebook {
 
 // ---- journal (per client) ----
 
+#[derive(Clone)]
 pub struct CreateJournalEntry {
     repo: Arc<dyn ClientJournalRepository>,
 }

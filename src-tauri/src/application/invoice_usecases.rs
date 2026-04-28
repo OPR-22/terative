@@ -61,6 +61,7 @@ fn cancelled_watermark(lang: crate::domain::settings::Language) -> &'static str 
     }
 }
 
+#[derive(Clone)]
 pub struct CreateDraftInvoice {
     invoices: Arc<dyn InvoiceRepository>,
     taxes: Arc<dyn TaxRepository>,
@@ -115,6 +116,7 @@ impl UpdateDraftInvoice {
     }
 }
 
+#[derive(Clone)]
 pub struct FinalizeInvoice {
     invoices: Arc<dyn InvoiceRepository>,
     numbers: Arc<dyn InvoiceNumberGenerator>,
@@ -215,6 +217,7 @@ impl DuplicateInvoice {
     }
 }
 
+#[derive(Clone)]
 pub struct CancelInvoice {
     invoices: Arc<dyn InvoiceRepository>,
     clients: Arc<dyn ClientRepository>,

@@ -6,6 +6,7 @@ use crate::application::ports::TaxRepository;
 use crate::application::AppError;
 use crate::domain::tax::{NewTaxDefinition, TaxDefinition, TaxId};
 
+#[derive(Clone)]
 pub struct CreateTax {
     repo: Arc<dyn TaxRepository>,
 }

@@ -8,6 +8,8 @@ pub mod email_template_commands;
 pub mod invoice_commands;
 pub mod notebook_commands;
 pub mod payment_commands;
+#[cfg(debug_assertions)]
+pub mod seed_commands;
 pub mod settings_commands;
 pub mod tax_commands;
 pub mod template_commands;
@@ -30,6 +32,8 @@ use crate::application::accounting_usecases::AccountingService;
 use crate::application::bookmark_usecases::{
     CreateBookmark, DeleteBookmark, ListBookmarks, ReorderBookmarks, UpdateBookmark,
 };
+#[cfg(debug_assertions)]
+use crate::application::seed_usecases::SeedDatabase;
 use crate::application::client_usecases::{
     ArchiveClient, CreateClient, GetClientDetail, ListClientAttributeValues, ListClients,
     UnarchiveClient, UpdateClient,
@@ -153,6 +157,9 @@ pub struct AppState {
     pub delete_journal_entry: DeleteJournalEntry,
     pub list_client_journal: ListClientJournal,
     pub get_journal_entry: GetJournalEntry,
+
+    #[cfg(debug_assertions)]
+    pub seed_database: SeedDatabase,
 }
 
 impl AppState {
@@ -191,6 +198,37 @@ impl AppState {
             user_backup_dir.clone(),
             system_backup_dir.clone(),
         ));
+
+        // Bulk fake-data seeder. Compiled only in debug builds; the
+        // orchestrator clones use cases that share Arcs with the
+        // production ones (Arc::clone is cheap).
+        #[cfg(debug_assertions)]
+        let seed_database = SeedDatabase::new(
+            CreateClient::new(client_repo.clone()),
+            CreateCatalogItem::new(catalog_item_repo.clone()),
+            CreateTax::new(tax_repo.clone()),
+            CreateBookmark::new(bookmark_repo.clone()),
+            CreateDraftInvoice::new(invoice_repo.clone(), tax_repo.clone()),
+            FinalizeInvoice::new(
+                invoice_repo.clone(),
+                number_gen.clone(),
+                template_repo.clone(),
+                settings_repo.clone(),
+                client_repo.clone(),
+                pdf.clone(),
+                pdf_storage.clone(),
+            ),
+            CancelInvoice::new(
+                invoice_repo.clone(),
+                client_repo.clone(),
+                template_repo.clone(),
+                settings_repo.clone(),
+                pdf.clone(),
+                pdf_storage.clone(),
+            ),
+            RecordPayment::new(payment_repo.clone(), invoice_repo.clone()),
+            CreateJournalEntry::new(client_journal_repo.clone()),
+        );
 
         Self {
             create_client: CreateClient::new(client_repo.clone()),
@@ -312,6 +350,9 @@ impl AppState {
             delete_journal_entry: DeleteJournalEntry::new(client_journal_repo.clone()),
             list_client_journal: ListClientJournal::new(client_journal_repo.clone()),
             get_journal_entry: GetJournalEntry::new(client_journal_repo),
+
+            #[cfg(debug_assertions)]
+            seed_database,
         }
     }
 }

@@ -8,6 +8,7 @@ use crate::application::ports::{
 use crate::application::AppError;
 use crate::domain::client::{Client, ClientId, NewClient, NewContactEntry};
 
+#[derive(Clone)]
 pub struct CreateClient {
     repo: Arc<dyn ClientRepository>,
 }

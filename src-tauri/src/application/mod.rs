@@ -9,6 +9,8 @@ pub mod invoice_usecases;
 pub mod notebook_usecases;
 pub mod payment_usecases;
 pub mod ports;
+#[cfg(debug_assertions)]
+pub mod seed_usecases;
 pub mod settings_usecases;
 pub mod tax_usecases;
 pub mod template_usecases;

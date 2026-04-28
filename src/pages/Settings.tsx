@@ -76,6 +76,7 @@ export function Settings() {
         }}
       />
       <DataSection />
+      {import.meta.env.DEV ? <DeveloperSection /> : null}
     </div>
   );
 }
@@ -1112,6 +1113,63 @@ function BookmarksSection() {
           {t("bookmarks.add")}
         </Button>
       </div>
+    </section>
+  );
+}
+
+/// Development-only tools. Rendered only when Vite is in dev mode
+/// (`import.meta.env.DEV`); the backend command is also gated on
+/// `cfg(debug_assertions)` so it physically isn't in release binaries.
+function DeveloperSection() {
+  const { t } = useTranslation();
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<
+    | { kind: "idle" }
+    | { kind: "ok"; message: string }
+    | { kind: "err"; message: string }
+  >({ kind: "idle" });
+
+  const onSeed = async () => {
+    if (!confirm(t("settings.seed_confirm"))) return;
+    setBusy(true);
+    setStatus({ kind: "idle" });
+    try {
+      const report = await ipc.seedDatabase(null);
+      setStatus({
+        kind: "ok",
+        message: t("settings.seed_done", {
+          clients: report.clients_added,
+          invoices_drafted: report.invoices_drafted,
+          invoices_finalized: report.invoices_finalized,
+          invoices_cancelled: report.invoices_cancelled,
+          payments: report.payments_added,
+          journal: report.journal_entries_added,
+        }),
+      });
+    } catch (e) {
+      setStatus({ kind: "err", message: String(e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-semibold text-fg">
+        {t("settings.developer")}
+      </h2>
+      <p className="mb-3 text-sm text-fg-muted">
+        {t("settings.developer_help")}
+      </p>
+      <Button onClick={onSeed} disabled={busy}>
+        {busy ? t("settings.seed_running") : t("settings.seed_database")}
+      </Button>
+      {status.kind === "ok" ? (
+        <p className="mt-3 text-sm text-success">{status.message}</p>
+      ) : null}
+      {status.kind === "err" ? (
+        <p className="mt-3 text-sm text-danger break-all">{status.message}</p>
+      ) : null}
     </section>
   );
 }

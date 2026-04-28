@@ -7,6 +7,7 @@ use crate::domain::catalog_item::{
 };
 use crate::domain::money::Money;
 
+#[derive(Clone)]
 pub struct CreateCatalogItem {
     repo: Arc<dyn CatalogItemRepository>,
 }
