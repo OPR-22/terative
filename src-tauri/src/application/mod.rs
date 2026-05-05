@@ -3,6 +3,7 @@ pub mod bookmark_usecases;
 pub mod catalog_item_usecases;
 pub mod client_usecases;
 pub mod dto;
+pub mod email_log_usecases;
 pub mod email_template_usecases;
 pub mod email_usecases;
 pub mod invoice_usecases;
@@ -18,6 +19,7 @@ pub mod template_usecases;
 use crate::domain::bookmark::BookmarkError;
 use crate::domain::catalog_item::CatalogItemError;
 use crate::domain::client::ClientError;
+use crate::domain::email_log::EmailLogError;
 use crate::domain::email_template::EmailTemplateError;
 use crate::domain::invoice::InvoiceError;
 use crate::domain::line_item::LineItemError;
@@ -71,6 +73,8 @@ pub enum AppError {
     Currency(#[from] CurrencyConfigError),
     #[error(transparent)]
     EmailConfig(#[from] EmailConfigError),
+    #[error(transparent)]
+    EmailLog(#[from] EmailLogError),
     #[error(transparent)]
     EmailTemplate(#[from] EmailTemplateError),
     #[error(transparent)]

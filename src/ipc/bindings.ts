@@ -82,6 +82,7 @@ export const commands = {
 	settingsUpdateEmailPassword: (password: string) => typedError<null, string>(__TAURI_INVOKE("settings_update_email_password", { password })),
 	emailTestConnection: () => typedError<null, string>(__TAURI_INVOKE("email_test_connection")),
 	invoiceSend: (id: string) => typedError<InvoiceDto, string>(__TAURI_INVOKE("invoice_send", { id })),
+	emailLogListForClient: (clientId: string) => typedError<EmailLogDto[], string>(__TAURI_INVOKE("email_log_list_for_client", { clientId })),
 	emailTemplateCreate: (input: NewEmailTemplateDto) => typedError<EmailTemplateDto, string>(__TAURI_INVOKE("email_template_create", { input })),
 	emailTemplateUpdate: (input: UpdateEmailTemplateDto) => typedError<EmailTemplateDto, string>(__TAURI_INVOKE("email_template_update", { input })),
 	emailTemplateDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("email_template_delete", { id })),
@@ -233,6 +234,19 @@ export type CatalogItemDto = {
 
 export type CatalogItemKindDto = "Product" | "Service";
 
+export type ClientAddressDto = {
+	id: string | null,
+	label: string | null,
+	street: string,
+	apt_suite: string | null,
+	city: string,
+	state_province: string | null,
+	postal_code: string,
+	country: string,
+	is_billing: boolean,
+	is_shipping: boolean,
+};
+
 export type ClientAttributeValuesDto = {
 	gender: string[],
 	pronouns: string[],
@@ -249,10 +263,14 @@ export type ClientBalanceDto = {
 
 export type ClientDto = {
 	id: string,
+	kind: ClientKindDto,
 	name: string,
+	contact_name: string | null,
+	tax_id: string | null,
+	registration_number: string | null,
 	emails: ContactEntryDto[],
 	phones: ContactEntryDto[],
-	address: string | null,
+	addresses: ClientAddressDto[],
 	notes: string | null,
 	referred_by: string | null,
 	date_of_birth: string | null,
@@ -273,6 +291,8 @@ export type ClientJournalEntryDto = {
 	created_at: string,
 	updated_at: string,
 };
+
+export type ClientKindDto = "Individual" | "Company";
 
 export type ClientNotebookSectionDto = {
 	section: NotebookSectionDto,
@@ -322,6 +342,17 @@ export type EmailConfigDto = {
 	smtp_host: string,
 	smtp_port: number,
 	sender_address: string,
+};
+
+export type EmailLogDto = {
+	id: string,
+	client_id: string,
+	invoice_id: string | null,
+	template_type: EmailTemplateTypeDto | null,
+	template_name: string | null,
+	to_address: string,
+	subject: string,
+	sent_at: string,
 };
 
 export type EmailSendDto = {
@@ -461,10 +492,14 @@ export type NewCatalogItemDto = {
 };
 
 export type NewClientDto = {
+	kind?: ClientKindDto,
 	name: string,
+	contact_name: string | null,
+	tax_id: string | null,
+	registration_number: string | null,
 	emails: ContactEntryDto[],
 	phones: ContactEntryDto[],
-	address: string | null,
+	addresses: ClientAddressDto[],
 	notes: string | null,
 	referred_by: string | null,
 	date_of_birth: string | null,
@@ -650,7 +685,9 @@ export type SeedReportDto = {
 	invoices_drafted: number,
 	invoices_finalized: number,
 	invoices_cancelled: number,
+	invoices_sent: number,
 	payments_added: number,
+	emails_added: number,
 	bookmarks_added: number,
 	journal_entries_added: number,
 };
@@ -718,10 +755,14 @@ export type UpdateCatalogItemDto = {
 
 export type UpdateClientDto = {
 	id: string,
+	kind?: ClientKindDto,
 	name: string,
+	contact_name: string | null,
+	tax_id: string | null,
+	registration_number: string | null,
 	emails: ContactEntryDto[],
 	phones: ContactEntryDto[],
-	address: string | null,
+	addresses: ClientAddressDto[],
 	notes: string | null,
 	referred_by: string | null,
 	date_of_birth: string | null,

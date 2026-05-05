@@ -33,16 +33,23 @@ use rand::Rng;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
+use std::sync::Arc;
+
 use crate::application::bookmark_usecases::{CreateBookmark, CreateBookmarkInput};
 use crate::application::catalog_item_usecases::CreateCatalogItem;
 use crate::application::client_usecases::CreateClient;
 use crate::application::invoice_usecases::{CancelInvoice, CreateDraftInvoice, FinalizeInvoice};
 use crate::application::notebook_usecases::CreateJournalEntry;
 use crate::application::payment_usecases::RecordPayment;
+use crate::application::ports::{ClientRepository, EmailLogRepository, InvoiceRepository};
 use crate::application::tax_usecases::CreateTax;
 use crate::application::AppError;
 use crate::domain::catalog_item::{CatalogItemKind, NewCatalogItem};
-use crate::domain::client::{ClientId, NewClient, NewContactEntry};
+use crate::domain::client::{
+    ClientId, ClientKind, NewClient, NewClientAddress, NewContactEntry,
+};
+use crate::domain::email_log::{EmailLog, NewEmailLog};
+use crate::domain::email_template::EmailTemplateType;
 use crate::domain::invoice::{InvoiceId, NewInvoice};
 use crate::domain::line_item::NewLineItem;
 use crate::domain::money::{Currency, Money};
@@ -85,7 +92,9 @@ pub struct SeedReport {
     pub invoices_drafted: u32,
     pub invoices_finalized: u32,
     pub invoices_cancelled: u32,
+    pub invoices_sent: u32,
     pub payments_added: u32,
+    pub emails_added: u32,
     pub bookmarks_added: u32,
     pub journal_entries_added: u32,
 }
@@ -101,6 +110,15 @@ pub struct SeedDatabase {
     cancel_invoice: CancelInvoice,
     record_payment: RecordPayment,
     create_journal_entry: CreateJournalEntry,
+    // The "send invoice email" path is the one place we deviate from the
+    // use-case-only rule — `SendInvoice` would actually call SMTP, which we
+    // can't do in a seed run. We bypass the use-case and write directly via
+    // these repos: `Invoice::mark_sent` enforces the lifecycle invariant,
+    // `EmailLog::record` validates the row, and the inserts mirror what the
+    // production `SendInvoice` use-case does after the network call returns.
+    invoices: Arc<dyn InvoiceRepository>,
+    clients: Arc<dyn ClientRepository>,
+    email_logs: Arc<dyn EmailLogRepository>,
 }
 
 impl SeedDatabase {
@@ -114,6 +132,9 @@ impl SeedDatabase {
         cancel_invoice: CancelInvoice,
         record_payment: RecordPayment,
         create_journal_entry: CreateJournalEntry,
+        invoices: Arc<dyn InvoiceRepository>,
+        clients: Arc<dyn ClientRepository>,
+        email_logs: Arc<dyn EmailLogRepository>,
     ) -> Self {
         Self {
             create_client,
@@ -125,6 +146,9 @@ impl SeedDatabase {
             cancel_invoice,
             record_payment,
             create_journal_entry,
+            invoices,
+            clients,
+            email_logs,
         }
     }
 
@@ -139,6 +163,9 @@ impl SeedDatabase {
         let tax_ids = self.seed_taxes(counts.taxes, &mut report)?;
         let finalized = self.seed_invoices(counts.invoices, &client_ids, &tax_ids, &mut report)?;
         self.seed_payments(&finalized, &mut report)?;
+        // Emails depend on finalized invoices (they get marked Sent).
+        // Run after payments so paid + sent combinations exist in the data.
+        self.seed_emails(&finalized, &mut report)?;
         self.seed_bookmarks(counts.bookmarks, &mut report)?;
         self.seed_journal_entries(
             counts.journal_entries_per_client,
@@ -174,44 +201,98 @@ impl SeedDatabase {
         ];
 
         for _ in 0..n {
-            let first: String = FirstName().fake();
-            let last: String = LastName().fake();
-            let full_name = format!("{first} {last}");
-            let email_value: String = FreeEmail().fake();
             let phone_value: String = PhoneNumber().fake();
+            let address = NewClientAddress {
+                label: Some("Principal".into()),
+                street: format!(
+                    "{} {}",
+                    rng.gen_range(1..200),
+                    StreetName().fake::<String>(),
+                ),
+                apt_suite: None,
+                city: CityName().fake::<String>(),
+                state_province: None,
+                postal_code: ZipCode().fake::<String>(),
+                country: "FR".into(),
+                is_billing: true,
+                is_shipping: true,
+            };
 
-            let address = format!(
-                "{} {}\n{} {}",
-                rng.gen_range(1..200),
-                StreetName().fake::<String>(),
-                ZipCode().fake::<String>(),
-                CityName().fake::<String>(),
-            );
+            // ~30% Companies, ~70% Individuals.
+            let is_company = rng.gen_bool(0.3);
+            let new_client = if is_company {
+                let company_name: String = CompanyName().fake();
+                let contact_first: String = FirstName().fake();
+                let contact_last: String = LastName().fake();
+                let billing_email: String = FreeEmail().fake();
+                NewClient {
+                    kind: ClientKind::Company,
+                    name: company_name,
+                    contact_name: Some(format!("{contact_first} {contact_last}")),
+                    tax_id: Some(format!(
+                        "FR{:011}",
+                        rng.gen_range::<u64, _>(10_000_000_000..99_999_999_999),
+                    )),
+                    registration_number: Some(format!(
+                        "{} {} {}",
+                        rng.gen_range(100..1000),
+                        rng.gen_range(100..1000),
+                        rng.gen_range(100..1000),
+                    )),
+                    emails: vec![NewContactEntry {
+                        value: billing_email,
+                        label: Some("Facturation".into()),
+                        is_default: true,
+                    }],
+                    phones: vec![NewContactEntry {
+                        value: phone_value,
+                        label: Some("Standard".into()),
+                        is_default: true,
+                    }],
+                    addresses: vec![address],
+                    notes: None,
+                    referred_by: None,
+                    // Person-only fields stay None for Companies.
+                    date_of_birth: None,
+                    sex: None,
+                    gender: None,
+                    pronouns: None,
+                    occupation: None,
+                    language: Some(language_pool.choose(&mut rng).unwrap().to_string()),
+                }
+            } else {
+                let first: String = FirstName().fake();
+                let last: String = LastName().fake();
+                let email_value: String = FreeEmail().fake();
+                NewClient {
+                    kind: ClientKind::Individual,
+                    name: format!("{first} {last}"),
+                    contact_name: None,
+                    tax_id: None,
+                    registration_number: None,
+                    emails: vec![NewContactEntry {
+                        value: email_value,
+                        label: Some("Personnel".into()),
+                        is_default: true,
+                    }],
+                    phones: vec![NewContactEntry {
+                        value: phone_value,
+                        label: Some("Mobile".into()),
+                        is_default: true,
+                    }],
+                    addresses: vec![address],
+                    notes: None,
+                    referred_by: None,
+                    date_of_birth: Some(random_dob(&mut rng)),
+                    sex: Some(sex_pool.choose(&mut rng).unwrap().to_string()),
+                    gender: Some(gender_pool.choose(&mut rng).unwrap().to_string()),
+                    pronouns: Some(pronouns_pool.choose(&mut rng).unwrap().to_string()),
+                    occupation: Some(occupation_pool.choose(&mut rng).unwrap().to_string()),
+                    language: Some(language_pool.choose(&mut rng).unwrap().to_string()),
+                }
+            };
 
-            let dob = random_dob(&mut rng);
-
-            let client = self.create_client.execute(NewClient {
-                name: full_name,
-                emails: vec![NewContactEntry {
-                    value: email_value,
-                    label: Some("Personnel".into()),
-                    is_default: true,
-                }],
-                phones: vec![NewContactEntry {
-                    value: phone_value,
-                    label: Some("Mobile".into()),
-                    is_default: true,
-                }],
-                address: Some(address),
-                notes: None,
-                referred_by: None,
-                date_of_birth: Some(dob),
-                sex: Some(sex_pool.choose(&mut rng).unwrap().to_string()),
-                gender: Some(gender_pool.choose(&mut rng).unwrap().to_string()),
-                pronouns: Some(pronouns_pool.choose(&mut rng).unwrap().to_string()),
-                occupation: Some(occupation_pool.choose(&mut rng).unwrap().to_string()),
-                language: Some(language_pool.choose(&mut rng).unwrap().to_string()),
-            })?;
+            let client = self.create_client.execute(new_client)?;
             ids.push(client.id);
         }
         report.clients_added = n;
@@ -418,6 +499,87 @@ impl SeedDatabase {
                 notes: None,
             })?;
             report.payments_added += 1;
+        }
+        Ok(())
+    }
+
+    /// "Sends" emails for ~70% of finalized invoices. Skips the SMTP
+    /// transport (we can't and shouldn't talk to a mail server during a
+    /// seed run); instead, mirrors what `SendInvoice` does *after* a
+    /// successful send: flips the invoice to `Sent` and writes an
+    /// `email_logs` row. ~30% of those also get a follow-up reminder log
+    /// so the per-invoice history shows both InitialContact and FollowUp.
+    fn seed_emails(
+        &self,
+        finalized: &[(ClientId, InvoiceId, Money)],
+        report: &mut SeedReport,
+    ) -> Result<(), AppError> {
+        if finalized.is_empty() {
+            return Ok(());
+        }
+        let mut rng = rand::thread_rng();
+        let now = Utc::now();
+
+        for (client_id, invoice_id, _) in finalized {
+            if !rng.gen_bool(0.7) {
+                continue;
+            }
+            // Look up the client's default email and the invoice itself.
+            // Both must exist (they were just seeded above) — anything else
+            // is a programming error worth surfacing.
+            let Some(client) = self.clients.get(*client_id)? else {
+                continue;
+            };
+            let Some(to_address) = client.default_email().map(str::to_owned) else {
+                continue;
+            };
+            let Some(mut invoice) = self.invoices.get(*invoice_id)? else {
+                continue;
+            };
+            // Cancelled invoices won't satisfy `mark_sent`; skip them.
+            if invoice.mark_sent(now).is_err() {
+                continue;
+            }
+            self.invoices.update(&invoice)?;
+            report.invoices_sent += 1;
+
+            // Initial send — backdated to within a few days of issue date.
+            let initial_sent_at = now - Duration::days(rng.gen_range(0..30));
+            let initial = EmailLog::record(NewEmailLog {
+                client_id: *client_id,
+                invoice_id: Some(*invoice_id),
+                template_type: Some(EmailTemplateType::InitialContact),
+                template_name: Some("Default".into()),
+                to_address: to_address.clone(),
+                subject: format!(
+                    "Invoice {} from {}",
+                    invoice.number.map(|n| n.0.to_string()).unwrap_or_default(),
+                    client.name,
+                ),
+                sent_at: initial_sent_at,
+            })?;
+            self.email_logs.insert(&initial)?;
+            report.emails_added += 1;
+
+            // ~30% chance of a follow-up reminder, dated 7-21 days later.
+            if rng.gen_bool(0.3) {
+                let follow_up_sent_at =
+                    initial_sent_at + Duration::days(rng.gen_range(7..21));
+                let follow_up = EmailLog::record(NewEmailLog {
+                    client_id: *client_id,
+                    invoice_id: Some(*invoice_id),
+                    template_type: Some(EmailTemplateType::FollowUp),
+                    template_name: Some("Default reminder".into()),
+                    to_address,
+                    subject: format!(
+                        "Reminder: Invoice {}",
+                        invoice.number.map(|n| n.0.to_string()).unwrap_or_default(),
+                    ),
+                    sent_at: follow_up_sent_at,
+                })?;
+                self.email_logs.insert(&follow_up)?;
+                report.emails_added += 1;
+            }
         }
         Ok(())
     }

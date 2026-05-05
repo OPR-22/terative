@@ -3,9 +3,9 @@ use std::sync::Arc;
 use chrono::{NaiveDate, Utc};
 
 use crate::application::ports::{
-    ClientRepository, InvoiceNumberGenerator, InvoiceRepository, ListInvoicesQuery, Page,
-    PaymentRepository, PdfGenerator, PdfRenderInput, PdfStorage, SettingsRepository,
-    TaxRepository, TemplateRepository,
+    ClientRepository, EmailLogRepository, InvoiceNumberGenerator, InvoiceRepository,
+    ListInvoicesQuery, Page, PaymentRepository, PdfGenerator, PdfRenderInput, PdfStorage,
+    SettingsRepository, TaxRepository, TemplateRepository,
 };
 use crate::application::{AppError, RepoError};
 use crate::domain::invoice::{Invoice, InvoiceId, InvoiceStatus, NewInvoice};
@@ -293,6 +293,7 @@ pub struct ListInvoices {
     invoices: Arc<dyn InvoiceRepository>,
     payments: Arc<dyn PaymentRepository>,
     clients: Arc<dyn ClientRepository>,
+    email_logs: Arc<dyn EmailLogRepository>,
 }
 
 impl ListInvoices {
@@ -300,37 +301,40 @@ impl ListInvoices {
         invoices: Arc<dyn InvoiceRepository>,
         payments: Arc<dyn PaymentRepository>,
         clients: Arc<dyn ClientRepository>,
+        email_logs: Arc<dyn EmailLogRepository>,
     ) -> Self {
         Self {
             invoices,
             payments,
             clients,
+            email_logs,
         }
     }
 
-    /// Returns each invoice alongside its currently allocated amount and
-    /// the joined client display name. The allocated amount's currency
-    /// matches the invoice's currency when payments exist, or defaults
-    /// to the invoice currency with zero cents. `client_name` is `None`
+    /// Returns each invoice alongside its currently allocated amount, the
+    /// joined client display name, and any email log entries for that
+    /// invoice (so the UI can show send history). `client_name` is `None`
     /// only when the FK target was deleted out from under us — the data
     /// model normally enforces it.
     pub fn execute(
         &self,
         query: ListInvoicesQuery,
-    ) -> Result<Page<(Invoice, Money, Option<String>)>, AppError> {
+    ) -> Result<Page<(Invoice, Money, Option<String>, Vec<crate::domain::email_log::EmailLog>)>, AppError> {
         let page = self.invoices.list(query)?;
         let ids: Vec<InvoiceId> = page.data.iter().map(|i| i.id).collect();
         let totals = self.payments.allocated_for_invoices(&ids)?;
         let client_ids: Vec<crate::domain::client::ClientId> =
             page.data.iter().map(|i| i.client_id).collect();
         let names = self.clients.names_for(&client_ids)?;
+        let mut logs_by_invoice = self.email_logs.list_by_invoices(&ids)?;
         Ok(page.map(|inv| {
             let paid = totals
                 .get(&inv.id)
                 .copied()
                 .unwrap_or_else(|| Money::new(0, inv.currency));
             let client_name = names.get(&inv.client_id).cloned();
-            (inv, paid, client_name)
+            let logs = logs_by_invoice.remove(&inv.id).unwrap_or_default();
+            (inv, paid, client_name, logs)
         }))
     }
 }
@@ -339,6 +343,7 @@ pub struct GetInvoice {
     invoices: Arc<dyn InvoiceRepository>,
     payments: Arc<dyn PaymentRepository>,
     clients: Arc<dyn ClientRepository>,
+    email_logs: Arc<dyn EmailLogRepository>,
 }
 
 /// Reads the rendered PDF for a finalized/sent/cancelled invoice from disk.
@@ -519,23 +524,28 @@ impl GetInvoice {
         invoices: Arc<dyn InvoiceRepository>,
         payments: Arc<dyn PaymentRepository>,
         clients: Arc<dyn ClientRepository>,
+        email_logs: Arc<dyn EmailLogRepository>,
     ) -> Self {
         Self {
             invoices,
             payments,
             clients,
+            email_logs,
         }
     }
 
     pub fn execute(
         &self,
         id: InvoiceId,
-    ) -> Result<(Invoice, Money, Option<String>), AppError> {
+    ) -> Result<(Invoice, Money, Option<String>, Vec<crate::domain::email_log::EmailLog>), AppError>
+    {
         let invoice = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
         let paid = self.payments.allocated_for_invoice(id)?;
         let names = self.clients.names_for(&[invoice.client_id])?;
         let client_name = names.get(&invoice.client_id).cloned();
-        Ok((invoice, paid, client_name))
+        let mut logs_by_invoice = self.email_logs.list_by_invoices(&[id])?;
+        let logs = logs_by_invoice.remove(&id).unwrap_or_default();
+        Ok((invoice, paid, client_name, logs))
     }
 }
 
@@ -644,6 +654,30 @@ mod tests {
 
     fn stub_payments() -> Arc<StubPaymentRepo> {
         Arc::new(StubPaymentRepo)
+    }
+
+    struct StubEmailLogRepo;
+    impl EmailLogRepository for StubEmailLogRepo {
+        fn insert(&self, _: &crate::domain::email_log::EmailLog) -> Result<(), RepoError> {
+            Ok(())
+        }
+        fn list_by_client(
+            &self,
+            _: ClientId,
+        ) -> Result<Vec<crate::domain::email_log::EmailLog>, RepoError> {
+            Ok(Vec::new())
+        }
+        fn list_by_invoices(
+            &self,
+            _: &[InvoiceId],
+        ) -> Result<HashMap<InvoiceId, Vec<crate::domain::email_log::EmailLog>>, RepoError>
+        {
+            Ok(HashMap::new())
+        }
+    }
+
+    fn stub_email_logs() -> Arc<dyn EmailLogRepository> {
+        Arc::new(StubEmailLogRepo)
     }
 
     #[derive(Default)]
@@ -998,14 +1032,14 @@ mod tests {
                 .unwrap();
         }
         let drafts =
-            ListInvoices::new(inv_repo.clone(), stub_payments(), stub_clients())
+            ListInvoices::new(inv_repo.clone(), stub_payments(), stub_clients(), stub_email_logs())
                 .execute(ListInvoicesQuery {
                     status: Some(InvoiceStatus::Draft),
                     ..Default::default()
                 })
                 .unwrap();
         assert_eq!(drafts.data.len(), 1);
-        let finalized = ListInvoices::new(inv_repo, stub_payments(), stub_clients())
+        let finalized = ListInvoices::new(inv_repo, stub_payments(), stub_clients(), stub_email_logs())
             .execute(ListInvoicesQuery {
                 status: Some(InvoiceStatus::Finalized),
                 ..Default::default()
@@ -1017,7 +1051,7 @@ mod tests {
     #[test]
     fn get_invoice_returns_not_found() {
         let (inv_repo, _, _) = setup();
-        let err = GetInvoice::new(inv_repo, stub_payments(), stub_clients())
+        let err = GetInvoice::new(inv_repo, stub_payments(), stub_clients(), stub_email_logs())
             .execute(InvoiceId::new())
             .unwrap_err();
         assert!(matches!(err, AppError::NotFound));

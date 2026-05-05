@@ -6,19 +6,24 @@
 PRAGMA application_id = 0x54455241;
 
 CREATE TABLE clients (
-    id              TEXT PRIMARY KEY,
-    name            TEXT NOT NULL,
-    address         TEXT,
-    notes           TEXT,
-    referred_by     TEXT REFERENCES clients(id) ON DELETE SET NULL,
-    date_of_birth   TEXT,    -- ISO 8601 calendar date (YYYY-MM-DD)
-    sex             TEXT,    -- biological sex (male/female/intersex/...)
-    gender          TEXT,    -- gender identity (free-form)
-    pronouns        TEXT,
-    occupation      TEXT,
-    language        TEXT,    -- ISO 639-1 code (fr, en, nl, ...)
-    archived_at     TEXT,    -- RFC 3339 timestamp; NULL = active
-    created_at      TEXT NOT NULL
+    id                  TEXT PRIMARY KEY,
+    -- 'Individual' for natural persons, 'Company' for legal entities.
+    kind                TEXT NOT NULL DEFAULT 'Individual'
+                        CHECK (kind IN ('Individual', 'Company')),
+    name                TEXT NOT NULL,
+    contact_name        TEXT,
+    tax_id              TEXT,
+    registration_number TEXT,
+    notes               TEXT,
+    referred_by         TEXT REFERENCES clients(id) ON DELETE SET NULL,
+    date_of_birth       TEXT,    -- ISO 8601 calendar date (YYYY-MM-DD)
+    sex                 TEXT,    -- biological sex (male/female/intersex/...)
+    gender              TEXT,    -- gender identity (free-form)
+    pronouns            TEXT,
+    occupation          TEXT,
+    language            TEXT,    -- ISO 639-1 code (fr, en, nl, ...)
+    archived_at         TEXT,    -- RFC 3339 timestamp; NULL = active
+    created_at          TEXT NOT NULL
 );
 
 CREATE TABLE client_emails (
@@ -39,9 +44,46 @@ CREATE TABLE client_phones (
     sort_order  INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE INDEX idx_client_emails_client ON client_emails(client_id);
-CREATE INDEX idx_client_phones_client ON client_phones(client_id);
-CREATE INDEX idx_clients_referred_by  ON clients(referred_by);
+CREATE TABLE client_addresses (
+    id              TEXT PRIMARY KEY,
+    client_id       TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    label           TEXT,
+    street          TEXT NOT NULL,
+    apt_suite       TEXT,
+    city            TEXT NOT NULL,
+    state_province  TEXT,
+    postal_code     TEXT NOT NULL,
+    country         TEXT NOT NULL, -- ISO 3166-1 alpha-2 codes
+    -- "Active" per-role flags. A client may have many addresses on file,
+    -- but only one is the currently active billing address (`is_billing
+    -- = 1`) and only one is the currently active shipping address.
+    -- The same row can carry both flags (common case for individuals).
+    -- An address with both flags off is fine — it's an inactive address
+    -- on file (e.g. an old site, or one not currently used for either
+    -- purpose). The partial unique indexes below enforce the at-most-one
+    -- cap per role at the DB layer.
+    is_billing      INTEGER NOT NULL DEFAULT 0,
+    is_shipping     INTEGER NOT NULL DEFAULT 0,
+    sort_order      INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_client_emails_client     ON client_emails(client_id);
+CREATE INDEX idx_client_phones_client     ON client_phones(client_id);
+CREATE INDEX idx_client_addresses_client  ON client_addresses(client_id);
+CREATE INDEX idx_clients_referred_by      ON clients(referred_by);
+
+-- At most one default billing and one default shipping address per client.
+-- A client may have many addresses for each role (multi-site companies),
+-- but only one is marked as the default that auto-fills new invoices /
+-- shipments. Partial indexes make this a pure DB-level invariant; the
+-- repo layer must clear the previous default in the same transaction
+-- when a new one is set.
+CREATE UNIQUE INDEX uniq_client_billing
+    ON client_addresses(client_id)
+    WHERE is_billing = 1;
+CREATE UNIQUE INDEX uniq_client_shipping
+    ON client_addresses(client_id)
+    WHERE is_shipping = 1;
 
 CREATE TABLE notebook_sections (
     id          TEXT PRIMARY KEY,
@@ -244,17 +286,20 @@ CREATE INDEX idx_alloc_invoice        ON payment_allocations(invoice_id);
 CREATE INDEX idx_line_items_invoice   ON invoice_line_items(invoice_id);
 CREATE INDEX idx_invoice_taxes_inv    ON invoice_taxes(invoice_id);
 
-CREATE TABLE invoice_email_sends (
+CREATE TABLE email_logs (
     id              TEXT PRIMARY KEY,
-    invoice_id      TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
-    template_type   TEXT NOT NULL,
-    template_name   TEXT NOT NULL,
+    client_id       TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    invoice_id      TEXT REFERENCES invoices(id) ON DELETE SET NULL,
+    template_type   TEXT,
+    template_name   TEXT,
     to_address      TEXT NOT NULL,
     subject         TEXT NOT NULL,
     sent_at         TEXT NOT NULL
 );
 
-CREATE INDEX idx_email_sends_invoice ON invoice_email_sends(invoice_id);
+CREATE INDEX idx_email_logs_client  ON email_logs(client_id);
+CREATE INDEX idx_email_logs_invoice ON email_logs(invoice_id);
+CREATE INDEX idx_email_logs_sent_at ON email_logs(sent_at);
 
 CREATE VIEW v_invoice_payment_status AS
 SELECT

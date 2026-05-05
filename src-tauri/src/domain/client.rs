@@ -58,13 +58,141 @@ pub struct NewContactEntry {
     pub is_default: bool,
 }
 
+/// Whether this client is a natural person or a legal entity. Drives UI
+/// rendering (which fields to show); the domain layer stores Individual-
+/// only and Company-only fields side-by-side and doesn't reject mixed
+/// usage — sole traders frequently fill both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClientKind {
+    Individual,
+    Company,
+}
+
+impl ClientKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ClientKind::Individual => "Individual",
+            ClientKind::Company => "Company",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "Individual" => Some(Self::Individual),
+            "Company" => Some(Self::Company),
+            _ => None,
+        }
+    }
+}
+
+impl Default for ClientKind {
+    fn default() -> Self {
+        Self::Individual
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ClientAddressId(pub Uuid);
+
+impl ClientAddressId {
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+}
+
+impl Default for ClientAddressId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for ClientAddressId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// A single postal address, structured. `is_billing` / `is_shipping` flag
+/// what the address is used for — at least one must be true. A client
+/// has at most one billing address and at most one shipping address;
+/// the same row may carry both flags (the common case for individuals).
+/// The DB enforces this with partial unique indexes on each flag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientAddress {
+    pub id: ClientAddressId,
+    /// Free-form label. Optional, kept mostly for legacy data; with at
+    /// most one billing + one shipping per client the label is rarely
+    /// load-bearing for disambiguation.
+    pub label: Option<String>,
+    /// Line 1 — building/street number plus street name.
+    pub street: String,
+    /// Line 2 — apartment, suite, building, floor, "c/o", etc.
+    pub apt_suite: Option<String>,
+    pub city: String,
+    /// Optional — many countries don't use a state/province subdivision.
+    pub state_province: Option<String>,
+    pub postal_code: String,
+    /// Free-form. ISO 3166-1 alpha-2 ("FR", "BE") recommended.
+    pub country: String,
+    pub is_billing: bool,
+    pub is_shipping: bool,
+}
+
+impl ClientAddress {
+    /// Joins the structured fields into a multi-line representation suitable
+    /// for invoice/PDF rendering. Skips empty optional lines so we don't
+    /// emit blank ones.
+    pub fn formatted(&self) -> String {
+        let mut lines: Vec<String> = Vec::with_capacity(4);
+        lines.push(self.street.clone());
+        if let Some(apt) = self.apt_suite.as_deref() {
+            if !apt.trim().is_empty() {
+                lines.push(apt.trim().to_string());
+            }
+        }
+        // City line: "Postal City" or "Postal City, State".
+        let mut city_line = format!("{} {}", self.postal_code, self.city);
+        if let Some(state) = self.state_province.as_deref() {
+            if !state.trim().is_empty() {
+                city_line.push_str(", ");
+                city_line.push_str(state.trim());
+            }
+        }
+        lines.push(city_line);
+        lines.push(self.country.clone());
+        lines.join("\n")
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct NewClientAddress {
+    pub label: Option<String>,
+    pub street: String,
+    pub apt_suite: Option<String>,
+    pub city: String,
+    pub state_province: Option<String>,
+    pub postal_code: String,
+    pub country: String,
+    pub is_billing: bool,
+    pub is_shipping: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Client {
     pub id: ClientId,
+    pub kind: ClientKind,
+    /// Display name. For Individuals: the person's full name. For Companies:
+    /// the trading / public-facing name.
     pub name: String,
+    /// Optional human contact at a company (e.g. accounts payable contact).
+    /// The UI only shows / writes this for Companies.
+    pub contact_name: Option<String>,
+    /// VAT number for B2B invoicing.
+    pub tax_id: Option<String>,
+    /// Companies-house / SIREN / KBIS registration number.
+    pub registration_number: Option<String>,
     pub emails: Vec<ContactEntry>,
     pub phones: Vec<ContactEntry>,
-    pub address: Option<String>,
+    pub addresses: Vec<ClientAddress>,
     pub notes: Option<String>,
     pub referred_by: Option<ClientId>,
     pub date_of_birth: Option<NaiveDate>,
@@ -90,6 +218,18 @@ pub enum ClientError {
     EmptyName,
     #[error("contact entry value cannot be empty")]
     EmptyContactValue,
+    #[error("address street cannot be empty")]
+    EmptyAddressStreet,
+    #[error("address city cannot be empty")]
+    EmptyAddressCity,
+    #[error("address postal code cannot be empty")]
+    EmptyAddressPostalCode,
+    #[error("address country cannot be empty")]
+    EmptyAddressCountry,
+    #[error("only one address can be the active billing address")]
+    DuplicateBillingAddress,
+    #[error("only one address can be the active shipping address")]
+    DuplicateShippingAddress,
     #[error("a client cannot refer itself")]
     SelfReferral,
     #[error("date of birth cannot be in the future")]
@@ -98,10 +238,14 @@ pub enum ClientError {
 
 #[derive(Debug, Clone, Default)]
 pub struct NewClient {
+    pub kind: ClientKind,
     pub name: String,
+    pub contact_name: Option<String>,
+    pub tax_id: Option<String>,
+    pub registration_number: Option<String>,
     pub emails: Vec<NewContactEntry>,
     pub phones: Vec<NewContactEntry>,
-    pub address: Option<String>,
+    pub addresses: Vec<NewClientAddress>,
     pub notes: Option<String>,
     pub referred_by: Option<ClientId>,
     pub date_of_birth: Option<NaiveDate>,
@@ -120,13 +264,18 @@ impl Client {
         }
         let emails = sanitize_contacts(input.emails)?;
         let phones = sanitize_contacts(input.phones)?;
+        let addresses = sanitize_addresses(input.addresses)?;
         let date_of_birth = validate_dob(input.date_of_birth, now)?;
         Ok(Self {
             id: ClientId::new(),
+            kind: input.kind,
             name,
+            contact_name: input.contact_name.and_then(non_empty),
+            tax_id: input.tax_id.and_then(non_empty),
+            registration_number: input.registration_number.and_then(non_empty),
             emails,
             phones,
-            address: input.address.and_then(non_empty),
+            addresses,
             notes: input.notes.and_then(non_empty),
             referred_by: input.referred_by,
             date_of_birth,
@@ -152,6 +301,27 @@ impl Client {
     pub fn replace_phones(&mut self, new_phones: Vec<NewContactEntry>) -> Result<(), ClientError> {
         self.phones = sanitize_contacts(new_phones)?;
         Ok(())
+    }
+
+    pub fn replace_addresses(
+        &mut self,
+        new_addresses: Vec<NewClientAddress>,
+    ) -> Result<(), ClientError> {
+        self.addresses = sanitize_addresses(new_addresses)?;
+        Ok(())
+    }
+
+    /// The client's billing address, if any. By construction (validated by
+    /// `sanitize_addresses` and enforced at the DB layer) there is at
+    /// most one billing-flagged row per client.
+    pub fn billing_address(&self) -> Option<&ClientAddress> {
+        self.addresses.iter().find(|a| a.is_billing)
+    }
+
+    /// The client's shipping address, if any. May be the same row as the
+    /// billing address when that row carries both flags.
+    pub fn shipping_address(&self) -> Option<&ClientAddress> {
+        self.addresses.iter().find(|a| a.is_shipping)
     }
 
     pub fn set_referred_by(&mut self, referrer: Option<ClientId>) -> Result<(), ClientError> {
@@ -209,6 +379,63 @@ fn sanitize_contacts(input: Vec<NewContactEntry>) -> Result<Vec<ContactEntry>, C
     }
     if !seen_default {
         out[0].is_default = true;
+    }
+    Ok(out)
+}
+
+/// Trims structured fields, validates the required ones, and rejects
+/// having more than one active billing or active shipping row. Addresses
+/// with neither flag set are valid — they're stored-but-not-currently-
+/// active addresses. The DB partial unique indexes are the ultimate
+/// enforcer; this check surfaces a clean domain error before the round-
+/// trip.
+fn sanitize_addresses(
+    input: Vec<NewClientAddress>,
+) -> Result<Vec<ClientAddress>, ClientError> {
+    let mut out: Vec<ClientAddress> = Vec::with_capacity(input.len());
+    let mut billing_seen = false;
+    let mut shipping_seen = false;
+    for a in input {
+        if a.is_billing {
+            if billing_seen {
+                return Err(ClientError::DuplicateBillingAddress);
+            }
+            billing_seen = true;
+        }
+        if a.is_shipping {
+            if shipping_seen {
+                return Err(ClientError::DuplicateShippingAddress);
+            }
+            shipping_seen = true;
+        }
+        let street = a.street.trim().to_string();
+        if street.is_empty() {
+            return Err(ClientError::EmptyAddressStreet);
+        }
+        let city = a.city.trim().to_string();
+        if city.is_empty() {
+            return Err(ClientError::EmptyAddressCity);
+        }
+        let postal_code = a.postal_code.trim().to_string();
+        if postal_code.is_empty() {
+            return Err(ClientError::EmptyAddressPostalCode);
+        }
+        let country = a.country.trim().to_string();
+        if country.is_empty() {
+            return Err(ClientError::EmptyAddressCountry);
+        }
+        out.push(ClientAddress {
+            id: ClientAddressId::new(),
+            label: a.label.and_then(non_empty),
+            street,
+            apt_suite: a.apt_suite.and_then(non_empty),
+            city,
+            state_province: a.state_province.and_then(non_empty),
+            postal_code,
+            country,
+            is_billing: a.is_billing,
+            is_shipping: a.is_shipping,
+        });
     }
     Ok(out)
 }
@@ -492,6 +719,175 @@ mod tests {
         assert_eq!(c.pronouns.as_deref(), Some("she/her"));
         assert_eq!(c.occupation.as_deref(), Some("Architect"));
         assert_eq!(c.language.as_deref(), Some("fr"));
+    }
+
+    fn new_address(street: &str, billing: bool, shipping: bool) -> NewClientAddress {
+        NewClientAddress {
+            label: None,
+            street: street.into(),
+            apt_suite: None,
+            city: "Brussels".into(),
+            state_province: None,
+            postal_code: "1000".into(),
+            country: "BE".into(),
+            is_billing: billing,
+            is_shipping: shipping,
+        }
+    }
+
+    #[test]
+    fn create_with_addresses_exposes_billing_and_shipping() {
+        let c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                addresses: vec![
+                    new_address("1 HQ St", true, false),
+                    new_address("2 Warehouse Way", false, true),
+                ],
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        assert_eq!(c.billing_address().unwrap().street, "1 HQ St");
+        assert_eq!(c.shipping_address().unwrap().street, "2 Warehouse Way");
+    }
+
+    #[test]
+    fn create_with_combined_address_returns_same_row_for_both() {
+        let c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                addresses: vec![new_address("1 Office Rd", true, true)],
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        assert_eq!(c.billing_address().unwrap().street, "1 Office Rd");
+        assert_eq!(c.shipping_address().unwrap().street, "1 Office Rd");
+        // Same row, not a duplicate.
+        assert_eq!(c.addresses.len(), 1);
+    }
+
+    #[test]
+    fn create_rejects_duplicate_billing() {
+        let err = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                addresses: vec![
+                    new_address("1 First", true, false),
+                    new_address("2 Second", true, false),
+                ],
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap_err();
+        assert_eq!(err, ClientError::DuplicateBillingAddress);
+    }
+
+    #[test]
+    fn create_rejects_duplicate_shipping() {
+        let err = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                addresses: vec![
+                    new_address("1 First", false, true),
+                    new_address("2 Second", false, true),
+                ],
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap_err();
+        assert_eq!(err, ClientError::DuplicateShippingAddress);
+    }
+
+    #[test]
+    fn create_accepts_address_with_no_active_role() {
+        // An address with neither flag is valid — it's stored on file
+        // but not currently the active billing or shipping address.
+        let c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                addresses: vec![new_address("inactive", false, false)],
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        assert_eq!(c.addresses.len(), 1);
+        assert!(c.billing_address().is_none());
+        assert!(c.shipping_address().is_none());
+    }
+
+    #[test]
+    fn create_rejects_empty_required_address_fields() {
+        let mut a = new_address("1 Way", true, false);
+        a.street = "  ".into();
+        let err = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                addresses: vec![a],
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap_err();
+        assert_eq!(err, ClientError::EmptyAddressStreet);
+
+        let mut a = new_address("1 Way", true, false);
+        a.country = "".into();
+        let err = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                addresses: vec![a],
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap_err();
+        assert_eq!(err, ClientError::EmptyAddressCountry);
+    }
+
+    #[test]
+    fn formatted_address_skips_empty_optional_lines() {
+        let c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                addresses: vec![new_address("1 Way", true, true)],
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        let f = c.addresses[0].formatted();
+        assert!(f.contains("1 Way"));
+        assert!(f.contains("1000 Brussels"));
+        assert!(f.ends_with("BE"));
+        // No blank middle line.
+        assert!(!f.contains("\n\n"));
+    }
+
+    #[test]
+    fn create_company_kind_with_tax_fields() {
+        let c = Client::create(
+            NewClient {
+                kind: ClientKind::Company,
+                name: "Acme SARL".into(),
+                contact_name: Some("Marie Dupont".into()),
+                tax_id: Some("FR12345678901".into()),
+                registration_number: Some("123 456 789".into()),
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        assert_eq!(c.kind, ClientKind::Company);
+        assert_eq!(c.tax_id.as_deref(), Some("FR12345678901"));
+        assert_eq!(c.registration_number.as_deref(), Some("123 456 789"));
+        assert_eq!(c.contact_name.as_deref(), Some("Marie Dupont"));
     }
 
     #[test]

@@ -7,7 +7,9 @@ use uuid::Uuid;
 use crate::adapters::sqlite::connection::Db;
 use crate::application::ports::{ClientAttributeValues, ClientRepository, ListClientsQuery, Page};
 use crate::application::RepoError;
-use crate::domain::client::{Client, ClientId, ContactEntry, ContactEntryId};
+use crate::domain::client::{
+    Client, ClientAddress, ClientAddressId, ClientId, ClientKind, ContactEntry, ContactEntryId,
+};
 
 pub struct SqliteClientRepository {
     db: Db,
@@ -37,9 +39,15 @@ fn parse_uuid(s: &str) -> rusqlite::Result<Uuid> {
     })
 }
 
-/// Reads the bare client row. Contact lists are loaded separately.
+const CLIENT_COLUMNS: &str = "id, kind, name, contact_name, tax_id, registration_number, \
+                              notes, referred_by, date_of_birth, sex, gender, pronouns, \
+                              occupation, language, archived_at, created_at";
+
+/// Reads the bare client row. Contact lists / addresses are loaded separately.
 fn row_to_bare_client(row: &Row<'_>) -> rusqlite::Result<Client> {
     let id = ClientId(parse_uuid(&row.get::<_, String>("id")?)?);
+    let kind_str: String = row.get("kind")?;
+    let kind = ClientKind::parse(&kind_str).unwrap_or(ClientKind::Individual);
     let created_at_str: String = row.get("created_at")?;
     let created_at = DateTime::parse_from_rfc3339(&created_at_str)
         .map_err(|e| {
@@ -72,10 +80,14 @@ fn row_to_bare_client(row: &Row<'_>) -> rusqlite::Result<Client> {
     };
     Ok(Client {
         id,
+        kind,
         name: row.get("name")?,
+        contact_name: row.get("contact_name")?,
+        tax_id: row.get("tax_id")?,
+        registration_number: row.get("registration_number")?,
         emails: Vec::new(),
         phones: Vec::new(),
-        address: row.get("address")?,
+        addresses: Vec::new(),
         notes: row.get("notes")?,
         referred_by,
         date_of_birth,
@@ -99,6 +111,26 @@ fn row_to_contact(row: &Row<'_>) -> rusqlite::Result<(Uuid, ContactEntry)> {
             value: row.get("value")?,
             label: row.get("label")?,
             is_default: row.get::<_, i64>("is_default")? != 0,
+        },
+    ))
+}
+
+fn row_to_address(row: &Row<'_>) -> rusqlite::Result<(Uuid, ClientAddress)> {
+    let client_id = parse_uuid(&row.get::<_, String>("client_id")?)?;
+    let id = ClientAddressId(parse_uuid(&row.get::<_, String>("id")?)?);
+    Ok((
+        client_id,
+        ClientAddress {
+            id,
+            label: row.get("label")?,
+            street: row.get("street")?,
+            apt_suite: row.get("apt_suite")?,
+            city: row.get("city")?,
+            state_province: row.get("state_province")?,
+            postal_code: row.get("postal_code")?,
+            country: row.get("country")?,
+            is_billing: row.get::<_, i64>("is_billing")? != 0,
+            is_shipping: row.get::<_, i64>("is_shipping")? != 0,
         },
     ))
 }
@@ -127,6 +159,37 @@ fn load_contacts(
         .query_map(params.as_slice(), row_to_contact)
         .map_err(map_err)?;
     let mut out: HashMap<Uuid, Vec<ContactEntry>> = HashMap::new();
+    for row in rows {
+        let (cid, entry) = row.map_err(map_err)?;
+        out.entry(cid).or_default().push(entry);
+    }
+    Ok(out)
+}
+
+fn load_addresses(
+    conn: &Connection,
+    client_ids: &[ClientId],
+) -> Result<HashMap<Uuid, Vec<ClientAddress>>, RepoError> {
+    if client_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let placeholders: Vec<String> = (1..=client_ids.len()).map(|i| format!("?{i}")).collect();
+    let sql = format!(
+        "SELECT id, client_id, label, street, apt_suite, city, state_province,
+                postal_code, country, is_billing, is_shipping
+         FROM client_addresses
+         WHERE client_id IN ({})
+         ORDER BY sort_order ASC, street ASC",
+        placeholders.join(", ")
+    );
+    let mut stmt = conn.prepare(&sql).map_err(map_err)?;
+    let ids: Vec<String> = client_ids.iter().map(|id| id.to_string()).collect();
+    let params: Vec<&dyn rusqlite::ToSql> =
+        ids.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+    let rows = stmt
+        .query_map(params.as_slice(), row_to_address)
+        .map_err(map_err)?;
+    let mut out: HashMap<Uuid, Vec<ClientAddress>> = HashMap::new();
     for row in rows {
         let (cid, entry) = row.map_err(map_err)?;
         out.entry(cid).or_default().push(entry);
@@ -165,6 +228,45 @@ fn write_contacts(
     Ok(())
 }
 
+fn write_addresses(
+    conn: &Connection,
+    client_id: ClientId,
+    entries: &[ClientAddress],
+) -> Result<(), RepoError> {
+    // Delete-then-insert: with everything cleared first, the partial unique
+    // partial indexes WHERE is_billing=1 / WHERE is_shipping=1 can't
+    // be tripped by a transient duplicate.
+    conn.execute(
+        "DELETE FROM client_addresses WHERE client_id = ?1",
+        params![client_id.to_string()],
+    )
+    .map_err(map_err)?;
+    for (idx, addr) in entries.iter().enumerate() {
+        conn.execute(
+            "INSERT INTO client_addresses
+             (id, client_id, label, street, apt_suite, city, state_province,
+              postal_code, country, is_billing, is_shipping, sort_order)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                addr.id.to_string(),
+                client_id.to_string(),
+                addr.label,
+                addr.street,
+                addr.apt_suite,
+                addr.city,
+                addr.state_province,
+                addr.postal_code,
+                addr.country,
+                addr.is_billing as i64,
+                addr.is_shipping as i64,
+                idx as i64,
+            ],
+        )
+        .map_err(map_err)?;
+    }
+    Ok(())
+}
+
 fn hydrate_contacts(conn: &Connection, clients: &mut [Client]) -> Result<(), RepoError> {
     if clients.is_empty() {
         return Ok(());
@@ -172,9 +274,11 @@ fn hydrate_contacts(conn: &Connection, clients: &mut [Client]) -> Result<(), Rep
     let ids: Vec<ClientId> = clients.iter().map(|c| c.id).collect();
     let mut emails = load_contacts(conn, "client_emails", &ids)?;
     let mut phones = load_contacts(conn, "client_phones", &ids)?;
+    let mut addresses = load_addresses(conn, &ids)?;
     for c in clients.iter_mut() {
         c.emails = emails.remove(&c.id.0).unwrap_or_default();
         c.phones = phones.remove(&c.id.0).unwrap_or_default();
+        c.addresses = addresses.remove(&c.id.0).unwrap_or_default();
     }
     Ok(())
 }
@@ -184,13 +288,16 @@ impl ClientRepository for SqliteClientRepository {
         let conn = self.db.lock();
         conn.execute(
             "INSERT INTO clients
-             (id, name, address, notes, referred_by, date_of_birth, sex, gender,
-              pronouns, occupation, language, archived_at, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+             (id, kind, name, contact_name, tax_id, registration_number, notes, referred_by,
+              date_of_birth, sex, gender, pronouns, occupation, language, archived_at, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 c.id.to_string(),
+                c.kind.as_str(),
                 c.name,
-                c.address,
+                c.contact_name,
+                c.tax_id,
+                c.registration_number,
                 c.notes,
                 c.referred_by.map(|r| r.to_string()),
                 c.date_of_birth.map(|d| d.format("%Y-%m-%d").to_string()),
@@ -206,6 +313,7 @@ impl ClientRepository for SqliteClientRepository {
         .map_err(map_err)?;
         write_contacts(&conn, "client_emails", c.id, &c.emails)?;
         write_contacts(&conn, "client_phones", c.id, &c.phones)?;
+        write_addresses(&conn, c.id, &c.addresses)?;
         Ok(())
     }
 
@@ -214,15 +322,19 @@ impl ClientRepository for SqliteClientRepository {
         let affected = conn
             .execute(
                 "UPDATE clients
-                 SET name = ?2, address = ?3, notes = ?4, referred_by = ?5,
-                     date_of_birth = ?6, sex = ?7, gender = ?8,
-                     pronouns = ?9, occupation = ?10, language = ?11,
-                     archived_at = ?12
+                 SET kind = ?2, name = ?3, contact_name = ?4, tax_id = ?5,
+                     registration_number = ?6, notes = ?7, referred_by = ?8,
+                     date_of_birth = ?9, sex = ?10, gender = ?11,
+                     pronouns = ?12, occupation = ?13, language = ?14,
+                     archived_at = ?15
                  WHERE id = ?1",
                 params![
                     c.id.to_string(),
+                    c.kind.as_str(),
                     c.name,
-                    c.address,
+                    c.contact_name,
+                    c.tax_id,
+                    c.registration_number,
                     c.notes,
                     c.referred_by.map(|r| r.to_string()),
                     c.date_of_birth.map(|d| d.format("%Y-%m-%d").to_string()),
@@ -240,6 +352,7 @@ impl ClientRepository for SqliteClientRepository {
         }
         write_contacts(&conn, "client_emails", c.id, &c.emails)?;
         write_contacts(&conn, "client_phones", c.id, &c.phones)?;
+        write_addresses(&conn, c.id, &c.addresses)?;
         Ok(())
     }
 
@@ -247,8 +360,7 @@ impl ClientRepository for SqliteClientRepository {
         let conn = self.db.lock();
         let mut client = conn
             .query_row(
-                "SELECT id, name, address, notes, referred_by, date_of_birth, sex, gender, pronouns, occupation, language, archived_at, created_at
-                 FROM clients WHERE id = ?1",
+                &format!("SELECT {CLIENT_COLUMNS} FROM clients WHERE id = ?1"),
                 params![id.to_string()],
                 row_to_bare_client,
             )
@@ -293,7 +405,7 @@ impl ClientRepository for SqliteClientRepository {
         let offset = query.pagination.offset();
         let limit = query.pagination.per_page as u64;
         let select_sql = format!(
-            "SELECT id, name, address, notes, referred_by, date_of_birth, sex, gender, pronouns, occupation, language, archived_at, created_at FROM clients{where_clause} \
+            "SELECT {CLIENT_COLUMNS} FROM clients{where_clause} \
              ORDER BY name COLLATE NOCASE ASC LIMIT {limit} OFFSET {offset}"
         );
 
@@ -382,7 +494,7 @@ impl ClientRepository for SqliteClientRepository {
 mod tests {
     use super::*;
     use crate::adapters::sqlite::connection::open_memory;
-    use crate::domain::client::{NewClient, NewContactEntry};
+    use crate::domain::client::{NewClient, NewClientAddress, NewContactEntry};
 
     fn email(value: &str, is_default: bool) -> NewContactEntry {
         NewContactEntry {
@@ -449,6 +561,36 @@ mod tests {
     }
 
     #[test]
+    fn insert_persists_addresses() {
+        let db = open_memory();
+        let repo = SqliteClientRepository::new(db);
+        let c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                addresses: vec![NewClientAddress {
+                    label: Some("HQ".into()),
+                    street: "1 Way".into(),
+                    city: "Brussels".into(),
+                    postal_code: "1000".into(),
+                    country: "BE".into(),
+                    is_billing: true,
+                    is_shipping: true,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            Utc::now(),
+        )
+        .unwrap();
+        repo.insert(&c).unwrap();
+        let loaded = repo.get(c.id).unwrap().unwrap();
+        assert_eq!(loaded.addresses.len(), 1);
+        assert_eq!(loaded.billing_address().unwrap().street, "1 Way");
+        // Same row carries the shipping flag.
+        assert_eq!(loaded.shipping_address().unwrap().street, "1 Way");
+    }
+
+    #[test]
     fn update_replaces_contact_lists() {
         let db = open_memory();
         let repo = SqliteClientRepository::new(db);
@@ -468,6 +610,104 @@ mod tests {
         let loaded = repo.get(c.id).unwrap().unwrap();
         assert_eq!(loaded.emails.len(), 2);
         assert_eq!(loaded.default_email(), Some("new@x.com"));
+    }
+
+    #[test]
+    fn update_replaces_addresses() {
+        let db = open_memory();
+        let repo = SqliteClientRepository::new(db);
+        let mut c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                addresses: vec![NewClientAddress {
+                    street: "Old St".into(),
+                    city: "Brussels".into(),
+                    postal_code: "1000".into(),
+                    country: "BE".into(),
+                    is_billing: true,
+                    is_shipping: false,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            Utc::now(),
+        )
+        .unwrap();
+        repo.insert(&c).unwrap();
+        c.replace_addresses(vec![NewClientAddress {
+            street: "New St".into(),
+            city: "Brussels".into(),
+            postal_code: "1000".into(),
+            country: "BE".into(),
+            is_billing: true,
+            is_shipping: false,
+            ..Default::default()
+        }])
+        .unwrap();
+        repo.update(&c).unwrap();
+        let loaded = repo.get(c.id).unwrap().unwrap();
+        assert_eq!(loaded.addresses.len(), 1);
+        assert_eq!(loaded.addresses[0].street, "New St");
+    }
+
+    #[test]
+    fn db_rejects_two_billing_addresses_for_same_client() {
+        // Sanity check on the partial unique index. Bypasses
+        // sanitize_addresses by writing raw SQL.
+        let db = open_memory();
+        let repo = SqliteClientRepository::new(db.clone());
+        let c = make_client("Acme");
+        repo.insert(&c).unwrap();
+        let first = ClientAddressId::new();
+        let second = ClientAddressId::new();
+        let cid = c.id.to_string();
+        let conn = db.lock();
+        conn.execute(
+            "INSERT INTO client_addresses (id, client_id, label, street, apt_suite, city, state_province, postal_code, country, is_billing, is_shipping, sort_order)
+             VALUES (?1, ?2, NULL, 'A St', NULL, 'Brussels', NULL, '1000', 'BE', 1, 0, 0)",
+            params![first.to_string(), cid],
+        )
+        .unwrap();
+        let err = conn.execute(
+            "INSERT INTO client_addresses (id, client_id, label, street, apt_suite, city, state_province, postal_code, country, is_billing, is_shipping, sort_order)
+             VALUES (?1, ?2, NULL, 'B St', NULL, 'Brussels', NULL, '1000', 'BE', 1, 0, 1)",
+            params![second.to_string(), cid],
+        );
+        assert!(err.is_err(), "second billing row must be rejected");
+    }
+
+    #[test]
+    fn db_allows_combined_billing_and_shipping_row() {
+        // A single row with both flags shouldn't trip either uniqueness
+        // index — partial indexes only count the rows that match.
+        let db = open_memory();
+        let repo = SqliteClientRepository::new(db.clone());
+        let c = make_client("Acme");
+        repo.insert(&c).unwrap();
+        let conn = db.lock();
+        conn.execute(
+            "INSERT INTO client_addresses (id, client_id, label, street, apt_suite, city, state_province, postal_code, country, is_billing, is_shipping, sort_order)
+             VALUES (?1, ?2, 'HQ', 'A St', NULL, 'Brussels', NULL, '1000', 'BE', 1, 1, 0)",
+            params![ClientAddressId::new().to_string(), c.id.to_string()],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn db_allows_address_with_no_active_role() {
+        // Stored-but-not-active addresses are valid. The client just
+        // hasn't picked this one as the current billing or shipping.
+        let db = open_memory();
+        let repo = SqliteClientRepository::new(db.clone());
+        let c = make_client("Acme");
+        repo.insert(&c).unwrap();
+        let conn = db.lock();
+        conn.execute(
+            "INSERT INTO client_addresses (id, client_id, label, street, apt_suite, city, state_province, postal_code, country, is_billing, is_shipping, sort_order)
+             VALUES (?1, ?2, 'Old site', 'A St', NULL, 'Brussels', NULL, '1000', 'BE', 0, 0, 0)",
+            params![ClientAddressId::new().to_string(), c.id.to_string()],
+        )
+        .unwrap();
     }
 
     #[test]

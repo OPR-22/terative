@@ -6,7 +6,9 @@ use crate::application::ports::{
     ClientAttributeValues, ClientRepository, ListClientsQuery, Page,
 };
 use crate::application::AppError;
-use crate::domain::client::{Client, ClientId, NewClient, NewContactEntry};
+use crate::domain::client::{
+    Client, ClientId, ClientKind, NewClient, NewClientAddress, NewContactEntry,
+};
 
 #[derive(Clone)]
 pub struct CreateClient {
@@ -32,10 +34,14 @@ pub struct UpdateClient {
 #[derive(Debug, Clone)]
 pub struct UpdateClientInput {
     pub id: ClientId,
+    pub kind: ClientKind,
     pub name: String,
+    pub contact_name: Option<String>,
+    pub tax_id: Option<String>,
+    pub registration_number: Option<String>,
     pub emails: Vec<NewContactEntry>,
     pub phones: Vec<NewContactEntry>,
-    pub address: Option<String>,
+    pub addresses: Vec<NewClientAddress>,
     pub notes: Option<String>,
     pub referred_by: Option<ClientId>,
     pub date_of_birth: Option<NaiveDate>,
@@ -62,10 +68,14 @@ impl UpdateClient {
                 return Err(crate::domain::client::ClientError::FutureDateOfBirth.into());
             }
         }
+        client.kind = input.kind;
         client.name = name;
+        client.contact_name = normalize(input.contact_name);
+        client.tax_id = normalize(input.tax_id);
+        client.registration_number = normalize(input.registration_number);
         client.replace_emails(input.emails)?;
         client.replace_phones(input.phones)?;
-        client.address = normalize(input.address);
+        client.replace_addresses(input.addresses)?;
         client.notes = normalize(input.notes);
         client.set_referred_by(input.referred_by)?;
         client.date_of_birth = input.date_of_birth;
@@ -289,9 +299,13 @@ mod tests {
             .execute(UpdateClientInput {
                 id: created.id,
                 name: "New Name".into(),
+                kind: ClientKind::Individual,
+                contact_name: None,
+                tax_id: None,
+                registration_number: None,
                 emails: vec![email("new@x.com", true)],
                 phones: vec![],
-                address: None,
+                addresses: vec![],
                 notes: None,
                 referred_by: None,
                 date_of_birth: None,
@@ -313,9 +327,13 @@ mod tests {
             .execute(UpdateClientInput {
                 id: ClientId::new(),
                 name: "X".into(),
+                kind: ClientKind::Individual,
+                contact_name: None,
+                tax_id: None,
+                registration_number: None,
                 emails: vec![],
                 phones: vec![],
-                address: None,
+                addresses: vec![],
                 notes: None,
                 referred_by: None,
                 date_of_birth: None,
@@ -342,9 +360,13 @@ mod tests {
             .execute(UpdateClientInput {
                 id: c.id,
                 name: "   ".into(),
+                kind: ClientKind::Individual,
+                contact_name: None,
+                tax_id: None,
+                registration_number: None,
                 emails: vec![],
                 phones: vec![],
-                address: None,
+                addresses: vec![],
                 notes: None,
                 referred_by: None,
                 date_of_birth: None,
@@ -374,9 +396,13 @@ mod tests {
             .execute(UpdateClientInput {
                 id: c.id,
                 name: "Acme".into(),
+                kind: ClientKind::Individual,
+                contact_name: None,
+                tax_id: None,
+                registration_number: None,
                 emails: vec![],
                 phones: vec![],
-                address: None,
+                addresses: vec![],
                 notes: None,
                 referred_by: Some(c.id),
                 date_of_birth: None,

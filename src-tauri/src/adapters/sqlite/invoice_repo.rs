@@ -10,8 +10,7 @@ use crate::application::ports::{
 };
 use crate::application::RepoError;
 use crate::domain::client::ClientId;
-use crate::domain::email_template::EmailTemplateType;
-use crate::domain::invoice::{AppliedTax, EmailSend, EmailSendId, Invoice, InvoiceId, InvoiceNumber, InvoiceStatus};
+use crate::domain::invoice::{AppliedTax, Invoice, InvoiceId, InvoiceNumber, InvoiceStatus};
 use crate::domain::line_item::{LineItem, LineItemId};
 use crate::domain::money::{Currency, Money};
 use crate::domain::tax::TaxId;
@@ -166,7 +165,6 @@ impl InvoiceRepository for SqliteInvoiceRepository {
         )
         .map_err(map_err)?;
         insert_items_and_taxes(&tx, invoice)?;
-        insert_email_sends(&tx, invoice)?;
         tx.commit().map_err(map_err)?;
         Ok(())
     }
@@ -212,13 +210,7 @@ impl InvoiceRepository for SqliteInvoiceRepository {
             params![invoice.id.to_string()],
         )
         .map_err(map_err)?;
-        tx.execute(
-            "DELETE FROM invoice_email_sends WHERE invoice_id = ?1",
-            params![invoice.id.to_string()],
-        )
-        .map_err(map_err)?;
         insert_items_and_taxes(&tx, invoice)?;
-        insert_email_sends(&tx, invoice)?;
         tx.commit().map_err(map_err)?;
         Ok(())
     }
@@ -235,8 +227,7 @@ impl InvoiceRepository for SqliteInvoiceRepository {
         };
         let line_items = load_line_items(&conn, head.id, head.currency)?;
         let taxes_applied = load_taxes(&conn, head.id, head.currency)?;
-        let email_sends = load_email_sends(&conn, head.id)?;
-        Ok(Some(assemble(head, line_items, taxes_applied, email_sends)))
+        Ok(Some(assemble(head, line_items, taxes_applied)))
     }
 
     fn list(&self, query: ListInvoicesQuery) -> Result<Page<Invoice>, RepoError> {
@@ -338,8 +329,7 @@ impl InvoiceRepository for SqliteInvoiceRepository {
         for head in heads {
             let items = load_line_items(&conn, head.id, head.currency)?;
             let taxes = load_taxes(&conn, head.id, head.currency)?;
-            let sends = load_email_sends(&conn, head.id)?;
-            invoices.push(assemble(head, items, taxes, sends));
+            invoices.push(assemble(head, items, taxes));
         }
         Ok(Page::new(invoices, total, &query.pagination))
     }
@@ -466,75 +456,10 @@ fn load_taxes(
     Ok(out)
 }
 
-fn insert_email_sends(tx: &rusqlite::Transaction<'_>, invoice: &Invoice) -> Result<(), RepoError> {
-    for s in &invoice.email_sends {
-        tx.execute(
-            "INSERT INTO invoice_email_sends (id, invoice_id, template_type, template_name, to_address, subject, sent_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                s.id.to_string(),
-                invoice.id.to_string(),
-                s.template_type.as_str(),
-                s.template_name,
-                s.to_address,
-                s.subject,
-                s.sent_at.to_rfc3339(),
-            ],
-        )
-        .map_err(map_err)?;
-    }
-    Ok(())
-}
-
-fn load_email_sends(
-    conn: &rusqlite::Connection,
-    id: InvoiceId,
-) -> Result<Vec<EmailSend>, RepoError> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, template_type, template_name, to_address, subject, sent_at
-             FROM invoice_email_sends WHERE invoice_id = ?1 ORDER BY sent_at ASC",
-        )
-        .map_err(map_err)?;
-    let rows = stmt
-        .query_map(params![id.to_string()], |row| {
-            let id_str: String = row.get("id")?;
-            let id: EmailSendId = parse_uuid(&id_str, EmailSendId)?;
-            let type_str: String = row.get("template_type")?;
-            let template_type =
-                EmailTemplateType::parse(&type_str).unwrap_or(EmailTemplateType::InitialContact);
-            let sent_at_str: String = row.get("sent_at")?;
-            let sent_at = DateTime::parse_from_rfc3339(&sent_at_str)
-                .map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Text,
-                        Box::new(e),
-                    )
-                })?
-                .with_timezone(&Utc);
-            Ok(EmailSend {
-                id,
-                template_type,
-                template_name: row.get("template_name")?,
-                to_address: row.get("to_address")?,
-                subject: row.get("subject")?,
-                sent_at,
-            })
-        })
-        .map_err(map_err)?;
-    let mut out = Vec::new();
-    for r in rows {
-        out.push(r.map_err(map_err)?);
-    }
-    Ok(out)
-}
-
 fn assemble(
     head: InvoiceHead,
     line_items: Vec<LineItem>,
     taxes_applied: Vec<AppliedTax>,
-    email_sends: Vec<EmailSend>,
 ) -> Invoice {
     Invoice {
         id: head.id,
@@ -552,7 +477,6 @@ fn assemble(
         status: head.status,
         pdf_path: head.pdf_path,
         notes: head.notes,
-        email_sends,
         created_at: head.created_at,
         updated_at: head.updated_at,
     }

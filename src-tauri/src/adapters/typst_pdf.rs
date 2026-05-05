@@ -147,7 +147,10 @@ struct SellerView<'a> {
 struct ClientView<'a> {
     name: &'a str,
     email: Option<&'a str>,
-    address: Option<&'a str>,
+    /// Multi-line formatted billing address (or shipping if billing absent).
+    /// Owned because `ClientAddress::formatted()` constructs a new String;
+    /// the rest of the borrowed fields keep zero-copy semantics.
+    address: Option<String>,
     phone: Option<&'a str>,
 }
 
@@ -221,7 +224,12 @@ fn build_template_data<'a>(input: &'a PdfRenderInput<'a>) -> TemplateData<'a> {
         client: ClientView {
             name: &client.name,
             email: client.default_email(),
-            address: client.address.as_deref(),
+            // Invoice billing address: prefer the default billing address;
+            // fall back to the default shipping address if billing is missing.
+            address: client
+                .billing_address()
+                .or_else(|| client.shipping_address())
+                .map(|a| a.formatted()),
             phone: client.default_phone(),
         },
         invoice: build_invoice_view(input.invoice, currency),
@@ -366,14 +374,13 @@ mod tests {
             status: InvoiceStatus::Finalized,
             pdf_path: None,
             notes: Some("Thanks for your business.".into()),
-            email_sends: Vec::new(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
     }
 
     fn sample_client() -> Client {
-        use crate::domain::client::NewContactEntry;
+        use crate::domain::client::{NewClientAddress, NewContactEntry};
         Client::create(
             NewClient {
                 name: "Acme Corp".into(),
@@ -387,15 +394,16 @@ mod tests {
                     label: None,
                     is_default: true,
                 }],
-                address: Some("123 Main St\n1000 City".into()),
-                notes: None,
-                referred_by: None,
-                date_of_birth: None,
-                sex: None,
-                gender: None,
-                pronouns: None,
-                occupation: None,
-                language: None,
+                addresses: vec![NewClientAddress {
+                    street: "123 Main St".into(),
+                    city: "City".into(),
+                    postal_code: "1000".into(),
+                    country: "BE".into(),
+                    is_billing: true,
+                    is_shipping: true,
+                    ..Default::default()
+                }],
+                ..Default::default()
             },
             Utc::now(),
         )

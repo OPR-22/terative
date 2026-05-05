@@ -12,22 +12,40 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { Field, Input, Select, Textarea } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { StatusDot } from "../components/ui/StatusDot";
+import { Table, Td, Th, THead, Tr } from "../components/ui/Table";
 import { Tabs, type TabOption } from "../components/ui/Tabs";
+import { StatusBadge } from "../components/invoice/StatusBadge";
+import { PaymentStatusBadge } from "../components/invoice/PaymentStatusBadge";
+import { AddressListEditor } from "../components/client/AddressListEditor";
+import { AddressSummary } from "../components/client/AddressSummary";
 import { ContactListEditor } from "../components/client/ContactListEditor";
 import { ClientAttributeDatalists } from "../components/client/ClientAttributeDatalists";
+import { useMoneyFormat } from "../lib/money";
 import { useClientStore } from "../stores/clientStore";
 import {
   ipc,
+  type ClientAddressDto,
   type ClientDto,
   type ClientJournalEntryDto,
   type ClientNotebookViewDto,
   type ContactEntryDto,
+  type EmailLogDto,
+  type InvoiceDto,
   type NewJournalEntryDto,
+  type PaymentDto,
+  type PaymentMethodDto,
   type UpdateClientDto,
   type UpdateJournalEntryDto,
 } from "../ipc";
 
-type Tab = "info" | "notebook" | "journal";
+type Tab =
+  | "info"
+  | "addresses"
+  | "notebook"
+  | "journal"
+  | "invoices"
+  | "payments"
+  | "emails";
 
 function computeAgeLabel(
   dob: string | null,
@@ -87,8 +105,12 @@ export function ClientDetail() {
     : null;
   const tabOptions: TabOption<Tab>[] = [
     { id: "info", label: t("clients.tab_info") },
+    { id: "addresses", label: t("clients.tab_addresses") },
     { id: "notebook", label: t("clients.tab_notebook") },
     { id: "journal", label: t("clients.tab_journal") },
+    { id: "invoices", label: t("clients.tab_invoices") },
+    { id: "payments", label: t("clients.tab_payments") },
+    { id: "emails", label: t("clients.tab_emails") },
   ];
 
   return (
@@ -133,8 +155,14 @@ export function ClientDetail() {
       />
 
       {tab === "info" ? <InfoTab client={client} onSaved={setClient} /> : null}
+      {tab === "addresses" ? (
+        <AddressesTab client={client} onSaved={setClient} />
+      ) : null}
       {tab === "notebook" ? <NotebookTab clientId={client.id} /> : null}
       {tab === "journal" ? <JournalTab clientId={client.id} /> : null}
+      {tab === "invoices" ? <InvoicesTab clientId={client.id} /> : null}
+      {tab === "payments" ? <PaymentsTab clientId={client.id} /> : null}
+      {tab === "emails" ? <EmailsTab clientId={client.id} /> : null}
     </Page>
   );
 }
@@ -156,7 +184,6 @@ function InfoTab({
   const [name, setName] = useState(client.name);
   const [emails, setEmails] = useState<ContactEntryDto[]>(client.emails);
   const [phones, setPhones] = useState<ContactEntryDto[]>(client.phones);
-  const [address, setAddress] = useState(client.address ?? "");
   const [notes, setNotes] = useState(client.notes ?? "");
   const [referredBy, setReferredBy] = useState<string | null>(client.referred_by);
   const [dateOfBirth, setDateOfBirth] = useState(client.date_of_birth ?? "");
@@ -178,7 +205,6 @@ function InfoTab({
     setName(client.name);
     setEmails(client.emails);
     setPhones(client.phones);
-    setAddress(client.address ?? "");
     setNotes(client.notes ?? "");
     setReferredBy(client.referred_by);
     setDateOfBirth(client.date_of_birth ?? "");
@@ -196,10 +222,16 @@ function InfoTab({
     try {
       const payload: UpdateClientDto = {
         id: client.id,
+        kind: client.kind,
         name: name.trim(),
+        contact_name: client.contact_name,
+        tax_id: client.tax_id,
+        registration_number: client.registration_number,
         emails,
         phones,
-        address: address.trim() || null,
+        // Addresses are managed in the dedicated Addresses tab; pass them
+        // through unchanged so saving Info doesn't wipe them.
+        addresses: client.addresses,
         notes: notes.trim() || null,
         referred_by: referredBy,
         date_of_birth: dateOfBirth || null,
@@ -257,9 +289,6 @@ function InfoTab({
                 addLabel={t("clients.add_phone")}
                 emptyLabel={t("clients.no_phones")}
               />
-              <Field label={t("common.address")}>
-                <Input value={address} onChange={(e) => setAddress(e.target.value)} />
-              </Field>
               <Field label={t("common.notes")}>
                 <Textarea
                   rows={2}
@@ -347,8 +376,102 @@ function InfoTab({
           </CardBody>
         </Card>
       </div>
+
+      <Card className="mt-5">
+        <CardHead title={t("clients.addresses")} />
+        <CardBody>
+          <AddressSummary addresses={client.addresses} />
+        </CardBody>
+      </Card>
+
       <ClientAttributeDatalists values={attributeValues} />
     </form>
+  );
+}
+
+function AddressesTab({
+  client,
+  onSaved,
+}: {
+  client: ClientDto;
+  onSaved: (c: ClientDto) => void;
+}) {
+  const { t } = useTranslation();
+  const [addresses, setAddresses] = useState<ClientAddressDto[]>(
+    client.addresses,
+  );
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setAddresses(client.addresses);
+  }, [client]);
+
+  const dirty =
+    JSON.stringify(addresses) !== JSON.stringify(client.addresses);
+
+  const onSave = async () => {
+    setBusy(true);
+    try {
+      // Pass through every other field unchanged — this tab only owns
+      // the address list. The backend's UpdateClient replaces the full
+      // address set, so omitting fields elsewhere isn't an option.
+      const payload: UpdateClientDto = {
+        id: client.id,
+        kind: client.kind,
+        name: client.name,
+        contact_name: client.contact_name,
+        tax_id: client.tax_id,
+        registration_number: client.registration_number,
+        emails: client.emails,
+        phones: client.phones,
+        addresses,
+        notes: client.notes,
+        referred_by: client.referred_by,
+        date_of_birth: client.date_of_birth,
+        sex: client.sex,
+        gender: client.gender,
+        pronouns: client.pronouns,
+        occupation: client.occupation,
+        language: client.language,
+      };
+      const updated = await ipc.clientUpdate(payload);
+      onSaved(updated);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHead
+        title={t("clients.addresses")}
+        actions={
+          <div className="inline-flex items-center gap-3">
+            {saved ? (
+              <span className="inline-flex items-center gap-1.5 text-[12px] text-ok-ink">
+                <StatusDot status="ok" /> {t("settings.saved")}
+              </span>
+            ) : null}
+            <Button
+              type="button"
+              variant="primary"
+              onClick={onSave}
+              disabled={!dirty || busy}
+            >
+              {t("common.save")}
+            </Button>
+          </div>
+        }
+      />
+      <CardBody>
+        <AddressListEditor value={addresses} onChange={setAddresses} />
+      </CardBody>
+    </Card>
   );
 }
 
@@ -655,5 +778,241 @@ function JournalEntryModal({
         {err ? <p className="text-[13px] text-danger">{err}</p> : null}
       </form>
     </Modal>
+  );
+}
+
+// ---- Invoices tab ----
+
+function InvoicesTab({ clientId }: { clientId: string }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [items, setItems] = useState<InvoiceDto[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const { format } = useMoneyFormat();
+
+  useEffect(() => {
+    let cancelled = false;
+    setErr(null);
+    ipc
+      .invoiceList({ client_id: clientId, pagination: { page: 1, per_page: 200 } })
+      .then((page) => {
+        if (!cancelled) setItems(page.data);
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId]);
+
+  if (err) return <p className="text-[13px] text-danger">{err}</p>;
+  if (!items) return <EmptyState description={t("common.loading")} />;
+  if (items.length === 0)
+    return (
+      <Card>
+        <EmptyState description={t("clients.no_invoices")} />
+      </Card>
+    );
+
+  return (
+    <Card>
+      <Table>
+        <THead>
+          <Tr>
+            <Th>{t("invoices.number")}</Th>
+            <Th>{t("common.date")}</Th>
+            <Th numeric>{t("invoices.total")}</Th>
+            <Th>{t("common.status")}</Th>
+            <Th>{t("invoices.payment_status")}</Th>
+          </Tr>
+        </THead>
+        <tbody>
+          {items.map((inv) => (
+            <Tr
+              key={inv.id}
+              onClick={() => navigate(`/invoices/${inv.id}/edit`)}
+              className="cursor-pointer hover:bg-paper-2"
+            >
+              <Td mono>#{inv.number ?? "—"}</Td>
+              <Td muted>{inv.date}</Td>
+              <Td numeric>{format(inv.total)}</Td>
+              <Td>
+                <StatusBadge status={inv.status} />
+              </Td>
+              <Td>
+                {inv.payment_status ? (
+                  <PaymentStatusBadge
+                    paymentStatus={inv.payment_status}
+                    rawStatus={inv.status}
+                  />
+                ) : (
+                  "—"
+                )}
+              </Td>
+            </Tr>
+          ))}
+        </tbody>
+      </Table>
+    </Card>
+  );
+}
+
+// ---- Payments tab ----
+
+function paymentMethodLabel(
+  method: PaymentMethodDto,
+  t: (k: string) => string,
+): string {
+  switch (method.kind) {
+    case "BankTransfer":
+      return t("payments.method_banktransfer");
+    case "Cash":
+      return t("payments.method_cash");
+    case "Check":
+      return t("payments.method_check");
+    case "Card":
+      return t("payments.method_card");
+    case "Other":
+      return method.detail || t("payments.method_other");
+  }
+}
+
+function PaymentsTab({ clientId }: { clientId: string }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [items, setItems] = useState<PaymentDto[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const { format } = useMoneyFormat();
+
+  useEffect(() => {
+    let cancelled = false;
+    setErr(null);
+    ipc
+      .paymentList({ client_id: clientId })
+      .then((rows) => {
+        if (!cancelled) setItems(rows);
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId]);
+
+  if (err) return <p className="text-[13px] text-danger">{err}</p>;
+  if (!items) return <EmptyState description={t("common.loading")} />;
+  if (items.length === 0)
+    return (
+      <Card>
+        <EmptyState description={t("clients.no_payments")} />
+      </Card>
+    );
+
+  return (
+    <Card>
+      <Table>
+        <THead>
+          <Tr>
+            <Th>{t("common.date")}</Th>
+            <Th>{t("payments.method")}</Th>
+            <Th numeric>{t("payments.amount")}</Th>
+            <Th>{t("payments.reference")}</Th>
+          </Tr>
+        </THead>
+        <tbody>
+          {items.map((p) => (
+            <Tr
+              key={p.id}
+              onClick={() => navigate(`/payments/${p.id}/edit`)}
+              className="cursor-pointer hover:bg-paper-2"
+            >
+              <Td muted>{p.date}</Td>
+              <Td>{paymentMethodLabel(p.method, t)}</Td>
+              <Td numeric>{format(p.amount)}</Td>
+              <Td muted>{p.reference ?? "—"}</Td>
+            </Tr>
+          ))}
+        </tbody>
+      </Table>
+    </Card>
+  );
+}
+
+// ---- Emails tab ----
+
+function formatSentAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString();
+}
+
+function EmailsTab({ clientId }: { clientId: string }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [items, setItems] = useState<EmailLogDto[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setErr(null);
+    ipc
+      .emailLogListForClient(clientId)
+      .then((rows) => {
+        if (!cancelled) setItems(rows);
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId]);
+
+  if (err) return <p className="text-[13px] text-danger">{err}</p>;
+  if (!items) return <EmptyState description={t("common.loading")} />;
+  if (items.length === 0)
+    return (
+      <Card>
+        <EmptyState description={t("clients.no_emails")} />
+      </Card>
+    );
+
+  return (
+    <Card>
+      <Table>
+        <THead>
+          <Tr>
+            <Th>{t("clients.email_sent_at")}</Th>
+            <Th>{t("clients.email_subject")}</Th>
+            <Th>{t("clients.email_to")}</Th>
+            <Th>{t("clients.email_invoice")}</Th>
+          </Tr>
+        </THead>
+        <tbody>
+          {items.map((e) => (
+            <Tr key={e.id}>
+              <Td muted>{formatSentAt(e.sent_at)}</Td>
+              <Td>{e.subject}</Td>
+              <Td muted>{e.to_address}</Td>
+              <Td>
+                {e.invoice_id ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/invoices/${e.invoice_id}/edit`)}
+                    className="text-ink hover:underline cursor-pointer"
+                  >
+                    {t("clients.email_view_invoice")}
+                  </button>
+                ) : (
+                  "—"
+                )}
+              </Td>
+            </Tr>
+          ))}
+        </tbody>
+      </Table>
+    </Card>
   );
 }

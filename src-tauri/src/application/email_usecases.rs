@@ -4,12 +4,13 @@ use std::sync::Arc;
 use chrono::Utc;
 
 use crate::application::ports::{
-    ClientRepository, CredentialStore, EmailAttachment, EmailSender, EmailTemplateRepository,
-    InvoiceRepository, OutboundEmail, SettingsRepository,
+    ClientRepository, CredentialStore, EmailAttachment, EmailLogRepository, EmailSender,
+    EmailTemplateRepository, InvoiceRepository, OutboundEmail, SettingsRepository,
 };
 use crate::application::AppError;
+use crate::domain::email_log::{EmailLog, NewEmailLog};
 use crate::domain::email_template::EmailTemplateType;
-use crate::domain::invoice::{EmailSend, EmailSendId, Invoice, InvoiceId, InvoiceStatus};
+use crate::domain::invoice::{Invoice, InvoiceId, InvoiceStatus};
 use crate::domain::settings::{CurrencyConfig, SellerProfile};
 
 pub struct UpdateEmailConfig {
@@ -89,6 +90,7 @@ pub struct SendInvoice {
     credentials: Arc<dyn CredentialStore>,
     email: Arc<dyn EmailSender>,
     email_templates: Arc<dyn EmailTemplateRepository>,
+    email_logs: Arc<dyn EmailLogRepository>,
 }
 
 impl SendInvoice {
@@ -99,6 +101,7 @@ impl SendInvoice {
         credentials: Arc<dyn CredentialStore>,
         email: Arc<dyn EmailSender>,
         email_templates: Arc<dyn EmailTemplateRepository>,
+        email_logs: Arc<dyn EmailLogRepository>,
     ) -> Self {
         Self {
             invoices,
@@ -107,10 +110,14 @@ impl SendInvoice {
             credentials,
             email,
             email_templates,
+            email_logs,
         }
     }
 
-    pub fn execute(&self, id: InvoiceId) -> Result<Invoice, AppError> {
+    /// Sends the invoice email and returns the updated invoice along with
+    /// every email log row for it (including the just-recorded one), so the
+    /// caller can build a response DTO without a second round-trip.
+    pub fn execute(&self, id: InvoiceId) -> Result<(Invoice, Vec<EmailLog>), AppError> {
         let mut invoice = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
         if invoice.status != InvoiceStatus::Finalized && invoice.status != InvoiceStatus::Sent {
             return Err(AppError::Invoice(
@@ -140,10 +147,11 @@ impl SendInvoice {
                 "client has no email address".into(),
             )))?;
 
-        let template_type = if invoice.email_sends.is_empty() {
-            EmailTemplateType::InitialContact
-        } else {
+        let prior_logs = self.email_logs.list_by_invoices(&[invoice.id])?;
+        let template_type = if prior_logs.get(&invoice.id).is_some_and(|v| !v.is_empty()) {
             EmailTemplateType::FollowUp
+        } else {
+            EmailTemplateType::InitialContact
         };
         let email_template = self
             .email_templates
@@ -184,17 +192,36 @@ impl SendInvoice {
         })?;
 
         let now = Utc::now();
-        let send = EmailSend {
-            id: EmailSendId::new(),
-            template_type,
-            template_name: email_template.name.clone(),
+        invoice.mark_sent(now)?;
+        self.invoices.update(&invoice)?;
+
+        // Persist the audit trail. Failure does not roll back the send
+        // (the email already left and the invoice is already marked Sent);
+        // we surface the error so the caller knows the log is incomplete,
+        // but in practice insert against a healthy db does not fail.
+        let log = EmailLog::record(NewEmailLog {
+            client_id: invoice.client_id,
+            invoice_id: Some(invoice.id),
+            template_type: Some(template_type),
+            template_name: Some(email_template.name.clone()),
             to_address: to_address.clone(),
             subject: subject.clone(),
             sent_at: now,
-        };
-        invoice.record_email_sent(send, now)?;
-        self.invoices.update(&invoice)?;
-        Ok(invoice)
+        })?;
+        self.email_logs.insert(&log)?;
+        let mut logs = self
+            .email_logs
+            .list_by_invoices(&[invoice.id])?
+            .remove(&invoice.id)
+            .unwrap_or_default();
+        // Defensive: if the repo returned out-of-order rows somehow, ensure
+        // the new log is included even when it isn't yet visible (e.g. a
+        // stub repo). The freshly inserted row is appended last so older
+        // history stays first.
+        if !logs.iter().any(|l| l.id == log.id) {
+            logs.push(log);
+        }
+        Ok((invoice, logs))
     }
 }
 
@@ -234,6 +261,7 @@ mod tests {
     use crate::application::ports::{EmailError, ListInvoicesQuery, Page, PaginationParams};
     use crate::application::RepoError;
     use crate::domain::client::{Client, ClientId, NewClient};
+    use crate::domain::email_log::EmailLog;
     use crate::domain::email_template::{EmailTemplate, EmailTemplateId, NewEmailTemplate};
     use crate::domain::invoice::{AppliedTax, InvoiceNumber};
     use crate::domain::line_item::{LineItem, LineItemId};
@@ -478,6 +506,42 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct InMemoryEmailLogRepo(Mutex<Vec<EmailLog>>);
+    impl EmailLogRepository for InMemoryEmailLogRepo {
+        fn insert(&self, log: &EmailLog) -> Result<(), RepoError> {
+            self.0.lock().push(log.clone());
+            Ok(())
+        }
+        fn list_by_client(&self, client_id: ClientId) -> Result<Vec<EmailLog>, RepoError> {
+            Ok(self
+                .0
+                .lock()
+                .iter()
+                .filter(|l| l.client_id == client_id)
+                .cloned()
+                .collect())
+        }
+        fn list_by_invoices(
+            &self,
+            ids: &[crate::domain::invoice::InvoiceId],
+        ) -> Result<
+            std::collections::HashMap<crate::domain::invoice::InvoiceId, Vec<EmailLog>>,
+            RepoError,
+        > {
+            let mut out: std::collections::HashMap<_, Vec<EmailLog>> =
+                std::collections::HashMap::new();
+            for log in self.0.lock().iter() {
+                if let Some(iid) = log.invoice_id {
+                    if ids.contains(&iid) {
+                        out.entry(iid).or_default().push(log.clone());
+                    }
+                }
+            }
+            Ok(out)
+        }
+    }
+
     fn seed_default_email_templates() -> Arc<InMemoryEmailTemplateRepo> {
         let repo = Arc::new(InMemoryEmailTemplateRepo::default());
         let mut ic = EmailTemplate::create(NewEmailTemplate {
@@ -541,7 +605,6 @@ mod tests {
             status: InvoiceStatus::Finalized,
             pdf_path,
             notes: None,
-            email_sends: Vec::new(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
@@ -674,16 +737,19 @@ mod tests {
         invoices.insert(&invoice).unwrap();
 
         let email_templates = seed_default_email_templates();
-        let sent = SendInvoice::new(
+        let email_logs = Arc::new(InMemoryEmailLogRepo::default());
+        let (sent, returned_logs) = SendInvoice::new(
             invoices.clone(),
             clients,
             settings,
             creds,
             sender.clone(),
             email_templates,
+            email_logs.clone(),
         )
         .execute(invoice.id)
         .unwrap();
+        assert_eq!(returned_logs.len(), 1);
 
         assert_eq!(sent.status, InvoiceStatus::Sent);
         let stored = sender.sent.lock();
@@ -701,6 +767,13 @@ mod tests {
         // Invoice persisted in Sent state.
         let reloaded = invoices.0.lock().get(&invoice.id).cloned().unwrap();
         assert_eq!(reloaded.status, InvoiceStatus::Sent);
+
+        // Email log row mirrors the send.
+        let logged = email_logs.list_by_client(client.id).unwrap();
+        assert_eq!(logged.len(), 1);
+        assert_eq!(logged[0].invoice_id, Some(invoice.id));
+        assert_eq!(logged[0].to_address, "billing@acme.example");
+        assert_eq!(logged[0].subject, "Invoice 1001 for Acme Corp");
     }
 
     #[test]
@@ -718,9 +791,18 @@ mod tests {
         invoices.insert(&invoice).unwrap();
 
         let email_templates = seed_default_email_templates();
-        let err = SendInvoice::new(invoices, clients, settings, creds, sender, email_templates)
-            .execute(invoice.id)
-            .unwrap_err();
+        let email_logs = Arc::new(InMemoryEmailLogRepo::default());
+        let err = SendInvoice::new(
+            invoices,
+            clients,
+            settings,
+            creds,
+            sender,
+            email_templates,
+            email_logs,
+        )
+        .execute(invoice.id)
+        .unwrap_err();
         assert!(matches!(
             err,
             AppError::Invoice(crate::domain::invoice::InvoiceError::NotSendable)
@@ -741,9 +823,18 @@ mod tests {
         invoices.insert(&invoice).unwrap();
 
         let email_templates = seed_default_email_templates();
-        let err = SendInvoice::new(invoices, clients, settings, creds, sender, email_templates)
-            .execute(invoice.id)
-            .unwrap_err();
+        let email_logs = Arc::new(InMemoryEmailLogRepo::default());
+        let err = SendInvoice::new(
+            invoices,
+            clients,
+            settings,
+            creds,
+            sender,
+            email_templates,
+            email_logs,
+        )
+        .execute(invoice.id)
+        .unwrap_err();
         assert!(matches!(err, AppError::MissingInvoicePdf));
     }
 
@@ -768,9 +859,18 @@ mod tests {
         invoices.insert(&invoice).unwrap();
 
         let email_templates = seed_default_email_templates();
-        let err = SendInvoice::new(invoices, clients, settings, creds, sender, email_templates)
-            .execute(invoice.id)
-            .unwrap_err();
+        let email_logs = Arc::new(InMemoryEmailLogRepo::default());
+        let err = SendInvoice::new(
+            invoices,
+            clients,
+            settings,
+            creds,
+            sender,
+            email_templates,
+            email_logs,
+        )
+        .execute(invoice.id)
+        .unwrap_err();
         assert!(matches!(err, AppError::Email(EmailError::NotConfigured(_))));
     }
 
@@ -796,6 +896,7 @@ mod tests {
         invoices.insert(&invoice).unwrap();
 
         let email_templates = seed_default_email_templates();
+        let email_logs = Arc::new(InMemoryEmailLogRepo::default());
         let err = SendInvoice::new(
             invoices.clone(),
             clients,
@@ -803,6 +904,7 @@ mod tests {
             creds,
             sender,
             email_templates,
+            email_logs,
         )
         .execute(invoice.id)
         .unwrap_err();

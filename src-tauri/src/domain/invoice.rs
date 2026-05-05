@@ -5,7 +5,6 @@ use rust_decimal_macros::dec;
 use uuid::Uuid;
 
 use crate::domain::client::ClientId;
-use crate::domain::email_template::EmailTemplateType;
 use crate::domain::line_item::{LineItem, LineItemError, NewLineItem};
 use crate::domain::money::{Currency, Money, MoneyError};
 use crate::domain::tax::{TaxDefinition, TaxId};
@@ -119,37 +118,6 @@ pub struct AppliedTax {
     pub computed_amount: Money,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct EmailSendId(pub Uuid);
-
-impl EmailSendId {
-    pub fn new() -> Self {
-        Self(Uuid::new_v4())
-    }
-}
-
-impl Default for EmailSendId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl std::fmt::Display for EmailSendId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EmailSend {
-    pub id: EmailSendId,
-    pub template_type: EmailTemplateType,
-    pub template_name: String,
-    pub to_address: String,
-    pub subject: String,
-    pub sent_at: DateTime<Utc>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Invoice {
     pub id: InvoiceId,
@@ -167,7 +135,6 @@ pub struct Invoice {
     pub status: InvoiceStatus,
     pub pdf_path: Option<String>,
     pub notes: Option<String>,
-    pub email_sends: Vec<EmailSend>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -242,7 +209,6 @@ impl Invoice {
             status: InvoiceStatus::Draft,
             pdf_path: None,
             notes: input.notes.and_then(non_empty),
-            email_sends: Vec::new(),
             created_at: now,
             updated_at: now,
         })
@@ -297,20 +263,13 @@ impl Invoice {
         Ok(())
     }
 
-    pub fn record_email_sent(
-        &mut self,
-        send: EmailSend,
-        now: DateTime<Utc>,
-    ) -> Result<(), InvoiceError> {
+    /// Transitions a Finalized invoice to Sent (or leaves Sent as Sent).
+    /// Persistence of which emails were sent and when lives in the
+    /// `email_logs` table now; this method only owns the lifecycle bit.
+    pub fn mark_sent(&mut self, now: DateTime<Utc>) -> Result<(), InvoiceError> {
         match self.status {
-            InvoiceStatus::Finalized => {
+            InvoiceStatus::Finalized | InvoiceStatus::Sent => {
                 self.status = InvoiceStatus::Sent;
-                self.email_sends.push(send);
-                self.updated_at = now;
-                Ok(())
-            }
-            InvoiceStatus::Sent => {
-                self.email_sends.push(send);
                 self.updated_at = now;
                 Ok(())
             }
@@ -497,17 +456,6 @@ mod tests {
         .unwrap()
     }
 
-    fn make_email_send() -> EmailSend {
-        EmailSend {
-            id: EmailSendId::new(),
-            template_type: EmailTemplateType::InitialContact,
-            template_name: "Default".into(),
-            to_address: "test@example.com".into(),
-            subject: "Invoice 1".into(),
-            sent_at: now(),
-        }
-    }
-
     fn line(desc: &str, qty: i64, price: i64) -> NewLineItem {
         NewLineItem {
             description: desc.into(),
@@ -631,7 +579,7 @@ mod tests {
     }
 
     #[test]
-    fn record_email_sent_requires_finalized_or_sent() {
+    fn mark_sent_requires_finalized_or_sent() {
         let mut inv = Invoice::create_draft(
             NewInvoice {
                 client_id: ClientId::new(),
@@ -648,17 +596,15 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            inv.record_email_sent(make_email_send(), now()).unwrap_err(),
+            inv.mark_sent(now()).unwrap_err(),
             InvoiceError::NotSendable
         ));
         inv.finalize(InvoiceNumber(1), now()).unwrap();
-        inv.record_email_sent(make_email_send(), now()).unwrap();
+        inv.mark_sent(now()).unwrap();
         assert_eq!(inv.status, InvoiceStatus::Sent);
-        assert_eq!(inv.email_sends.len(), 1);
-        // Can send again when already Sent (reminder).
-        inv.record_email_sent(make_email_send(), now()).unwrap();
+        // Idempotent when already Sent.
+        inv.mark_sent(now()).unwrap();
         assert_eq!(inv.status, InvoiceStatus::Sent);
-        assert_eq!(inv.email_sends.len(), 2);
     }
 
     fn finalized_invoice(due: Option<NaiveDate>, total_cents: i64) -> Invoice {

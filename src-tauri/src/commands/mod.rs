@@ -19,9 +19,9 @@ use std::sync::Arc;
 use crate::adapters::sqlite::{
     SqliteAccountingRepository, SqliteBookmarkRepository, SqliteCatalogItemRepository,
     SqliteClientJournalRepository, SqliteClientNotebookRepository, SqliteClientRepository,
-    SqliteEmailTemplateRepository, SqliteInvoiceNumberGenerator, SqliteInvoiceRepository,
-    SqliteNotebookSectionRepository, SqlitePaymentRepository, SqliteSettingsRepository,
-    SqliteTaxRepository, SqliteTemplateRepository,
+    SqliteEmailLogRepository, SqliteEmailTemplateRepository, SqliteInvoiceNumberGenerator,
+    SqliteInvoiceRepository, SqliteNotebookSectionRepository, SqlitePaymentRepository,
+    SqliteSettingsRepository, SqliteTaxRepository, SqliteTemplateRepository,
 };
 use crate::adapters::{
     FilesystemDataManagement, FilesystemPdfStorage, KeyringCredentialStore, LettreEmailSender,
@@ -38,6 +38,7 @@ use crate::application::client_usecases::{
     ArchiveClient, CreateClient, GetClientDetail, ListClientAttributeValues, ListClients,
     UnarchiveClient, UpdateClient,
 };
+use crate::application::email_log_usecases::ListEmailLogsForClient;
 use crate::application::email_template_usecases::{
     CreateEmailTemplate, DeleteEmailTemplate, ListEmailTemplates, SetDefaultEmailTemplate,
     UpdateEmailTemplate,
@@ -128,6 +129,8 @@ pub struct AppState {
     pub test_email_connection: TestEmailConnection,
     pub send_invoice: SendInvoice,
 
+    pub list_email_logs_for_client: ListEmailLogsForClient,
+
     pub create_email_template: CreateEmailTemplate,
     pub update_email_template: UpdateEmailTemplate,
     pub delete_email_template: DeleteEmailTemplate,
@@ -187,6 +190,7 @@ impl AppState {
         let client_notebook_repo = Arc::new(SqliteClientNotebookRepository::new(db.clone()));
         let client_journal_repo = Arc::new(SqliteClientJournalRepository::new(db.clone()));
         let email_template_repo = Arc::new(SqliteEmailTemplateRepository::new(db.clone()));
+        let email_log_repo = Arc::new(SqliteEmailLogRepository::new(db.clone()));
         let number_gen = Arc::new(SqliteInvoiceNumberGenerator::new(db.clone()));
         let pdf = Arc::new(TypstPdfGenerator::new());
         let pdf_storage = Arc::new(FilesystemPdfStorage::new(
@@ -232,6 +236,9 @@ impl AppState {
             ),
             RecordPayment::new(payment_repo.clone(), invoice_repo.clone()),
             CreateJournalEntry::new(client_journal_repo.clone()),
+            invoice_repo.clone(),
+            client_repo.clone(),
+            email_log_repo.clone(),
         );
 
         Self {
@@ -303,11 +310,13 @@ impl AppState {
                 invoice_repo.clone(),
                 payment_repo.clone(),
                 client_repo.clone(),
+                email_log_repo.clone(),
             ),
             get_invoice: GetInvoice::new(
                 invoice_repo.clone(),
                 payment_repo.clone(),
                 client_repo.clone(),
+                email_log_repo.clone(),
             ),
             get_invoice_pdf: GetInvoicePdf::new(invoice_repo.clone(), pdf_storage),
             print_invoice: PrintInvoice::new(invoice_repo.clone()),
@@ -327,7 +336,10 @@ impl AppState {
                 credentials,
                 email_sender,
                 email_template_repo.clone(),
+                email_log_repo.clone(),
             ),
+
+            list_email_logs_for_client: ListEmailLogsForClient::new(email_log_repo),
 
             create_email_template: CreateEmailTemplate::new(email_template_repo.clone()),
             update_email_template: UpdateEmailTemplate::new(email_template_repo.clone()),

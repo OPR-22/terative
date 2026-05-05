@@ -277,7 +277,7 @@ fn sample_template() -> InvoiceTemplate {
 }
 
 fn sample_client() -> Client {
-    use crate::domain::client::NewContactEntry;
+    use crate::domain::client::{NewClientAddress, NewContactEntry};
     Client::create(
         NewClient {
             name: "Sample Client".into(),
@@ -291,15 +291,16 @@ fn sample_client() -> Client {
                 label: None,
                 is_default: true,
             }],
-            address: Some("123 Example St\n1000 City".into()),
-            notes: None,
-            referred_by: None,
-            date_of_birth: None,
-            sex: None,
-            gender: None,
-            pronouns: None,
-            occupation: None,
-            language: None,
+            addresses: vec![NewClientAddress {
+                street: "123 Example St".into(),
+                city: "City".into(),
+                postal_code: "1000".into(),
+                country: "BE".into(),
+                is_billing: true,
+                is_shipping: true,
+                ..Default::default()
+            }],
+            ..Default::default()
         },
         Utc::now(),
     )
@@ -543,7 +544,6 @@ fn sample_invoice(currency: Currency, client_id: ClientId, template_id: Template
         status: InvoiceStatus::Finalized,
         pdf_path: None,
         notes: Some("Merci pour votre confiance.".into()),
-        email_sends: Vec::new(),
         created_at: Utc::now(),
         updated_at: Utc::now(),
     }

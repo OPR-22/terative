@@ -93,8 +93,8 @@ pub fn invoice_list(
         .execute(query.unwrap_or_default().into())
         .map_err(to_ipc_err)?;
     Ok(page
-        .map(|(i, paid, client_name)| {
-            InvoiceDto::from_invoice_enriched(&i, paid, today, client_name)
+        .map(|(i, paid, client_name, logs)| {
+            InvoiceDto::from_invoice_enriched(&i, paid, today, client_name, &logs)
         })
         .into())
 }
@@ -109,8 +109,8 @@ pub fn invoice_get(
     state
         .get_invoice
         .execute(InvoiceId(id))
-        .map(|(i, paid, client_name)| {
-            InvoiceDto::from_invoice_enriched(&i, paid, today, client_name)
+        .map(|(i, paid, client_name, logs)| {
+            InvoiceDto::from_invoice_enriched(&i, paid, today, client_name, &logs)
         })
         .map_err(to_ipc_err)
 }

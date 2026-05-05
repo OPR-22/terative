@@ -7,6 +7,7 @@ pub mod client_notebook_repository;
 pub mod client_repository;
 pub mod credential_store;
 pub mod data_management;
+pub mod email_log_repository;
 pub mod email_sender;
 pub mod email_template_repository;
 pub mod invoice_number_generator;
@@ -29,6 +30,7 @@ pub use client_repository::{ClientAttributeValues, ClientRepository, ListClients
 pub use notebook_section_repository::NotebookSectionRepository;
 pub use credential_store::CredentialStore;
 pub use data_management::{BackupKind, BackupMetadata, BackupScope, DataManagement};
+pub use email_log_repository::EmailLogRepository;
 pub use email_sender::{EmailAttachment, EmailError, EmailSender, OutboundEmail};
 pub use email_template_repository::EmailTemplateRepository;
 pub use invoice_number_generator::InvoiceNumberGenerator;

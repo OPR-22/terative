@@ -42,7 +42,9 @@ pub struct SeedReportDto {
     pub invoices_drafted: u32,
     pub invoices_finalized: u32,
     pub invoices_cancelled: u32,
+    pub invoices_sent: u32,
     pub payments_added: u32,
+    pub emails_added: u32,
     pub bookmarks_added: u32,
     pub journal_entries_added: u32,
 }
@@ -56,7 +58,9 @@ impl From<SeedReport> for SeedReportDto {
             invoices_drafted: r.invoices_drafted,
             invoices_finalized: r.invoices_finalized,
             invoices_cancelled: r.invoices_cancelled,
+            invoices_sent: r.invoices_sent,
             payments_added: r.payments_added,
+            emails_added: r.emails_added,
             bookmarks_added: r.bookmarks_added,
             journal_entries_added: r.journal_entries_added,
         }

@@ -7,16 +7,21 @@ import { Page } from "../components/layout/Page";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHead } from "../components/ui/Card";
 import { Field, Input, Select, Textarea } from "../components/ui/Input";
+import { AddressListEditor } from "../components/client/AddressListEditor";
 import { ContactListEditor } from "../components/client/ContactListEditor";
 import { ClientAttributeDatalists } from "../components/client/ClientAttributeDatalists";
 import { useClientStore } from "../stores/clientStore";
 import type { NewClientDto, UpdateClientDto } from "../ipc";
 
 const empty: NewClientDto = {
+  kind: "Individual",
   name: "",
+  contact_name: null,
+  tax_id: null,
+  registration_number: null,
   emails: [],
   phones: [],
-  address: null,
+  addresses: [],
   notes: null,
   referred_by: null,
   date_of_birth: null,
@@ -50,10 +55,17 @@ export function ClientEditor() {
   useEffect(() => {
     if (existing) {
       setForm({
+        kind: existing.kind,
         name: existing.name,
+        contact_name: existing.contact_name,
+        tax_id: existing.tax_id,
+        registration_number: existing.registration_number,
         emails: existing.emails,
         phones: existing.phones,
-        address: existing.address,
+        // Pass structured addresses through unchanged. The dedicated
+        // address-list editor isn't built yet; the form below skips it
+        // so existing addresses survive a round-trip without UI here.
+        addresses: existing.addresses,
         notes: existing.notes,
         referred_by: existing.referred_by,
         date_of_birth: existing.date_of_birth,
@@ -124,15 +136,6 @@ export function ClientEditor() {
                 addLabel={t("clients.add_phone")}
                 emptyLabel={t("clients.no_phones")}
               />
-
-              <Field label={t("common.address")}>
-                <Input
-                  value={form.address ?? ""}
-                  onChange={(e) =>
-                    setForm({ ...form, address: e.target.value || null })
-                  }
-                />
-              </Field>
 
               <Field label={t("common.notes")}>
                 <Textarea
@@ -235,6 +238,17 @@ export function ClientEditor() {
             {err ? <p className="mt-3 text-[13px] text-danger">{err}</p> : null}
           </CardBody>
         </Card>
+
+        <Card className="mt-4">
+          <CardHead title={t("clients.addresses")} />
+          <CardBody>
+            <AddressListEditor
+              value={form.addresses}
+              onChange={(addresses) => setForm({ ...form, addresses })}
+            />
+          </CardBody>
+        </Card>
+
         <ClientAttributeDatalists values={attributeValues} />
         <div className="mt-4 flex justify-end gap-2">
           <Button

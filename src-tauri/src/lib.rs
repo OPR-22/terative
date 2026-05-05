@@ -27,8 +27,8 @@ use commands::{
         data_user_backup_dir,
     },
     email_commands::{
-        email_test_connection, invoice_send, settings_update_email_config,
-        settings_update_email_password,
+        email_log_list_for_client, email_test_connection, invoice_send,
+        settings_update_email_config, settings_update_email_password,
     },
     email_template_commands::{
         email_template_create, email_template_delete, email_template_list,
@@ -194,6 +194,7 @@ fn build_specta() -> Builder<tauri::Wry> {
                 settings_update_email_password,
                 email_test_connection,
                 invoice_send,
+                email_log_list_for_client,
                 email_template_create,
                 email_template_update,
                 email_template_delete,

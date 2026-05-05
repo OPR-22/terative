@@ -16,6 +16,7 @@ pub mod bookmark;
 pub mod catalog_item;
 pub mod client;
 pub mod common;
+pub mod email_log;
 pub mod email_template;
 pub mod invoice;
 pub mod notebook;
@@ -32,10 +33,11 @@ pub use accounting::{
     RevenueByClientInputDto, RevenueByPeriodInputDto, RevenueGroupingDto,
 };
 pub use client::{
-    ClientAttributeValuesDto, ClientDto, ContactEntryDto, ListClientsQueryDto, NewClientDto,
-    UpdateClientDto,
+    ClientAddressDto, ClientAttributeValuesDto, ClientDto, ClientKindDto, ContactEntryDto,
+    ListClientsQueryDto, NewClientDto, UpdateClientDto,
 };
 pub use common::{MoneyDto, PageDto, PaginationParamsDto};
+pub use email_log::EmailLogDto;
 pub use email_template::{
     EmailTemplateDto, EmailTemplateTypeDto, NewEmailTemplateDto, UpdateEmailTemplateDto,
 };

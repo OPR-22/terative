@@ -1,7 +1,8 @@
 use tauri::State;
 use uuid::Uuid;
 
-use crate::application::dto::{EmailConfigDto, InvoiceDto};
+use crate::application::dto::{EmailConfigDto, EmailLogDto, InvoiceDto};
+use crate::domain::client::ClientId;
 use crate::domain::invoice::InvoiceId;
 
 use super::{to_ipc_err, AppState};
@@ -43,9 +44,22 @@ pub fn invoice_send(
     state: State<'_, AppState>,
     id: Uuid,
 ) -> Result<InvoiceDto, String> {
-    state
+    let (invoice, logs) = state
         .send_invoice
         .execute(InvoiceId(id))
-        .map(|i| InvoiceDto::from_invoice_basic(&i))
+        .map_err(to_ipc_err)?;
+    Ok(InvoiceDto::from_invoice_with_logs(&invoice, &logs))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn email_log_list_for_client(
+    state: State<'_, AppState>,
+    client_id: Uuid,
+) -> Result<Vec<EmailLogDto>, String> {
+    state
+        .list_email_logs_for_client
+        .execute(ClientId(client_id))
+        .map(|logs| logs.iter().map(Into::into).collect())
         .map_err(to_ipc_err)
 }

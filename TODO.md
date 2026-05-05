@@ -1,5 +1,51 @@
-- add 'bookmarked website' > pinned website so single app centralized all management you want (ex: your calendar, your square page etc.)
-
-Frontend refactor
-- Redo design, its ugly af.
-- Adding recharts or similar is a polish graphs for dashboard
+- update client page creation : should toggle between Individual and Company creation form.
+- Adding recharts or similar is a polish graphs for dashboard and accounting page.
+- redo dropdowns its ugly.
+- add discounts to invoices.
+- add purchase order (PO) number to invoices.
+- start invoice number at 000001 and increment. Maybe add client name in pdf name ?
+- store invoices in year/month/invoice-name.pdf so user can easily archive them if needed.
+- work on activity history/logs for invoices, clients, payments, backups.
+- try to have system for multi-currency usage.
+- logo and signature not getting added to PDF.
+- global search (client, invoice, catalog items)
+- link to carnet section from client's page when empty.
+- remove duplicate workspace name bottom left. Only 1 is needed.
+- error toast should last 5s.
+- add animations for UI (ex: tabs switching, sidebar collapsing)
+- review the product catalog section. default unit, quantity... maybe add defaults
+- add default values for countries, languages.
+- add default values for phone/email labels. with option to add custom.
+- management tool to merge clients (similar names matching)
+- remove import button on client page.
+- Add CLI tool to create all domains.
+- Add expenses section. maybe OCR and light AI model to extract data. A project in itself ? maybe it exists ? Allow user to upload receipts from its phone.
+- Add email data in email history from the client or invoice.
+- improved invoice creation item dropdowns.
+- use full dates in invoice view page. easier to read.
+- update 'encaisser' button in invoice view page to use coins.
+- Add description to what 'cancel invoice' will do.
+- sometimes edit is 'edit' sometimes its just the icon, sometimes you can view by clicking on row. be consistent in table's actions.
+- in settings, move sub settings to tabs.
+- bookmark toolbar : improve design, match design of rest of the app.
+- update 'emails' section. its not very clear. maybe add preview with example values when creating templates with errors when a variable doesnt exist and wont be hydrated. The email list is also not very pretty.
+- We have many emails support with default, but i think when we click 'send email' it should open a modal with the options and a preview of the email for that invoice+client. allows user to override values (client email, select email template, add extra text in email body ...). Add improved variable insertion in email. Localized variable selection, so real variable insert is the same. Maybe a drag and drop system using a list of variable on the right.
+- Remove 'back' buttons EVERYWHERE. we have a top navigation bar now.
+- some breadcrumbs navigations are clickable but not redirecting anywhere (ie in email template editing, cant go back to email list).
+- Add a temporary highlighted invoice system when a new invoice is created, so user can easily find his new invoice to click on it. Upsell to send email right after finalizing an invoice.
+- update the 'new invoice' page to be different than the edit. dont show payments, dont show emails, dont show preview. Just the most simple form possible.
+- in invoice creation, theres a dropdown to create using a model. it uses default model, but also suggest the default model. Reduce to only show default+selected model as one single option.
+- due date days is somehow not being inserted properly from settings to invoice. Remove placeholder, because it seems like its a selected value. Make text for processed due date bigger.
+- invoice note has mentioned twice that the text will be public on invoice. Just call it 'public note (inserted in invoice)'.
+- taxes should be toggled on BY DEFAULT.
+- if only 1 service exists in db, use it as default in invoice creation.
+- in invoice editing, add a new 'private note' section. just a zone of text, not shown anywhere. make sure user understands that.
+- add pagination paging component top and bottom of list.
+- on dahsboard, remove the hover effect on the top 4 cards, it makes it look like you can click on them, but you cant.
+- accounting :
+  - remove export to PDF. Add a way to export all transactions to a CSV file tho ! Should ask users which rows to export.
+  - tax management: add not only money perceived, but money perceived with or without taxes + total tax amount, per timeframe.
+  - improve general accounting section, to make it clear. maybe a timeline kind of view ? Add group by trimesters too.
+- Add loader to button when processing slow actions (invoice creation, email sending) instead of waiting...
+- Add a 'project' section, links to invoice and clients. User can start a project, manage his tasks and link them to an invoice. Time tracker management too. Would require app running in background, never closing the app. Dashboard should show active timer, in topbar too.
+- update logo to have more WEIGHT. Add logo to sidebar top.

@@ -5,7 +5,10 @@ use uuid::Uuid;
 use super::DtoConvertError;
 use crate::application::client_usecases::UpdateClientInput;
 use crate::application::ports::{ClientAttributeValues, ListClientsQuery};
-use crate::domain::client::{Client, ClientId, ContactEntry, NewClient, NewContactEntry};
+use crate::domain::client::{
+    Client, ClientAddress, ClientId, ClientKind, ContactEntry, NewClient, NewClientAddress,
+    NewContactEntry,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct ContactEntryDto {
@@ -36,13 +39,94 @@ impl From<ContactEntryDto> for NewContactEntry {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub enum ClientKindDto {
+    Individual,
+    Company,
+}
+
+impl Default for ClientKindDto {
+    fn default() -> Self {
+        Self::Individual
+    }
+}
+
+impl From<ClientKind> for ClientKindDto {
+    fn from(k: ClientKind) -> Self {
+        match k {
+            ClientKind::Individual => Self::Individual,
+            ClientKind::Company => Self::Company,
+        }
+    }
+}
+
+impl From<ClientKindDto> for ClientKind {
+    fn from(k: ClientKindDto) -> Self {
+        match k {
+            ClientKindDto::Individual => Self::Individual,
+            ClientKindDto::Company => Self::Company,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct ClientAddressDto {
+    pub id: Option<Uuid>,
+    pub label: Option<String>,
+    pub street: String,
+    pub apt_suite: Option<String>,
+    pub city: String,
+    pub state_province: Option<String>,
+    pub postal_code: String,
+    pub country: String,
+    pub is_billing: bool,
+    pub is_shipping: bool,
+}
+
+impl From<&ClientAddress> for ClientAddressDto {
+    fn from(a: &ClientAddress) -> Self {
+        Self {
+            id: Some(a.id.0),
+            label: a.label.clone(),
+            street: a.street.clone(),
+            apt_suite: a.apt_suite.clone(),
+            city: a.city.clone(),
+            state_province: a.state_province.clone(),
+            postal_code: a.postal_code.clone(),
+            country: a.country.clone(),
+            is_billing: a.is_billing,
+            is_shipping: a.is_shipping,
+        }
+    }
+}
+
+impl From<ClientAddressDto> for NewClientAddress {
+    fn from(dto: ClientAddressDto) -> Self {
+        NewClientAddress {
+            label: dto.label,
+            street: dto.street,
+            apt_suite: dto.apt_suite,
+            city: dto.city,
+            state_province: dto.state_province,
+            postal_code: dto.postal_code,
+            country: dto.country,
+            is_billing: dto.is_billing,
+            is_shipping: dto.is_shipping,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct ClientDto {
     pub id: Uuid,
+    pub kind: ClientKindDto,
     pub name: String,
+    pub contact_name: Option<String>,
+    pub tax_id: Option<String>,
+    pub registration_number: Option<String>,
     pub emails: Vec<ContactEntryDto>,
     pub phones: Vec<ContactEntryDto>,
-    pub address: Option<String>,
+    pub addresses: Vec<ClientAddressDto>,
     pub notes: Option<String>,
     pub referred_by: Option<Uuid>,
     pub date_of_birth: Option<chrono::NaiveDate>,
@@ -59,10 +143,14 @@ impl From<&Client> for ClientDto {
     fn from(c: &Client) -> Self {
         Self {
             id: c.id.0,
+            kind: c.kind.into(),
             name: c.name.clone(),
+            contact_name: c.contact_name.clone(),
+            tax_id: c.tax_id.clone(),
+            registration_number: c.registration_number.clone(),
             emails: c.emails.iter().map(Into::into).collect(),
             phones: c.phones.iter().map(Into::into).collect(),
-            address: c.address.clone(),
+            addresses: c.addresses.iter().map(Into::into).collect(),
             notes: c.notes.clone(),
             referred_by: c.referred_by.map(|r| r.0),
             date_of_birth: c.date_of_birth,
@@ -85,10 +173,15 @@ impl From<Client> for ClientDto {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct NewClientDto {
+    #[serde(default)]
+    pub kind: ClientKindDto,
     pub name: String,
+    pub contact_name: Option<String>,
+    pub tax_id: Option<String>,
+    pub registration_number: Option<String>,
     pub emails: Vec<ContactEntryDto>,
     pub phones: Vec<ContactEntryDto>,
-    pub address: Option<String>,
+    pub addresses: Vec<ClientAddressDto>,
     pub notes: Option<String>,
     pub referred_by: Option<Uuid>,
     pub date_of_birth: Option<chrono::NaiveDate>,
@@ -102,10 +195,14 @@ pub struct NewClientDto {
 impl From<NewClientDto> for NewClient {
     fn from(dto: NewClientDto) -> Self {
         NewClient {
+            kind: dto.kind.into(),
             name: dto.name,
+            contact_name: dto.contact_name,
+            tax_id: dto.tax_id,
+            registration_number: dto.registration_number,
             emails: dto.emails.into_iter().map(Into::into).collect(),
             phones: dto.phones.into_iter().map(Into::into).collect(),
-            address: dto.address,
+            addresses: dto.addresses.into_iter().map(Into::into).collect(),
             notes: dto.notes,
             referred_by: dto.referred_by.map(ClientId),
             date_of_birth: dto.date_of_birth,
@@ -121,10 +218,15 @@ impl From<NewClientDto> for NewClient {
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct UpdateClientDto {
     pub id: Uuid,
+    #[serde(default)]
+    pub kind: ClientKindDto,
     pub name: String,
+    pub contact_name: Option<String>,
+    pub tax_id: Option<String>,
+    pub registration_number: Option<String>,
     pub emails: Vec<ContactEntryDto>,
     pub phones: Vec<ContactEntryDto>,
-    pub address: Option<String>,
+    pub addresses: Vec<ClientAddressDto>,
     pub notes: Option<String>,
     pub referred_by: Option<Uuid>,
     pub date_of_birth: Option<chrono::NaiveDate>,
@@ -139,10 +241,14 @@ impl From<UpdateClientDto> for UpdateClientInput {
     fn from(dto: UpdateClientDto) -> Self {
         UpdateClientInput {
             id: ClientId(dto.id),
+            kind: dto.kind.into(),
             name: dto.name,
+            contact_name: dto.contact_name,
+            tax_id: dto.tax_id,
+            registration_number: dto.registration_number,
             emails: dto.emails.into_iter().map(Into::into).collect(),
             phones: dto.phones.into_iter().map(Into::into).collect(),
-            address: dto.address,
+            addresses: dto.addresses.into_iter().map(Into::into).collect(),
             notes: dto.notes,
             referred_by: dto.referred_by.map(ClientId),
             date_of_birth: dto.date_of_birth,
@@ -216,7 +322,11 @@ mod tests {
     fn sample_client() -> Client {
         Client {
             id: ClientId::new(),
+            kind: ClientKind::Individual,
             name: "Acme Corp".into(),
+            contact_name: None,
+            tax_id: None,
+            registration_number: None,
             emails: vec![ContactEntry {
                 id: ContactEntryId::new(),
                 value: "billing@acme.example".into(),
@@ -229,7 +339,7 @@ mod tests {
                 label: None,
                 is_default: true,
             }],
-            address: Some("1 Way".into()),
+            addresses: vec![],
             notes: None,
             referred_by: None,
             date_of_birth: None,
@@ -249,13 +359,14 @@ mod tests {
         let dto: ClientDto = (&client).into();
         assert_eq!(dto.id, client.id.0);
         assert_eq!(dto.name, client.name);
+        assert_eq!(dto.kind, ClientKindDto::Individual);
         assert_eq!(dto.emails.len(), 1);
         assert_eq!(dto.emails[0].value, "billing@acme.example");
         assert_eq!(dto.emails[0].label.as_deref(), Some("Billing"));
         assert!(dto.emails[0].is_default);
         assert_eq!(dto.phones.len(), 1);
         assert_eq!(dto.phones[0].value, "555-0100");
-        assert_eq!(dto.address, client.address);
+        assert!(dto.addresses.is_empty());
         assert_eq!(dto.notes, client.notes);
         assert_eq!(dto.referred_by, None);
         assert_eq!(dto.archived_at, client.archived_at);
@@ -265,28 +376,22 @@ mod tests {
     #[test]
     fn new_client_dto_maps_into_domain_input() {
         let dto = NewClientDto {
+            kind: ClientKindDto::Company,
             name: "Acme".into(),
+            tax_id: Some("FR12345".into()),
             emails: vec![ContactEntryDto {
                 id: None,
                 value: "a@b.c".into(),
                 label: None,
                 is_default: true,
             }],
-            phones: vec![],
-            address: None,
-            notes: None,
-            referred_by: None,
-            date_of_birth: None,
-            sex: None,
-            gender: None,
-            pronouns: None,
-            occupation: None,
-            language: None,
+            ..Default::default()
         };
         let input: NewClient = dto.clone().into();
         assert_eq!(input.name, dto.name);
+        assert_eq!(input.kind, ClientKind::Company);
+        assert_eq!(input.tax_id.as_deref(), Some("FR12345"));
         assert_eq!(input.emails.len(), 1);
-        assert_eq!(input.emails[0].value, "a@b.c");
         assert!(input.emails[0].is_default);
     }
 
@@ -296,10 +401,14 @@ mod tests {
         let referrer = Uuid::new_v4();
         let dto = UpdateClientDto {
             id,
+            kind: ClientKindDto::Individual,
             name: "New".into(),
+            contact_name: None,
+            tax_id: None,
+            registration_number: None,
             emails: vec![],
             phones: vec![],
-            address: None,
+            addresses: vec![],
             notes: Some("hi".into()),
             referred_by: Some(referrer),
             date_of_birth: None,
