@@ -1,51 +1,67 @@
-- update client page creation : should toggle between Individual and Company creation form.
-- Adding recharts or similar is a polish graphs for dashboard and accounting page.
-- redo dropdowns its ugly.
-- add discounts to invoices.
-- add purchase order (PO) number to invoices.
-- start invoice number at 000001 and increment. Maybe add client name in pdf name ?
-- store invoices in year/month/invoice-name.pdf so user can easily archive them if needed.
-- work on activity history/logs for invoices, clients, payments, backups.
-- try to have system for multi-currency usage.
-- logo and signature not getting added to PDF.
-- global search (client, invoice, catalog items)
-- link to carnet section from client's page when empty.
-- remove duplicate workspace name bottom left. Only 1 is needed.
-- error toast should last 5s.
-- add animations for UI (ex: tabs switching, sidebar collapsing)
-- review the product catalog section. default unit, quantity... maybe add defaults
-- add default values for countries, languages.
-- add default values for phone/email labels. with option to add custom.
-- management tool to merge clients (similar names matching)
-- remove import button on client page.
-- Add CLI tool to create all domains.
-- Add expenses section. maybe OCR and light AI model to extract data. A project in itself ? maybe it exists ? Allow user to upload receipts from its phone.
-- Add email data in email history from the client or invoice.
-- improved invoice creation item dropdowns.
-- use full dates in invoice view page. easier to read.
-- update 'encaisser' button in invoice view page to use coins.
-- Add description to what 'cancel invoice' will do.
-- sometimes edit is 'edit' sometimes its just the icon, sometimes you can view by clicking on row. be consistent in table's actions.
-- in settings, move sub settings to tabs.
-- bookmark toolbar : improve design, match design of rest of the app.
-- update 'emails' section. its not very clear. maybe add preview with example values when creating templates with errors when a variable doesnt exist and wont be hydrated. The email list is also not very pretty.
-- We have many emails support with default, but i think when we click 'send email' it should open a modal with the options and a preview of the email for that invoice+client. allows user to override values (client email, select email template, add extra text in email body ...). Add improved variable insertion in email. Localized variable selection, so real variable insert is the same. Maybe a drag and drop system using a list of variable on the right.
-- Remove 'back' buttons EVERYWHERE. we have a top navigation bar now.
-- some breadcrumbs navigations are clickable but not redirecting anywhere (ie in email template editing, cant go back to email list).
-- Add a temporary highlighted invoice system when a new invoice is created, so user can easily find his new invoice to click on it. Upsell to send email right after finalizing an invoice.
-- update the 'new invoice' page to be different than the edit. dont show payments, dont show emails, dont show preview. Just the most simple form possible.
-- in invoice creation, theres a dropdown to create using a model. it uses default model, but also suggest the default model. Reduce to only show default+selected model as one single option.
-- due date days is somehow not being inserted properly from settings to invoice. Remove placeholder, because it seems like its a selected value. Make text for processed due date bigger.
-- invoice note has mentioned twice that the text will be public on invoice. Just call it 'public note (inserted in invoice)'.
-- taxes should be toggled on BY DEFAULT.
-- if only 1 service exists in db, use it as default in invoice creation.
-- in invoice editing, add a new 'private note' section. just a zone of text, not shown anywhere. make sure user understands that.
-- add pagination paging component top and bottom of list.
-- on dahsboard, remove the hover effect on the top 4 cards, it makes it look like you can click on them, but you cant.
-- accounting :
-  - remove export to PDF. Add a way to export all transactions to a CSV file tho ! Should ask users which rows to export.
-  - tax management: add not only money perceived, but money perceived with or without taxes + total tax amount, per timeframe.
-  - improve general accounting section, to make it clear. maybe a timeline kind of view ? Add group by trimesters too.
-- Add loader to button when processing slow actions (invoice creation, email sending) instead of waiting...
-- Add a 'project' section, links to invoice and clients. User can start a project, manage his tasks and link them to an invoice. Time tracker management too. Would require app running in background, never closing the app. Dashboard should show active timer, in topbar too.
-- update logo to have more WEIGHT. Add logo to sidebar top.
+# Terative — TODO
+
+Status: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
+Tiers: tier-1 foundational · tier-2 new domain/feature · tier-3 targeted UX · tier-4 polish
+
+---
+
+## Tier 1 — Foundational / cross-cutting
+
+- [ ] T01 [tier-1] Multi-organisation — add `org_id` across schema, repos, queries, use cases. Do before other tier-1 items.
+- [ ] T02 [tier-1] Multi-currency — domain `Money`, per-invoice currency, FX, accounting roll-ups.
+- [ ] T03 [tier-1] Database encryption / password — SQLCipher via `rusqlite`, key derivation, unlock at app start, backup/restore impact.
+- [ ] T04 [tier-1] Activity history / audit log — `events` table written by use cases, covers invoices/clients/payments/backups.
+- [ ] T05 [tier-1] Invoice file storage — `year/month/<name>.pdf` layout, numbering reset to `000001`, client name in filename, migrate existing files.
+- [ ] T06 [tier-1] Discounts on invoices — line-level vs invoice-level, tax interaction, PDF, accounting.
+- [ ] T07 [tier-1] Global search — FTS5 index across clients, invoices, catalog items.
+
+## Tier 2 — New domains / significant features
+
+- [ ] T08 [tier-2] Projects + time tracking — new aggregate, link to invoice/client, tray-running app, dashboard timer.
+- [!] T09 [tier-2] Expenses + receipt OCR — blocked: mobile-upload scope conflicts with local-first. Decide flow (QR upload, desktop drop, local OCR vs API).
+- [ ] T10 [tier-2] PO numbers on invoices — schema + UI + PDF.
+- [ ] T11 [tier-2] Email send modal — preview, per-send overrides (recipient, template, extra body), drag-drop variable insert, localized variable picker, unbound-variable errors.
+- [ ] T12 [tier-2] Client merge tool — similar-name matching, reassign allocations.
+- [ ] T13 [tier-2] CSV transaction export — replaces accounting PDF export, row selection.
+- [ ] T14 [tier-2] Accounting tax breakdown — pre/post-tax revenue + tax collected per period, trimester grouping.
+- [ ] T15 [tier-2] CLI to scaffold domains — dev tooling.
+
+## Tier 3 — Targeted feature / UX
+
+- [ ] T16 [tier-3] Client creation: Individual vs Company toggle.
+- [ ] T17 [tier-3] New-invoice page simplified — no payments/emails/preview, edit page keeps full form.
+- [ ] T18 [tier-3] Highlight newly-created invoice + send-email upsell after finalize.
+- [ ] T19 [tier-3] Default service auto-selected when only one exists.
+- [ ] T20 [tier-3] Taxes toggled ON by default.
+- [ ] T21 [tier-3] Private note field on invoice (not rendered, label clearly).
+- [ ] T22 [tier-3] Due-date days flow from settings → invoice; remove placeholder; bigger processed due-date text.
+- [ ] T23 [tier-3] Invoice note: rename to "public note (inserted in invoice)", drop duplicate hint.
+- [ ] T24 [tier-3] "Create from model" dropdown reduced to default + selected.
+- [ ] T25 [tier-3] Logo + signature missing from PDF — bug.
+- [ ] T26 [tier-3] Pagination component (top + bottom).
+- [ ] T27 [tier-3] Settings page → tabs for sub-sections.
+- [ ] T28 [tier-3] Email templates: example-value preview + unbound-variable errors; prettier list.
+- [ ] T29 [tier-3] Email history shows actual sent content from client/invoice.
+- [ ] T30 [tier-3] Carnet link on empty client page.
+
+## Tier 4 — Polish
+
+- [ ] T31 [tier-4] Redo dropdowns.
+- [ ] T32 [tier-4] Improve invoice item dropdowns.
+- [ ] T33 [tier-4] Bookmark toolbar redesign to match app.
+- [ ] T34 [tier-4] Remove all "back" buttons — top nav exists.
+- [ ] T35 [tier-4] Fix non-functional breadcrumbs (e.g. email template → list).
+- [ ] T36 [tier-4] Consistent table row actions (edit label vs icon vs row-click).
+- [ ] T37 [tier-4] Full dates in invoice view.
+- [ ] T38 [tier-4] "Encaisser" button uses coins icon.
+- [ ] T39 [tier-4] Description on "cancel invoice" action.
+- [ ] T40 [tier-4] Loaders on slow-action buttons (invoice create, email send).
+- [ ] T41 [tier-4] Recharts (or similar) for dashboard + accounting graphs.
+- [ ] T42 [tier-4] UI animations — tab switch, sidebar collapse.
+- [ ] T43 [tier-4] Logo weight + add to sidebar top.
+- [ ] T44 [tier-4] Remove hover on top-4 dashboard cards.
+- [ ] T45 [tier-4] Error toast lasts 5s.
+- [ ] T46 [tier-4] Remove duplicate workspace name (bottom-left).
+- [ ] T47 [tier-4] Remove import button on client page.
+- [ ] T48 [tier-4] Default values: countries, languages, phone/email labels.
+- [ ] T49 [tier-4] Review product catalog defaults (unit, quantity).

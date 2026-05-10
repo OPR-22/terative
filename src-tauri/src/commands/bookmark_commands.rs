@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::Mutex;
 use tauri::webview::{NewWindowResponse, WebviewBuilder, WebviewWindowBuilder};
-use tauri::{LogicalPosition, LogicalSize, Manager, Rect, Url, WebviewUrl};
+use tauri::{LogicalPosition, LogicalSize, Manager, Url, WebviewUrl};
 
 /// Monotonic counter for unique popup-window labels. Each popup spawned by
 /// `window.open` / target=_blank gets a fresh `bookmark-popup-N` label.
