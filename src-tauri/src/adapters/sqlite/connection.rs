@@ -80,6 +80,53 @@ pub fn open(path: &Path) -> anyhow::Result<Db> {
     Ok(Arc::new(Mutex::new(conn)))
 }
 
+/// Errors specific to the org-database open path. Surfaced separately from
+/// generic I/O failures so the orgs/registry layer can produce the right
+/// `AppError` variant (e.g. `OrgNotFound` vs `Db { detail }`).
+#[derive(Debug, thiserror::Error)]
+pub enum OpenOrgError {
+    #[error("org file does not exist")]
+    NotFound,
+    #[error("file is not a Terative org (application_id mismatch)")]
+    ForeignFile,
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
+/// Create a brand-new org database at `path`. The parent directory must
+/// already exist. Errors if `path` already exists. After this returns,
+/// `application_id` and the schema are in place.
+pub fn create_org_db(path: &Path) -> anyhow::Result<Db> {
+    if path.exists() {
+        anyhow::bail!("org database already exists at {}", path.display());
+    }
+    open(path)
+}
+
+/// Open an existing org database. Validates the SQLite `application_id`
+/// header *before* running migrations — otherwise a foreign SQLite file
+/// would silently get a Terative schema injected into it.
+pub fn open_org_db(path: &Path) -> Result<Db, OpenOrgError> {
+    if !path.exists() {
+        return Err(OpenOrgError::NotFound);
+    }
+
+    // Read application_id with a read-only connection. Empty files (just
+    // created) report 0; anything else either matches or is foreign.
+    let probe = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| OpenOrgError::Other(e.into()))?;
+    let id: i32 = probe
+        .query_row("PRAGMA application_id", [], |r| r.get(0))
+        .map_err(|e| OpenOrgError::Other(e.into()))?;
+    drop(probe);
+
+    if id != 0 && id != APPLICATION_ID {
+        return Err(OpenOrgError::ForeignFile);
+    }
+
+    open(path).map_err(OpenOrgError::Other)
+}
+
 #[cfg(test)]
 pub fn open_memory() -> Db {
     let mut conn = Connection::open_in_memory().expect("open in-memory sqlite");
@@ -241,6 +288,71 @@ mod tests {
             })
             .unwrap();
         assert_eq!(prefs_ok, 1);
+    }
+
+    #[test]
+    fn create_org_db_creates_file_with_application_id() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("acme.sqlite");
+        let db = super::create_org_db(&path).unwrap();
+        assert!(path.exists());
+        let conn = db.lock();
+        let id: i32 = conn
+            .query_row("PRAGMA application_id", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(id, super::APPLICATION_ID);
+    }
+
+    #[test]
+    fn create_org_db_rejects_existing_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("acme.sqlite");
+        std::fs::write(&path, b"not really sqlite").unwrap();
+        let err = super::create_org_db(&path).unwrap_err();
+        assert!(err.to_string().contains("already exists"));
+    }
+
+    #[test]
+    fn open_org_db_succeeds_for_terative_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("acme.sqlite");
+        super::create_org_db(&path).unwrap();
+        // Drop and re-open via open_org_db
+        let db = super::open_org_db(&path).expect("should open existing terative db");
+        let conn = db.lock();
+        let id: i32 = conn
+            .query_row("PRAGMA application_id", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(id, super::APPLICATION_ID);
+    }
+
+    #[test]
+    fn open_org_db_returns_not_found_for_missing_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("missing.sqlite");
+        let err = super::open_org_db(&path).unwrap_err();
+        assert!(matches!(err, super::OpenOrgError::NotFound));
+    }
+
+    #[test]
+    fn open_org_db_rejects_foreign_sqlite_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("foreign.sqlite");
+        // Create a SQLite db with a different application_id (not Terative).
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch("PRAGMA application_id = 999; CREATE TABLE x (a INT);")
+            .unwrap();
+        let id_after_set: i32 = conn
+            .query_row("PRAGMA application_id", [], |r| r.get(0))
+            .unwrap();
+        drop(conn);
+        assert_eq!(id_after_set, 999, "fixture did not set application_id");
+
+        let err = super::open_org_db(&path).unwrap_err();
+        assert!(
+            matches!(err, super::OpenOrgError::ForeignFile),
+            "expected ForeignFile, got {err:?}"
+        );
     }
 
     #[test]

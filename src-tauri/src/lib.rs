@@ -39,6 +39,7 @@ use commands::{
         invoice_list, invoice_open_external, invoice_pdf_bytes, invoice_print,
         invoice_update_draft,
     },
+    org_commands::{org_close, org_create, org_delete, org_get_active, org_list, org_open},
     notebook_commands::{
         client_notebook_get, client_notebook_save, journal_entry_create, journal_entry_delete,
         journal_entry_get, journal_entry_update, journal_list_for_client,
@@ -80,7 +81,10 @@ fn resolve_app_data_dir(app: &tauri::AppHandle) -> PathBuf {
 /// First-launch seed: if the user has no templates yet, insert a default one
 /// so finalize and preview work out of the box without requiring the user to
 /// create a template first.
-fn seed_default_template_if_empty(db: &adapters::sqlite::Db) {
+///
+/// Idempotent — called from `org_open` on every org load. The check-and-skip
+/// makes it safe to invoke repeatedly.
+pub(crate) fn seed_default_template_if_empty(db: &adapters::sqlite::Db) {
     use application::ports::TemplateRepository;
     let repo = adapters::sqlite::SqliteTemplateRepository::new(db.clone());
     let existing = match repo.list() {
@@ -102,7 +106,7 @@ fn seed_default_template_if_empty(db: &adapters::sqlite::Db) {
 
 /// First-launch seed: if no email templates exist, insert default ones for
 /// both template types so sending works out of the box.
-fn seed_default_email_templates_if_empty(db: &adapters::sqlite::Db) {
+pub(crate) fn seed_default_email_templates_if_empty(db: &adapters::sqlite::Db) {
     use application::ports::EmailTemplateRepository;
     use domain::email_template::{EmailTemplate, EmailTemplateType, NewEmailTemplate};
     let repo = adapters::sqlite::SqliteEmailTemplateRepository::new(db.clone());
@@ -245,7 +249,13 @@ fn build_specta() -> Builder<tauri::Wry> {
                 journal_entry_update,
                 journal_entry_delete,
                 journal_list_for_client,
-                journal_entry_get
+                journal_entry_get,
+                org_list,
+                org_create,
+                org_open,
+                org_close,
+                org_delete,
+                org_get_active
                 $($tail)*
             ]
         };
@@ -277,39 +287,14 @@ pub fn run() {
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             let data_dir = resolve_app_data_dir(app.handle());
-            let db_path = data_dir.join("terative.sqlite");
-            let default_pdf_dir = data_dir.join("invoices");
-            let backups_root = data_dir.join("backups");
-            let user_backup_dir = backups_root.join("user");
-            let system_backup_dir = backups_root.join("system");
+            let orgs_root = data_dir.join("orgs");
+            std::fs::create_dir_all(&orgs_root)
+                .unwrap_or_else(|e| panic!("create orgs dir at {orgs_root:?}: {e}"));
 
-            // Snapshot BEFORE opening: if migrations are pending, the open()
-            // below will apply them in-place, so the pre-migration state has
-            // to be captured first.
-            match adapters::sqlite::snapshot_pre_migration_if_pending(
-                &db_path,
-                &system_backup_dir,
-            ) {
-                Ok(Some(path)) => {
-                    eprintln!("pre-migration backup written to {}", path.display());
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    panic!("pre-migration backup failed at {db_path:?}: {e}");
-                }
-            }
-
-            let db = adapters::sqlite::open(&db_path)
-                .unwrap_or_else(|e| panic!("open sqlite at {db_path:?}: {e}"));
-            seed_default_template_if_empty(&db);
-            seed_default_email_templates_if_empty(&db);
-            app.manage(AppState::new(
-                db,
-                db_path,
-                default_pdf_dir,
-                user_backup_dir,
-                system_backup_dir,
-            ));
+            let registry = std::sync::Arc::new(
+                application::org_registry::OrgRegistry::new(orgs_root),
+            );
+            app.manage(AppState::new(registry));
             builder.mount_events(app);
             spawn_auto_backup_ticker(app.handle().clone());
             #[cfg(target_os = "linux")]
@@ -334,9 +319,12 @@ fn spawn_auto_backup_ticker(app: tauri::AppHandle) {
     const TICK: Duration = Duration::from_secs(15 * 60);
 
     std::thread::spawn(move || loop {
-        let dm = app.state::<commands::AppState>().data_management.clone();
-        if let Err(e) = dm.auto_backup_if_due() {
-            eprintln!("auto-backup check failed: {e}");
+        // Auto-backup is per-org. When no org is open the ticker is a no-op
+        // — picker is showing, no DB to back up.
+        if let Ok(svc) = app.state::<commands::AppState>().org() {
+            if let Err(e) = svc.data_management.auto_backup_if_due() {
+                eprintln!("auto-backup check failed: {e}");
+            }
         }
         std::thread::sleep(TICK);
     });

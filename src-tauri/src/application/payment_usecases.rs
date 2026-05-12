@@ -6,6 +6,7 @@ use crate::application::ports::{
     ClientRepository, InvoiceRepository, ListPaymentsQuery, PaymentRepository,
 };
 use crate::application::AppError;
+#[cfg(test)] use crate::application::ErrorCode;
 use crate::domain::invoice::InvoiceId;
 use crate::domain::money::Money;
 use crate::domain::payment::{
@@ -64,7 +65,7 @@ impl UpdatePayment {
     }
 
     pub fn execute(&self, input: UpdatePaymentInput) -> Result<Payment, AppError> {
-        let mut payment = self.payments.get(input.id)?.ok_or(AppError::NotFound)?;
+        let mut payment = self.payments.get(input.id)?.ok_or(AppError::resource_not_found())?;
         // Subtract this payment's current allocations from the "already
         // allocated" totals so a re-save of the same invoice doesn't
         // double-count itself.
@@ -102,7 +103,7 @@ fn validate_cross_aggregate_allocations(
     for alloc in new_allocations {
         let invoice = invoices
             .get(alloc.invoice_id)?
-            .ok_or(AppError::NotFound)?;
+            .ok_or(AppError::resource_not_found())?;
         let total_allocated = payments.allocated_for_invoice(alloc.invoice_id)?;
         let previous_self = previous
             .map(|p| sum_allocations_to(p, alloc.invoice_id, invoice.currency))
@@ -143,7 +144,7 @@ impl DeletePayment {
     }
     pub fn execute(&self, id: PaymentId) -> Result<(), AppError> {
         if self.repo.get(id)?.is_none() {
-            return Err(AppError::NotFound);
+            return Err(AppError::resource_not_found());
         }
         self.repo.delete(id)?;
         Ok(())
@@ -198,7 +199,7 @@ impl GetPayment {
     }
 
     pub fn execute(&self, id: PaymentId) -> Result<(Payment, Option<String>), AppError> {
-        let payment = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        let payment = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
         let names = self.clients.names_for(&[payment.client_id])?;
         let name = names.get(&payment.client_id).cloned();
         Ok((payment, name))
@@ -419,7 +420,7 @@ mod tests {
         let err = RecordPayment::new(payments, invoices)
             .execute(new_input(-1, vec![]))
             .unwrap_err();
-        assert!(matches!(err, AppError::Payment(_)));
+        assert!(err.is(ErrorCode::PaymentNonPositiveAmount));
     }
 
     #[test]
@@ -436,7 +437,7 @@ mod tests {
                 notes: None,
             })
             .unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 
     #[test]
@@ -479,7 +480,7 @@ mod tests {
         let err = DeletePayment::new(payments)
             .execute(PaymentId::new())
             .unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 
     #[test]
@@ -526,10 +527,7 @@ mod tests {
         let err = RecordPayment::new(payments, invoices)
             .execute(new_input(400, vec![alloc(invoice_id, 400)]))
             .unwrap_err();
-        assert!(matches!(
-            err,
-            AppError::Invoice(crate::domain::invoice::InvoiceError::OverAllocated)
-        ));
+        assert!(err.is(ErrorCode::InvoiceOverAllocated));
     }
 
     #[test]
@@ -549,10 +547,7 @@ mod tests {
         let err = RecordPayment::new(payments, invoices)
             .execute(new_input(1, vec![alloc(invoice_id, 1)]))
             .unwrap_err();
-        assert!(matches!(
-            err,
-            AppError::Invoice(crate::domain::invoice::InvoiceError::OverAllocated)
-        ));
+        assert!(err.is(ErrorCode::InvoiceOverAllocated));
     }
 
     #[test]
@@ -626,10 +621,7 @@ mod tests {
                 notes: None,
             })
             .unwrap_err();
-        assert!(matches!(
-            err,
-            AppError::Invoice(crate::domain::invoice::InvoiceError::OverAllocated)
-        ));
+        assert!(err.is(ErrorCode::InvoiceOverAllocated));
     }
 
     #[test]
@@ -639,7 +631,7 @@ mod tests {
         let err = RecordPayment::new(payments, invoices)
             .execute(new_input(500, vec![alloc(missing, 500)]))
             .unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 
     #[test]
@@ -670,9 +662,6 @@ mod tests {
         let err = RecordPayment::new(payments, invoices)
             .execute(new_input(500, vec![alloc(draft_id, 500)]))
             .unwrap_err();
-        assert!(matches!(
-            err,
-            AppError::Invoice(crate::domain::invoice::InvoiceError::NotAllocatable(_))
-        ));
+        assert!(err.is(ErrorCode::InvoiceNotAllocatable));
     }
 }

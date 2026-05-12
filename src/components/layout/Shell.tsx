@@ -3,7 +3,6 @@ import { Outlet } from "react-router-dom";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import { useTheme } from "../../hooks/useTheme";
 import { Onboarding } from "../onboarding/Onboarding";
-import { ToastContainer } from "../ui/Toast";
 import { PageMetaProvider } from "./PageMeta";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -22,7 +21,6 @@ export function Shell() {
           </main>
         </div>
         <Onboarding />
-        <ToastContainer />
       </div>
     </PageMetaProvider>
   );

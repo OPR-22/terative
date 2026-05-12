@@ -20,16 +20,7 @@ import {
 
 import { useBookmarkStore } from "../../stores/bookmarkStore";
 import { useSidebarStore } from "../../stores/sidebarStore";
-import { useSettingsStore } from "../../stores/settingsStore";
-import { useWorkspaceName } from "../../hooks/useWorkspaceName";
-
-function initialsOf(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "—";
-  const first = parts[0][0] ?? "";
-  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
-  return (first + last).toUpperCase();
-}
+import { OrgSwitcher } from "../org/OrgSwitcher";
 
 interface NavItem {
   to: string;
@@ -44,9 +35,6 @@ export function Sidebar() {
   const toggle = useSidebarStore((s) => s.toggle);
   const bookmarks = useBookmarkStore((s) => s.bookmarks);
   const ensureLoaded = useBookmarkStore((s) => s.ensureLoaded);
-  const sellerName = useSettingsStore((s) => s.snapshot?.seller.name);
-  const workspaceName = useWorkspaceName();
-
   useEffect(() => {
     void ensureLoaded();
   }, [ensureLoaded]);
@@ -131,27 +119,8 @@ export function Sidebar() {
             collapsed={collapsed}
           />
         </div>
-        <div
-          className={[
-            "border-t border-line-soft",
-            collapsed
-              ? "p-2 flex justify-center"
-              : "px-3 py-3 flex items-center gap-2.5",
-          ].join(" ")}
-        >
-          <span className="grid place-items-center w-[26px] h-[26px] bg-accent-soft text-accent-ink text-[11px] font-semibold rounded-full shrink-0">
-            {initialsOf(sellerName?.trim() || workspaceName)}
-          </span>
-          {collapsed ? null : (
-            <div className="leading-tight min-w-0">
-              <div className="text-ink font-medium text-[12px] truncate">
-                {sellerName?.trim() || workspaceName}
-              </div>
-              <div className="text-[11px] text-ink-3 truncate">
-                {workspaceName}
-              </div>
-            </div>
-          )}
+        <div className="border-t border-line-soft">
+          <OrgSwitcher collapsed={collapsed} />
         </div>
       </div>
     </aside>

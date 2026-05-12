@@ -8,17 +8,17 @@ use tauri::State;
 
 use crate::application::dto::{SeedCountsDto, SeedReportDto};
 
-use super::{to_ipc_err, AppState};
+use super::AppState;
+use crate::application::AppError;
 
 #[tauri::command]
 #[specta::specta]
 pub fn seed_database(
     state: State<'_, AppState>,
     counts: Option<SeedCountsDto>,
-) -> Result<SeedReportDto, String> {
-    state
+) -> Result<SeedReportDto, AppError> {
+    state.org()?
         .seed_database
         .execute(counts.unwrap_or_default().into())
         .map(Into::into)
-        .map_err(to_ipc_err)
 }

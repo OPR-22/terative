@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useId,
   useRef,
@@ -17,6 +18,8 @@ export interface DropdownMenuItem {
   /** Visual emphasis. `danger` is reserved for destructive actions. */
   tone?: "default" | "danger";
   disabled?: boolean;
+  /** Render a horizontal divider above this item */
+  separated?: boolean;
   onSelect: () => void;
 }
 
@@ -28,10 +31,12 @@ interface DropdownMenuProps {
    */
   trigger?: ReactNode;
   items: DropdownMenuItem[];
-  /** Accessible label for the default trigger button. */
+  /** Accessible label for the default trigger button */
   triggerLabel?: string;
-  /** Visual alignment of the menu relative to the trigger. */
+  /** Visual alignment of the menu relative to the trigger */
   align?: "left" | "right";
+  /** Whether the menu opens below (default) or above the trigger */
+  placement?: "down" | "up";
   className?: string;
 }
 
@@ -48,6 +53,7 @@ export function DropdownMenu({
   items,
   triggerLabel,
   align = "right",
+  placement = "down",
   className = "",
 }: DropdownMenuProps) {
   const [open, setOpen] = useState(false);
@@ -98,33 +104,38 @@ export function DropdownMenu({
           id={menuId}
           role="menu"
           className={[
-            "absolute z-30 mt-1 min-w-[180px] bg-paper border border-line rounded-card shadow-card py-1",
+            "absolute z-30 min-w-[180px] bg-paper border border-line rounded-card shadow-card py-1",
+            placement === "up" ? "bottom-full mb-1" : "top-full mt-1",
             align === "right" ? "right-0" : "left-0",
           ].join(" ")}
         >
           {items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="menuitem"
-              disabled={item.disabled}
-              onClick={() => {
-                if (item.disabled) return;
-                setOpen(false);
-                item.onSelect();
-              }}
-              className={[
-                "w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer",
-                item.tone === "danger"
-                  ? "text-danger hover:bg-danger-soft"
-                  : "text-ink hover:bg-paper-2",
-              ].join(" ")}
-            >
-              {item.icon ? (
-                <span className="text-ink-3 shrink-0">{item.icon}</span>
+            <Fragment key={item.id}>
+              {item.separated ? (
+                <div className="my-1 border-t border-line-soft" role="separator" />
               ) : null}
-              <span className="flex-1 truncate">{item.label}</span>
-            </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={item.disabled}
+                onClick={() => {
+                  if (item.disabled) return;
+                  setOpen(false);
+                  item.onSelect();
+                }}
+                className={[
+                  "w-full flex items-center gap-2 px-3 py-1.5 text-[13px] text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer",
+                  item.tone === "danger"
+                    ? "text-danger hover:bg-danger-soft"
+                    : "text-ink hover:bg-paper-2",
+                ].join(" ")}
+              >
+                {item.icon ? (
+                  <span className="text-ink-3 shrink-0">{item.icon}</span>
+                ) : null}
+                <span className="flex-1 truncate">{item.label}</span>
+              </button>
+            </Fragment>
           ))}
         </div>
       ) : null}

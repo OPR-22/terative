@@ -6,6 +6,13 @@ import {
   type SellerProfileDto,
   type SettingsSnapshotDto,
 } from "../ipc";
+import { registerOrgScopedReset } from "./orgScopedRegistry";
+
+const INITIAL = {
+  snapshot: null as SettingsSnapshotDto | null,
+  loading: false,
+  error: null as string | null,
+};
 
 interface SettingsState {
   snapshot: SettingsSnapshotDto | null;
@@ -21,9 +28,7 @@ interface SettingsState {
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
-  snapshot: null,
-  loading: false,
-  error: null,
+  ...INITIAL,
   load: async () => {
     set({ loading: true, error: null });
     try {
@@ -65,3 +70,5 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     await ipc.emailTestConnection();
   },
 }));
+
+registerOrgScopedReset(() => useSettingsStore.setState({ ...INITIAL }));

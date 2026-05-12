@@ -4,6 +4,8 @@ use parking_lot::Mutex;
 use tauri::webview::{NewWindowResponse, WebviewBuilder, WebviewWindowBuilder};
 use tauri::{LogicalPosition, LogicalSize, Manager, Url, WebviewUrl};
 
+use crate::application::AppError;
+
 /// Monotonic counter for unique popup-window labels. Each popup spawned by
 /// `window.open` / target=_blank gets a fresh `bookmark-popup-N` label.
 static POPUP_LABEL_SEQ: AtomicU64 = AtomicU64::new(0);
@@ -38,10 +40,10 @@ pub fn current_toolbar_height_css() -> Option<f64> {
     *TOOLBAR_HEIGHT_CSS.lock()
 }
 
-fn current_toolbar_height_css_required() -> Result<f64, String> {
-    current_toolbar_height_css().ok_or_else(|| {
-        "toolbar height not set; the frontend bootstrap must call set_toolbar_height first"
-            .to_string()
+fn current_toolbar_height_css_required() -> Result<f64, AppError> {
+    current_toolbar_height_css().ok_or_else(|| AppError::Unknown {
+        detail: "toolbar height not set; the frontend bootstrap must call set_toolbar_height first"
+            .to_string(),
     })
 }
 
@@ -71,11 +73,14 @@ fn is_bookmark_label(label: &str) -> bool {
     label.starts_with(BOOKMARK_LABEL_PREFIX)
 }
 
-fn parse_url(s: &str) -> Result<Url, String> {
-    let parsed: Url = Url::parse(s).map_err(|e| e.to_string())?;
+fn parse_url(s: &str) -> Result<Url, AppError> {
+    let parsed: Url =
+        Url::parse(s).map_err(|_| AppError::from(crate::domain::bookmark::BookmarkError::InvalidUrl))?;
     match parsed.scheme() {
         "http" | "https" => Ok(parsed),
-        other => Err(format!("unsupported URL scheme: {other}")),
+        _ => Err(AppError::from(
+            crate::domain::bookmark::BookmarkError::UnsupportedScheme,
+        )),
     }
 }
 
@@ -304,7 +309,7 @@ fn ensure_toolbar_webview(
     bookmark_id: &str,
     initial_pos: LogicalPosition<f64>,
     initial_size: LogicalSize<f64>,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let route = format!("bookmark-toolbar/{bookmark_id}");
     if let Some(existing) = app.get_webview(TOOLBAR_LABEL) {
         existing
@@ -341,7 +346,7 @@ pub fn bookmark_nav_open(
     width: f64,
     height: f64,
     dpr: f64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let parsed = parse_url(&url)?;
     let label = label_for(&id);
     hide_other_bookmarks(&app, &label);
@@ -445,7 +450,7 @@ pub fn bookmark_layout_set_bounds(
     width: f64,
     height: f64,
     dpr: f64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let label = label_for(&id);
     let _ = (x, y, width, height); // bounds are derived from the cached sidebar/toolbar/window dims
     #[cfg(target_os = "linux")]
@@ -466,7 +471,7 @@ pub fn bookmark_nav_to(
     app: tauri::AppHandle,
     id: String,
     url: String,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     let parsed = parse_url(&url)?;
     let Some(webview) = app.get_webview(&label_for(&id)) else {
         return Ok(());
@@ -480,7 +485,7 @@ pub fn bookmark_nav_to(
 /// Reload the bookmark's current page (toolbar reload button).
 #[tauri::command]
 #[specta::specta]
-pub fn bookmark_nav_reload(app: tauri::AppHandle, id: String) -> Result<(), String> {
+pub fn bookmark_nav_reload(app: tauri::AppHandle, id: String) -> Result<(), AppError> {
     if let Some(webview) = app.get_webview(&label_for(&id)) {
         webview
             .reload()
@@ -494,7 +499,7 @@ pub fn bookmark_nav_reload(app: tauri::AppHandle, id: String) -> Result<(), Stri
 /// standard `history.back()` JS API in the bookmark's webview.
 #[tauri::command]
 #[specta::specta]
-pub fn bookmark_nav_back(app: tauri::AppHandle, id: String) -> Result<(), String> {
+pub fn bookmark_nav_back(app: tauri::AppHandle, id: String) -> Result<(), AppError> {
     if let Some(webview) = app.get_webview(&label_for(&id)) {
         webview
             .eval("history.back()")
@@ -505,7 +510,7 @@ pub fn bookmark_nav_back(app: tauri::AppHandle, id: String) -> Result<(), String
 
 #[tauri::command]
 #[specta::specta]
-pub fn bookmark_nav_forward(app: tauri::AppHandle, id: String) -> Result<(), String> {
+pub fn bookmark_nav_forward(app: tauri::AppHandle, id: String) -> Result<(), AppError> {
     if let Some(webview) = app.get_webview(&label_for(&id)) {
         webview
             .eval("history.forward()")
@@ -523,7 +528,7 @@ pub fn bookmark_nav_forward(app: tauri::AppHandle, id: String) -> Result<(), Str
 pub fn bookmark_layout_set_sidebar_width(
     app: tauri::AppHandle,
     width: f64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     *SIDEBAR_WIDTH_CSS.lock() = Some(width);
     apply_active_bookmark_layout(&app);
     Ok(())
@@ -537,7 +542,7 @@ pub fn bookmark_layout_set_sidebar_width(
 pub fn bookmark_layout_set_toolbar_height(
     app: tauri::AppHandle,
     height: f64,
-) -> Result<(), String> {
+) -> Result<(), AppError> {
     *TOOLBAR_HEIGHT_CSS.lock() = Some(height);
     apply_active_bookmark_layout(&app);
     Ok(())
@@ -545,7 +550,7 @@ pub fn bookmark_layout_set_toolbar_height(
 
 #[tauri::command]
 #[specta::specta]
-pub fn bookmark_nav_hide(app: tauri::AppHandle) -> Result<(), String> {
+pub fn bookmark_nav_hide(app: tauri::AppHandle) -> Result<(), AppError> {
     hide_other_bookmarks(&app, "");
     if let Some(toolbar) = app.get_webview(TOOLBAR_LABEL) {
         toolbar
@@ -567,12 +572,11 @@ use uuid::Uuid;
 #[specta::specta]
 pub fn bookmark_list(
     state: State<'_, super::AppState>,
-) -> Result<Vec<BookmarkDto>, String> {
-    state
+) -> Result<Vec<BookmarkDto>, AppError> {
+    state.org()?
         .list_bookmarks
         .execute()
         .map(|list| list.iter().map(Into::into).collect())
-        .map_err(super::to_ipc_err)
 }
 
 #[tauri::command]
@@ -580,12 +584,11 @@ pub fn bookmark_list(
 pub fn bookmark_create(
     state: State<'_, super::AppState>,
     input: NewBookmarkDto,
-) -> Result<BookmarkDto, String> {
-    state
+) -> Result<BookmarkDto, AppError> {
+    state.org()?
         .create_bookmark
         .execute(input.into())
         .map(|b| (&b).into())
-        .map_err(super::to_ipc_err)
 }
 
 #[tauri::command]
@@ -593,12 +596,11 @@ pub fn bookmark_create(
 pub fn bookmark_update(
     state: State<'_, super::AppState>,
     input: UpdateBookmarkDto,
-) -> Result<BookmarkDto, String> {
-    state
+) -> Result<BookmarkDto, AppError> {
+    state.org()?
         .update_bookmark
         .execute(input.into())
         .map(|b| (&b).into())
-        .map_err(super::to_ipc_err)
 }
 
 #[tauri::command]
@@ -606,11 +608,10 @@ pub fn bookmark_update(
 pub fn bookmark_delete(
     state: State<'_, super::AppState>,
     id: Uuid,
-) -> Result<(), String> {
-    state
+) -> Result<(), AppError> {
+    state.org()?
         .delete_bookmark
         .execute(BookmarkId(id))
-        .map_err(super::to_ipc_err)
 }
 
 #[tauri::command]
@@ -618,9 +619,8 @@ pub fn bookmark_delete(
 pub fn bookmark_reorder(
     state: State<'_, super::AppState>,
     ordered_ids: Vec<Uuid>,
-) -> Result<(), String> {
-    state
+) -> Result<(), AppError> {
+    state.org()?
         .reorder_bookmarks
         .execute(ordered_ids.into_iter().map(BookmarkId).collect())
-        .map_err(super::to_ipc_err)
 }

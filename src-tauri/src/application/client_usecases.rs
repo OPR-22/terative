@@ -6,6 +6,7 @@ use crate::application::ports::{
     ClientAttributeValues, ClientRepository, ListClientsQuery, Page,
 };
 use crate::application::AppError;
+#[cfg(test)] use crate::application::ErrorCode;
 use crate::domain::client::{
     Client, ClientId, ClientKind, NewClient, NewClientAddress, NewContactEntry,
 };
@@ -58,7 +59,7 @@ impl UpdateClient {
     }
 
     pub fn execute(&self, input: UpdateClientInput) -> Result<Client, AppError> {
-        let mut client = self.repo.get(input.id)?.ok_or(AppError::NotFound)?;
+        let mut client = self.repo.get(input.id)?.ok_or(AppError::resource_not_found())?;
         let name = input.name.trim().to_string();
         if name.is_empty() {
             return Err(crate::domain::client::ClientError::EmptyName.into());
@@ -99,7 +100,7 @@ impl ArchiveClient {
     }
 
     pub fn execute(&self, id: ClientId) -> Result<(), AppError> {
-        let mut client = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        let mut client = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
         client.archive(Utc::now());
         self.repo.update(&client)?;
         Ok(())
@@ -116,7 +117,7 @@ impl UnarchiveClient {
     }
 
     pub fn execute(&self, id: ClientId) -> Result<(), AppError> {
-        let mut client = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        let mut client = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
         client.unarchive();
         self.repo.update(&client)?;
         Ok(())
@@ -147,7 +148,7 @@ impl GetClientDetail {
     }
 
     pub fn execute(&self, id: ClientId) -> Result<Client, AppError> {
-        self.repo.get(id)?.ok_or(AppError::NotFound)
+        self.repo.get(id)?.ok_or(AppError::resource_not_found())
     }
 }
 
@@ -344,7 +345,7 @@ mod tests {
                 language: None,
             })
             .unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 
     #[test]
@@ -377,10 +378,7 @@ mod tests {
                 language: None,
             })
             .unwrap_err();
-        assert!(matches!(
-            err,
-            AppError::Client(crate::domain::client::ClientError::EmptyName)
-        ));
+        assert!(err.is(ErrorCode::ClientEmptyName));
     }
 
     #[test]
@@ -413,10 +411,7 @@ mod tests {
                 language: None,
             })
             .unwrap_err();
-        assert!(matches!(
-            err,
-            AppError::Client(crate::domain::client::ClientError::SelfReferral)
-        ));
+        assert!(err.is(ErrorCode::ClientSelfReferral));
     }
 
     #[test]
@@ -515,7 +510,7 @@ mod tests {
         let err = GetClientDetail::new(repo)
             .execute(ClientId::new())
             .unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 
     #[test]

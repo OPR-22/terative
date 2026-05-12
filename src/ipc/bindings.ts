@@ -4,161 +4,169 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 
 /** Commands */
 export const commands = {
-	clientCreate: (input: NewClientDto) => typedError<ClientDto, string>(__TAURI_INVOKE("client_create", { input })),
-	clientUpdate: (input: UpdateClientDto) => typedError<ClientDto, string>(__TAURI_INVOKE("client_update", { input })),
-	clientArchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("client_archive", { id })),
-	clientUnarchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("client_unarchive", { id })),
+	clientCreate: (input: NewClientDto) => typedError<ClientDto, AppError>(__TAURI_INVOKE("client_create", { input })),
+	clientUpdate: (input: UpdateClientDto) => typedError<ClientDto, AppError>(__TAURI_INVOKE("client_update", { input })),
+	clientArchive: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("client_archive", { id })),
+	clientUnarchive: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("client_unarchive", { id })),
 	clientList: (query: {
 	search?: string | null,
 	include_archived?: boolean,
 	pagination?: PaginationParamsDto | null,
-} | null) => typedError<PageDto<ClientDto>, string>(__TAURI_INVOKE("client_list", { query })),
-	clientGet: (id: string) => typedError<ClientDto, string>(__TAURI_INVOKE("client_get", { id })),
-	clientAttributeValues: () => typedError<ClientAttributeValuesDto, string>(__TAURI_INVOKE("client_attribute_values")),
-	catalogItemCreate: (input: NewCatalogItemDto) => typedError<CatalogItemDto, string>(__TAURI_INVOKE("catalog_item_create", { input })),
-	catalogItemUpdate: (input: UpdateCatalogItemDto) => typedError<CatalogItemDto, string>(__TAURI_INVOKE("catalog_item_update", { input })),
-	catalogItemArchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("catalog_item_archive", { id })),
-	catalogItemUnarchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("catalog_item_unarchive", { id })),
-	catalogItemList: (includeArchived: boolean | null) => typedError<CatalogItemDto[], string>(__TAURI_INVOKE("catalog_item_list", { includeArchived })),
-	settingsGet: () => typedError<SettingsSnapshotDto, string>(__TAURI_INVOKE("settings_get")),
+} | null) => typedError<PageDto<ClientDto>, AppError>(__TAURI_INVOKE("client_list", { query })),
+	clientGet: (id: string) => typedError<ClientDto, AppError>(__TAURI_INVOKE("client_get", { id })),
+	clientAttributeValues: () => typedError<ClientAttributeValuesDto, AppError>(__TAURI_INVOKE("client_attribute_values")),
+	catalogItemCreate: (input: NewCatalogItemDto) => typedError<CatalogItemDto, AppError>(__TAURI_INVOKE("catalog_item_create", { input })),
+	catalogItemUpdate: (input: UpdateCatalogItemDto) => typedError<CatalogItemDto, AppError>(__TAURI_INVOKE("catalog_item_update", { input })),
+	catalogItemArchive: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("catalog_item_archive", { id })),
+	catalogItemUnarchive: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("catalog_item_unarchive", { id })),
+	catalogItemList: (includeArchived: boolean | null) => typedError<CatalogItemDto[], AppError>(__TAURI_INVOKE("catalog_item_list", { includeArchived })),
+	settingsGet: () => typedError<SettingsSnapshotDto, AppError>(__TAURI_INVOKE("settings_get")),
 	/**
 	 *  Returns the full list of supported currencies with their display metadata.
 	 *  The frontend calls this once at boot to populate its catalog for amount
 	 *  formatting and the Settings currency dropdown.
 	 */
-	settingsSupportedCurrencies: () => typedError<CurrencyConfigDto[], string>(__TAURI_INVOKE("settings_supported_currencies")),
-	settingsUpdateSellerProfile: (profile: SellerProfileDto) => typedError<SellerProfileDto, string>(__TAURI_INVOKE("settings_update_seller_profile", { profile })),
+	settingsSupportedCurrencies: () => typedError<CurrencyConfigDto[], AppError>(__TAURI_INVOKE("settings_supported_currencies")),
+	settingsUpdateSellerProfile: (profile: SellerProfileDto) => typedError<SellerProfileDto, AppError>(__TAURI_INVOKE("settings_update_seller_profile", { profile })),
 	/**
 	 *  Updates the app's display currency by ISO 4217 code. The full metadata
 	 *  (symbol, fraction digits, unit names) is derived server-side and returned
 	 *  in the response so the frontend can keep its cache fresh.
 	 */
-	settingsUpdateCurrency: (code: string) => typedError<CurrencyConfigDto, string>(__TAURI_INVOKE("settings_update_currency", { code })),
-	settingsUpdateAppPreferences: (preferences: AppPreferencesDto) => typedError<AppPreferencesDto, string>(__TAURI_INVOKE("settings_update_app_preferences", { preferences })),
-	taxCreate: (input: NewTaxDefinitionDto) => typedError<TaxDefinitionDto, string>(__TAURI_INVOKE("tax_create", { input })),
-	taxUpdate: (input: UpdateTaxDto) => typedError<TaxDefinitionDto, string>(__TAURI_INVOKE("tax_update", { input })),
-	taxArchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("tax_archive", { id })),
-	taxUnarchive: (id: string) => typedError<null, string>(__TAURI_INVOKE("tax_unarchive", { id })),
-	taxList: (includeArchived: boolean | null) => typedError<TaxDefinitionDto[], string>(__TAURI_INVOKE("tax_list", { includeArchived })),
-	templateCreate: (input: NewInvoiceTemplateDto) => typedError<InvoiceTemplateDto, string>(__TAURI_INVOKE("template_create", { input })),
-	templateUpdate: (input: UpdateTemplateDto) => typedError<InvoiceTemplateDto, string>(__TAURI_INVOKE("template_update", { input })),
-	templateDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("template_delete", { id })),
-	templateDuplicate: (id: string) => typedError<InvoiceTemplateDto, string>(__TAURI_INVOKE("template_duplicate", { id })),
-	templateSetDefault: (id: string) => typedError<null, string>(__TAURI_INVOKE("template_set_default", { id })),
-	templateList: () => typedError<InvoiceTemplateDto[], string>(__TAURI_INVOKE("template_list")),
-	templatePreview: (input: PreviewTemplateInputDto) => typedError<number[], string>(__TAURI_INVOKE("template_preview", { input })),
-	invoiceCreateDraft: (input: NewInvoiceDto) => typedError<InvoiceDto, string>(__TAURI_INVOKE("invoice_create_draft", { input })),
-	invoiceUpdateDraft: (input: UpdateDraftInvoiceDto) => typedError<InvoiceDto, string>(__TAURI_INVOKE("invoice_update_draft", { input })),
-	invoiceFinalize: (id: string) => typedError<InvoiceDto, string>(__TAURI_INVOKE("invoice_finalize", { id })),
-	invoiceDuplicate: (id: string) => typedError<InvoiceDto, string>(__TAURI_INVOKE("invoice_duplicate", { id })),
-	invoiceCancel: (id: string) => typedError<InvoiceDto, string>(__TAURI_INVOKE("invoice_cancel", { id })),
+	settingsUpdateCurrency: (code: string) => typedError<CurrencyConfigDto, AppError>(__TAURI_INVOKE("settings_update_currency", { code })),
+	settingsUpdateAppPreferences: (preferences: AppPreferencesDto) => typedError<AppPreferencesDto, AppError>(__TAURI_INVOKE("settings_update_app_preferences", { preferences })),
+	taxCreate: (input: NewTaxDefinitionDto) => typedError<TaxDefinitionDto, AppError>(__TAURI_INVOKE("tax_create", { input })),
+	taxUpdate: (input: UpdateTaxDto) => typedError<TaxDefinitionDto, AppError>(__TAURI_INVOKE("tax_update", { input })),
+	taxArchive: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("tax_archive", { id })),
+	taxUnarchive: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("tax_unarchive", { id })),
+	taxList: (includeArchived: boolean | null) => typedError<TaxDefinitionDto[], AppError>(__TAURI_INVOKE("tax_list", { includeArchived })),
+	templateCreate: (input: NewInvoiceTemplateDto) => typedError<InvoiceTemplateDto, AppError>(__TAURI_INVOKE("template_create", { input })),
+	templateUpdate: (input: UpdateTemplateDto) => typedError<InvoiceTemplateDto, AppError>(__TAURI_INVOKE("template_update", { input })),
+	templateDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("template_delete", { id })),
+	templateDuplicate: (id: string) => typedError<InvoiceTemplateDto, AppError>(__TAURI_INVOKE("template_duplicate", { id })),
+	templateSetDefault: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("template_set_default", { id })),
+	templateList: () => typedError<InvoiceTemplateDto[], AppError>(__TAURI_INVOKE("template_list")),
+	templatePreview: (input: PreviewTemplateInputDto) => typedError<number[], AppError>(__TAURI_INVOKE("template_preview", { input })),
+	invoiceCreateDraft: (input: NewInvoiceDto) => typedError<InvoiceDto, AppError>(__TAURI_INVOKE("invoice_create_draft", { input })),
+	invoiceUpdateDraft: (input: UpdateDraftInvoiceDto) => typedError<InvoiceDto, AppError>(__TAURI_INVOKE("invoice_update_draft", { input })),
+	invoiceFinalize: (id: string) => typedError<InvoiceDto, AppError>(__TAURI_INVOKE("invoice_finalize", { id })),
+	invoiceDuplicate: (id: string) => typedError<InvoiceDto, AppError>(__TAURI_INVOKE("invoice_duplicate", { id })),
+	invoiceCancel: (id: string) => typedError<InvoiceDto, AppError>(__TAURI_INVOKE("invoice_cancel", { id })),
 	invoiceList: (query: {
 	status?: InvoiceStatusDto | null,
 	client_id?: string | null,
 	search?: string | null,
 	payment_filter?: InvoicePaymentFilterDto | null,
 	pagination?: PaginationParamsDto | null,
-} | null) => typedError<PageDto<InvoiceDto>, string>(__TAURI_INVOKE("invoice_list", { query })),
-	invoiceGet: (id: string) => typedError<InvoiceDto, string>(__TAURI_INVOKE("invoice_get", { id })),
+} | null) => typedError<PageDto<InvoiceDto>, AppError>(__TAURI_INVOKE("invoice_list", { query })),
+	invoiceGet: (id: string) => typedError<InvoiceDto, AppError>(__TAURI_INVOKE("invoice_get", { id })),
 	/**
 	 *  Returns the rendered PDF bytes for an invoice that has already been
 	 *  finalized (or sent / cancelled). Errors with `NotFound` for drafts or
 	 *  when the file is missing — the UI renders an empty state in that case.
 	 */
-	invoicePdfBytes: (id: string) => typedError<number[], string>(__TAURI_INVOKE("invoice_pdf_bytes", { id })),
+	invoicePdfBytes: (id: string) => typedError<number[], AppError>(__TAURI_INVOKE("invoice_pdf_bytes", { id })),
 	/**
 	 *  Sends the invoice's rendered PDF to the OS default printer. No print
 	 *  dialog — users pick their default printer at the OS level.
 	 */
-	invoicePrint: (id: string) => typedError<null, string>(__TAURI_INVOKE("invoice_print", { id })),
+	invoicePrint: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("invoice_print", { id })),
 	/**
 	 *  Opens the invoice PDF in the OS default application. Unlike
 	 *  `tauri-plugin-opener`'s `openPath`, this routes through the native
 	 *  `open` / `xdg-open` / `cmd start` commands, which reliably brings the
 	 *  target app to the foreground on macOS.
 	 */
-	invoiceOpenExternal: (id: string) => typedError<null, string>(__TAURI_INVOKE("invoice_open_external", { id })),
-	settingsUpdateEmailConfig: (config: EmailConfigDto) => typedError<EmailConfigDto, string>(__TAURI_INVOKE("settings_update_email_config", { config })),
-	settingsUpdateEmailPassword: (password: string) => typedError<null, string>(__TAURI_INVOKE("settings_update_email_password", { password })),
-	emailTestConnection: () => typedError<null, string>(__TAURI_INVOKE("email_test_connection")),
-	invoiceSend: (id: string) => typedError<InvoiceDto, string>(__TAURI_INVOKE("invoice_send", { id })),
-	emailLogListForClient: (clientId: string) => typedError<EmailLogDto[], string>(__TAURI_INVOKE("email_log_list_for_client", { clientId })),
-	emailTemplateCreate: (input: NewEmailTemplateDto) => typedError<EmailTemplateDto, string>(__TAURI_INVOKE("email_template_create", { input })),
-	emailTemplateUpdate: (input: UpdateEmailTemplateDto) => typedError<EmailTemplateDto, string>(__TAURI_INVOKE("email_template_update", { input })),
-	emailTemplateDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("email_template_delete", { id })),
-	emailTemplateSetDefault: (id: string) => typedError<null, string>(__TAURI_INVOKE("email_template_set_default", { id })),
-	emailTemplateList: () => typedError<EmailTemplateDto[], string>(__TAURI_INVOKE("email_template_list")),
-	paymentRecord: (input: NewPaymentDto) => typedError<PaymentDto, string>(__TAURI_INVOKE("payment_record", { input })),
-	paymentUpdate: (input: UpdatePaymentDto) => typedError<PaymentDto, string>(__TAURI_INVOKE("payment_update", { input })),
-	paymentDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("payment_delete", { id })),
+	invoiceOpenExternal: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("invoice_open_external", { id })),
+	settingsUpdateEmailConfig: (config: EmailConfigDto) => typedError<EmailConfigDto, AppError>(__TAURI_INVOKE("settings_update_email_config", { config })),
+	settingsUpdateEmailPassword: (password: string) => typedError<null, AppError>(__TAURI_INVOKE("settings_update_email_password", { password })),
+	emailTestConnection: () => typedError<null, AppError>(__TAURI_INVOKE("email_test_connection")),
+	invoiceSend: (id: string) => typedError<InvoiceDto, AppError>(__TAURI_INVOKE("invoice_send", { id })),
+	emailLogListForClient: (clientId: string) => typedError<EmailLogDto[], AppError>(__TAURI_INVOKE("email_log_list_for_client", { clientId })),
+	emailTemplateCreate: (input: NewEmailTemplateDto) => typedError<EmailTemplateDto, AppError>(__TAURI_INVOKE("email_template_create", { input })),
+	emailTemplateUpdate: (input: UpdateEmailTemplateDto) => typedError<EmailTemplateDto, AppError>(__TAURI_INVOKE("email_template_update", { input })),
+	emailTemplateDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("email_template_delete", { id })),
+	emailTemplateSetDefault: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("email_template_set_default", { id })),
+	emailTemplateList: () => typedError<EmailTemplateDto[], AppError>(__TAURI_INVOKE("email_template_list")),
+	paymentRecord: (input: NewPaymentDto) => typedError<PaymentDto, AppError>(__TAURI_INVOKE("payment_record", { input })),
+	paymentUpdate: (input: UpdatePaymentDto) => typedError<PaymentDto, AppError>(__TAURI_INVOKE("payment_update", { input })),
+	paymentDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("payment_delete", { id })),
 	paymentList: (query: {
 	client_id?: string | null,
 	invoice_id?: string | null,
 	search?: string | null,
-} | null) => typedError<PaymentDto[], string>(__TAURI_INVOKE("payment_list", { query })),
-	paymentGet: (id: string) => typedError<PaymentDto, string>(__TAURI_INVOKE("payment_get", { id })),
-	accountingListOutstanding: () => typedError<InvoicePaymentRowDto[], string>(__TAURI_INVOKE("accounting_list_outstanding")),
-	accountingListOverdue: () => typedError<InvoicePaymentRowDto[], string>(__TAURI_INVOKE("accounting_list_overdue")),
-	accountingRevenueByPeriod: (input: RevenueByPeriodInputDto) => typedError<RevenueBucketDto[], string>(__TAURI_INVOKE("accounting_revenue_by_period", { input })),
-	accountingRevenueByClient: (input: RevenueByClientInputDto) => typedError<RevenueByClientDto[], string>(__TAURI_INVOKE("accounting_revenue_by_client", { input })),
-	accountingClientBalance: (clientId: string) => typedError<ClientBalanceDto, string>(__TAURI_INVOKE("accounting_client_balance", { clientId })),
-	accountingClientBalances: () => typedError<ClientBalanceDto[], string>(__TAURI_INVOKE("accounting_client_balances")),
-	accountingAgingReport: () => typedError<AgingRowDto[], string>(__TAURI_INVOKE("accounting_aging_report")),
-	accountingDashboardSummary: () => typedError<DashboardSummaryDto, string>(__TAURI_INVOKE("accounting_dashboard_summary")),
-	dataExport: (destination: string) => typedError<string, string>(__TAURI_INVOKE("data_export", { destination })),
-	dataBackup: () => typedError<string, string>(__TAURI_INVOKE("data_backup")),
-	dataRestore: (source: string) => typedError<null, string>(__TAURI_INVOKE("data_restore", { source })),
-	dataListBackups: () => typedError<BackupDto[], string>(__TAURI_INVOKE("data_list_backups")),
-	dataDeleteBackup: (path: string) => typedError<null, string>(__TAURI_INVOKE("data_delete_backup", { path })),
-	dataUserBackupDir: () => typedError<string, string>(__TAURI_INVOKE("data_user_backup_dir")),
-	bookmarkNavOpen: (id: string, url: string, x: number, y: number, width: number, height: number, dpr: number) => typedError<null, string>(__TAURI_INVOKE("bookmark_nav_open", { id, url, x, y, width, height, dpr })),
-	bookmarkNavHide: () => typedError<null, string>(__TAURI_INVOKE("bookmark_nav_hide")),
+} | null) => typedError<PaymentDto[], AppError>(__TAURI_INVOKE("payment_list", { query })),
+	paymentGet: (id: string) => typedError<PaymentDto, AppError>(__TAURI_INVOKE("payment_get", { id })),
+	accountingListOutstanding: () => typedError<InvoicePaymentRowDto[], AppError>(__TAURI_INVOKE("accounting_list_outstanding")),
+	accountingListOverdue: () => typedError<InvoicePaymentRowDto[], AppError>(__TAURI_INVOKE("accounting_list_overdue")),
+	accountingRevenueByPeriod: (input: RevenueByPeriodInputDto) => typedError<RevenueBucketDto[], AppError>(__TAURI_INVOKE("accounting_revenue_by_period", { input })),
+	accountingRevenueByClient: (input: RevenueByClientInputDto) => typedError<RevenueByClientDto[], AppError>(__TAURI_INVOKE("accounting_revenue_by_client", { input })),
+	accountingClientBalance: (clientId: string) => typedError<ClientBalanceDto, AppError>(__TAURI_INVOKE("accounting_client_balance", { clientId })),
+	accountingClientBalances: () => typedError<ClientBalanceDto[], AppError>(__TAURI_INVOKE("accounting_client_balances")),
+	accountingAgingReport: () => typedError<AgingRowDto[], AppError>(__TAURI_INVOKE("accounting_aging_report")),
+	accountingDashboardSummary: () => typedError<DashboardSummaryDto, AppError>(__TAURI_INVOKE("accounting_dashboard_summary")),
+	dataExport: (destination: string) => typedError<string, AppError>(__TAURI_INVOKE("data_export", { destination })),
+	dataBackup: () => typedError<string, AppError>(__TAURI_INVOKE("data_backup")),
+	dataRestore: (source: string) => typedError<null, AppError>(__TAURI_INVOKE("data_restore", { source })),
+	dataListBackups: () => typedError<BackupDto[], AppError>(__TAURI_INVOKE("data_list_backups")),
+	dataDeleteBackup: (path: string) => typedError<null, AppError>(__TAURI_INVOKE("data_delete_backup", { path })),
+	dataUserBackupDir: () => typedError<string, AppError>(__TAURI_INVOKE("data_user_backup_dir")),
+	bookmarkNavOpen: (id: string, url: string, x: number, y: number, width: number, height: number, dpr: number) => typedError<null, AppError>(__TAURI_INVOKE("bookmark_nav_open", { id, url, x, y, width, height, dpr })),
+	bookmarkNavHide: () => typedError<null, AppError>(__TAURI_INVOKE("bookmark_nav_hide")),
 	/**
 	 *  Force the bookmark to navigate to a URL (typically the home URL via the
 	 *  refresh button in the sidebar).
 	 */
-	bookmarkNavTo: (id: string, url: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_nav_to", { id, url })),
+	bookmarkNavTo: (id: string, url: string) => typedError<null, AppError>(__TAURI_INVOKE("bookmark_nav_to", { id, url })),
 	// Reload the bookmark's current page (toolbar reload button).
-	bookmarkNavReload: (id: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_nav_reload", { id })),
+	bookmarkNavReload: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("bookmark_nav_reload", { id })),
 	/**
 	 *  Step the bookmark's session history backward (toolbar back button).
 	 *  Tauri's Webview doesn't expose `go_back` directly, so we evaluate the
 	 *  standard `history.back()` JS API in the bookmark's webview.
 	 */
-	bookmarkNavBack: (id: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_nav_back", { id })),
-	bookmarkNavForward: (id: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_nav_forward", { id })),
-	bookmarkLayoutSetBounds: (id: string, x: number, y: number, width: number, height: number, dpr: number) => typedError<null, string>(__TAURI_INVOKE("bookmark_layout_set_bounds", { id, x, y, width, height, dpr })),
+	bookmarkNavBack: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("bookmark_nav_back", { id })),
+	bookmarkNavForward: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("bookmark_nav_forward", { id })),
+	bookmarkLayoutSetBounds: (id: string, x: number, y: number, width: number, height: number, dpr: number) => typedError<null, AppError>(__TAURI_INVOKE("bookmark_layout_set_bounds", { id, x, y, width, height, dpr })),
 	/**
 	 *  React-side notification of the sidebar's current width (CSS px). React is
 	 *  the source of truth — it tells us on app boot and again whenever the
 	 *  sidebar collapses/expands. We cache the value and, if a bookmark is
 	 *  currently shown, re-run layout so the bookmark reclaims/yields space.
 	 */
-	bookmarkLayoutSetSidebarWidth: (width: number) => typedError<null, string>(__TAURI_INVOKE("bookmark_layout_set_sidebar_width", { width })),
+	bookmarkLayoutSetSidebarWidth: (width: number) => typedError<null, AppError>(__TAURI_INVOKE("bookmark_layout_set_sidebar_width", { width })),
 	/**
 	 *  React-side notification of the toolbar's measured height (CSS px). The
 	 *  bookmark-toolbar webview measures itself after mount and reports here.
 	 *  Triggers a re-layout if a bookmark is active.
 	 */
-	bookmarkLayoutSetToolbarHeight: (height: number) => typedError<null, string>(__TAURI_INVOKE("bookmark_layout_set_toolbar_height", { height })),
-	bookmarkList: () => typedError<BookmarkDto[], string>(__TAURI_INVOKE("bookmark_list")),
-	bookmarkCreate: (input: NewBookmarkDto) => typedError<BookmarkDto, string>(__TAURI_INVOKE("bookmark_create", { input })),
-	bookmarkUpdate: (input: UpdateBookmarkDto) => typedError<BookmarkDto, string>(__TAURI_INVOKE("bookmark_update", { input })),
-	bookmarkDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("bookmark_delete", { id })),
-	bookmarkReorder: (orderedIds: string[]) => typedError<null, string>(__TAURI_INVOKE("bookmark_reorder", { orderedIds })),
-	notebookSectionCreate: (name: string) => typedError<NotebookSectionDto, string>(__TAURI_INVOKE("notebook_section_create", { name })),
-	notebookSectionRename: (input: RenameNotebookSectionDto) => typedError<NotebookSectionDto, string>(__TAURI_INVOKE("notebook_section_rename", { input })),
-	notebookSectionDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("notebook_section_delete", { id })),
-	notebookSectionCountEntries: (id: string) => typedError<number, string>(__TAURI_INVOKE("notebook_section_count_entries", { id })),
-	notebookSectionReorder: (orderedIds: string[]) => typedError<null, string>(__TAURI_INVOKE("notebook_section_reorder", { orderedIds })),
-	notebookSectionList: () => typedError<NotebookSectionDto[], string>(__TAURI_INVOKE("notebook_section_list")),
-	clientNotebookGet: (clientId: string) => typedError<ClientNotebookViewDto, string>(__TAURI_INVOKE("client_notebook_get", { clientId })),
-	clientNotebookSave: (input: SaveClientNotebookDto) => typedError<null, string>(__TAURI_INVOKE("client_notebook_save", { input })),
-	journalEntryCreate: (input: NewJournalEntryDto) => typedError<ClientJournalEntryDto, string>(__TAURI_INVOKE("journal_entry_create", { input })),
-	journalEntryUpdate: (input: UpdateJournalEntryDto) => typedError<ClientJournalEntryDto, string>(__TAURI_INVOKE("journal_entry_update", { input })),
-	journalEntryDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("journal_entry_delete", { id })),
-	journalListForClient: (clientId: string) => typedError<ClientJournalEntryDto[], string>(__TAURI_INVOKE("journal_list_for_client", { clientId })),
-	journalEntryGet: (id: string) => typedError<ClientJournalEntryDto, string>(__TAURI_INVOKE("journal_entry_get", { id })),
+	bookmarkLayoutSetToolbarHeight: (height: number) => typedError<null, AppError>(__TAURI_INVOKE("bookmark_layout_set_toolbar_height", { height })),
+	bookmarkList: () => typedError<BookmarkDto[], AppError>(__TAURI_INVOKE("bookmark_list")),
+	bookmarkCreate: (input: NewBookmarkDto) => typedError<BookmarkDto, AppError>(__TAURI_INVOKE("bookmark_create", { input })),
+	bookmarkUpdate: (input: UpdateBookmarkDto) => typedError<BookmarkDto, AppError>(__TAURI_INVOKE("bookmark_update", { input })),
+	bookmarkDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("bookmark_delete", { id })),
+	bookmarkReorder: (orderedIds: string[]) => typedError<null, AppError>(__TAURI_INVOKE("bookmark_reorder", { orderedIds })),
+	notebookSectionCreate: (name: string) => typedError<NotebookSectionDto, AppError>(__TAURI_INVOKE("notebook_section_create", { name })),
+	notebookSectionRename: (input: RenameNotebookSectionDto) => typedError<NotebookSectionDto, AppError>(__TAURI_INVOKE("notebook_section_rename", { input })),
+	notebookSectionDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("notebook_section_delete", { id })),
+	notebookSectionCountEntries: (id: string) => typedError<number, AppError>(__TAURI_INVOKE("notebook_section_count_entries", { id })),
+	notebookSectionReorder: (orderedIds: string[]) => typedError<null, AppError>(__TAURI_INVOKE("notebook_section_reorder", { orderedIds })),
+	notebookSectionList: () => typedError<NotebookSectionDto[], AppError>(__TAURI_INVOKE("notebook_section_list")),
+	clientNotebookGet: (clientId: string) => typedError<ClientNotebookViewDto, AppError>(__TAURI_INVOKE("client_notebook_get", { clientId })),
+	clientNotebookSave: (input: SaveClientNotebookDto) => typedError<null, AppError>(__TAURI_INVOKE("client_notebook_save", { input })),
+	journalEntryCreate: (input: NewJournalEntryDto) => typedError<ClientJournalEntryDto, AppError>(__TAURI_INVOKE("journal_entry_create", { input })),
+	journalEntryUpdate: (input: UpdateJournalEntryDto) => typedError<ClientJournalEntryDto, AppError>(__TAURI_INVOKE("journal_entry_update", { input })),
+	journalEntryDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("journal_entry_delete", { id })),
+	journalListForClient: (clientId: string) => typedError<ClientJournalEntryDto[], AppError>(__TAURI_INVOKE("journal_list_for_client", { clientId })),
+	journalEntryGet: (id: string) => typedError<ClientJournalEntryDto, AppError>(__TAURI_INVOKE("journal_entry_get", { id })),
+	orgList: () => typedError<OrgSummaryDto[], AppError>(__TAURI_INVOKE("org_list")),
+	orgCreate: (code: string) => typedError<OrgSummaryDto, AppError>(__TAURI_INVOKE("org_create", { code })),
+	orgOpen: (code: string, password: string | null) => typedError<OrgInfoDto, AppError>(__TAURI_INVOKE("org_open", { code, password })),
+	orgClose: () => typedError<null, AppError>(__TAURI_INVOKE("org_close")),
+	orgDelete: (code: string) => typedError<null, AppError>(__TAURI_INVOKE("org_delete", { code })),
+	orgGetActive: () => typedError<{
+	code: string,
+} | null, AppError>(__TAURI_INVOKE("org_get_active")),
 	seedDatabase: (counts: {
 	clients: number | null,
 	catalog_items: number | null,
@@ -166,7 +174,7 @@ export const commands = {
 	invoices: number | null,
 	bookmarks: number | null,
 	journal_entries_per_client: number | null,
-} | null) => typedError<SeedReportDto, string>(__TAURI_INVOKE("seed_database", { counts })),
+} | null) => typedError<SeedReportDto, AppError>(__TAURI_INVOKE("seed_database", { counts })),
 };
 
 /* Types */
@@ -182,6 +190,51 @@ export type AgingRowDto = {
 	due_date: string | null,
 	bucket: AgingBucketDto,
 };
+
+/**
+ *  Wire-format error returned by every Tauri command.
+ * 
+ *  Modelled on gRPC's status codes — a small, fixed set of categories that
+ *  determines how the frontend should react (highlight a form field, toast,
+ *  redirect, etc.). Code-bearing variants carry a stable `ErrorCode` for
+ *  i18n lookup; `Internal` and `Unknown` carry a free-form detail string
+ *  because their content is implementation-specific.
+ */
+export type AppError = 
+/**
+ *  Client supplied invalid input. Frontend renders next to the form
+ *  field. Maps to gRPC `INVALID_ARGUMENT`.
+ */
+{ status: "InvalidArgument"; code: ErrorCode; params: { [key in string]: string } | null } | 
+// Requested entity does not exist. Maps to gRPC `NOT_FOUND`.
+{ status: "NotFound"; code: ErrorCode; params: { [key in string]: string } | null } | 
+/**
+ *  Resource already exists / unique-constraint violation.
+ *  Maps to gRPC `ALREADY_EXISTS`.
+ */
+{ status: "AlreadyExists"; code: ErrorCode; params: { [key in string]: string } | null } | 
+/**
+ *  System is not in the state required for this op — covers domain
+ *  state-machine violations (invoice not draft, over-allocated payment)
+ *  and control-flow signals (`NoActiveOrg`). Maps to gRPC
+ *  `FAILED_PRECONDITION`.
+ */
+{ status: "FailedPrecondition"; code: ErrorCode; params: { [key in string]: string } | null } | 
+/**
+ *  Authentication missing or invalid. Reserved for T03 (wrong org
+ *  password). Maps to gRPC `UNAUTHENTICATED`.
+ */
+{ status: "Unauthenticated" } | 
+/**
+ *  Internal infrastructure failure (I/O, db, pdf, smtp, etc.). Not
+ *  translated — frontend toasts the detail. Maps to gRPC `INTERNAL`.
+ */
+{ status: "Internal"; detail: string } | 
+/**
+ *  Unmapped foreign error or a truly unexpected condition. Last-resort
+ *  catch-all. Maps to gRPC `UNKNOWN`.
+ */
+{ status: "Unknown"; detail: string };
 
 export type AppPreferencesDto = {
 	theme: ThemeDto,
@@ -374,6 +427,15 @@ export type EmailTemplateDto = {
 };
 
 export type EmailTemplateTypeDto = "InitialContact" | "FollowUp";
+
+/**
+ *  Stable, typed identifier for every code-bearing error.
+ * 
+ *  These codes accompany an `AppError::InvalidArgument` / `NotFound` /
+ *  `AlreadyExists` / `FailedPrecondition`. They are the i18n keys used by
+ *  the frontend's `errorCatalog`.
+ */
+export type ErrorCode = "resource_not_found" | "no_active_org" | "org_not_found" | "org_code_already_exists" | "invalid_org_code" | "bookmark_empty_label" | "bookmark_empty_url" | "bookmark_invalid_url" | "bookmark_unsupported_scheme" | "catalog_item_empty_name" | "catalog_item_negative_price" | "client_empty_name" | "client_empty_contact_value" | "client_empty_address_street" | "client_empty_address_city" | "client_empty_address_postal_code" | "client_empty_address_country" | "client_duplicate_billing_address" | "client_duplicate_shipping_address" | "client_self_referral" | "client_future_date_of_birth" | "client_has_invoices" | "currency_unsupported" | "dto_convert" | "email_config_empty_host" | "email_config_invalid_port" | "email_config_empty_sender" | "email_config_invalid_sender" | "email_log_empty_recipient" | "email_log_empty_subject" | "email_template_empty_name" | "email_template_empty_subject" | "email_template_empty_body" | "email_template_no_default" | "email_template_is_default" | "invoice_no_line_items" | "invoice_not_draft" | "invoice_cannot_cancel_draft" | "invoice_already_cancelled" | "invoice_not_finalized" | "invoice_not_sendable" | "invoice_over_allocated" | "invoice_allocation_currency_mismatch" | "invoice_not_allocatable" | "invoice_missing_pdf" | "journal_entry_empty_content" | "line_item_empty_description" | "line_item_non_positive_quantity" | "line_item_negative_unit_price" | "money_unsupported_currency" | "money_currency_mismatch" | "money_overflow" | "notebook_duplicate_section" | "notebook_section_empty_name" | "payment_non_positive_amount" | "payment_non_positive_allocation" | "payment_allocations_exceed_payment" | "payment_currency_mismatch" | "payment_duplicate_allocation" | "smtp_password_missing" | "tax_empty_name" | "tax_negative_percentage" | "template_empty_name" | "template_invalid_accent_color" | "template_in_use";
 
 export type FontChoiceDto = "Serif" | "SansSerif" | "Mono";
 
@@ -587,6 +649,22 @@ export type NotebookSectionDto = {
 	id: string,
 	name: string,
 	sort_order: number,
+};
+
+export type OrgInfoDto = {
+	code: string,
+};
+
+export type OrgSummaryDto = {
+	/**
+	 *  User-supplied code — also the on-disk folder name and the picker
+	 *  label. Validated to `[a-z0-9_-]+` at creation.
+	 */
+	code: string,
+	// `true` once T03 lands and this org is encrypted. Always `false` in T01.
+	has_password: boolean,
+	last_modified_at: string | null,
+	file_size_bytes: number,
 };
 
 // Serializable mirror of [`crate::application::ports::Page`] for the IPC boundary.

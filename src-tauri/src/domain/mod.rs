@@ -7,6 +7,7 @@ pub mod invoice;
 pub mod line_item;
 pub mod money;
 pub mod notebook;
+pub mod org;
 pub mod payment;
 pub mod settings;
 pub mod tax;

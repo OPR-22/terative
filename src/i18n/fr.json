@@ -52,6 +52,7 @@
     "view": "Voir",
     "back": "Retour",
     "create": "Créer",
+    "creating": "Création…",
     "new": "Nouveau",
     "search": "Rechercher",
     "loading": "Chargement…",
@@ -533,5 +534,41 @@
   },
   "placeholder": {
     "coming_soon": "Disponible dans une phase ultérieure."
+  },
+  "org_picker": {
+    "title": "Choisir une organisation",
+    "subtitle": "Ouvrir une organisation existante ou en créer une.",
+    "empty_subtitle": "Créez votre première organisation pour commencer.",
+    "create_first": "Créer ma première organisation",
+    "create_new": "Créer une organisation",
+    "create_new_short": "Nouvelle",
+    "create_title": "Nouvelle organisation",
+    "create_code_label": "Code de l’organisation",
+    "create_code_placeholder": "acme_corp",
+    "create_code_hint": "Lettres (maj/min), chiffres, tiret bas et tiret. Pas d’espace.",
+    "delete_aria": "Supprimer l’organisation",
+    "delete_title": "Supprimer cette organisation ?",
+    "delete_message": "Toutes les données, sauvegardes et PDF de « {{code}} » seront définitivement supprimés. Cette action est irréversible.",
+    "last_modified": "dernière ouverture : {{date}}"
+  },
+  "org_switcher": {
+    "label": "organisation",
+    "manage": "Gérer les organisations…",
+    "create_new": "Créer une organisation…",
+    "aria_open": "Changer d’organisation"
+  },
+  "errors": {
+    "status": {
+      "unauthenticated": "Authentification requise.",
+      "internal": "Erreur interne : {{detail}}",
+      "unknown": "Erreur inattendue : {{detail}}"
+    },
+    "code": {
+      "no_active_org": "Aucune organisation ouverte.",
+      "org_not_found": "Organisation introuvable : {{code}}",
+      "org_code_already_exists": "Le code « {{code}} » est déjà utilisé par une autre organisation.",
+      "invalid_org_code": "Code d’organisation invalide ({{reason}}).",
+      "resource_not_found": "Élément introuvable."
+    }
   }
 }

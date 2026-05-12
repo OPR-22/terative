@@ -7,24 +7,19 @@ use crate::application::dto::{
 use crate::application::AppError;
 use crate::domain::payment::PaymentId;
 
-use super::{to_ipc_err, AppState};
-
-fn dto_err(e: crate::application::dto::DtoConvertError) -> String {
-    to_ipc_err(AppError::from(e))
-}
+use super::AppState;
 
 #[tauri::command]
 #[specta::specta]
 pub fn payment_record(
     state: State<'_, AppState>,
     input: NewPaymentDto,
-) -> Result<PaymentDto, String> {
-    let domain = input.try_into().map_err(dto_err)?;
-    state
+) -> Result<PaymentDto, AppError> {
+    let domain = input.try_into()?;
+    state.org()?
         .record_payment
         .execute(domain)
         .map(|p| (&p).into())
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
@@ -32,22 +27,20 @@ pub fn payment_record(
 pub fn payment_update(
     state: State<'_, AppState>,
     input: UpdatePaymentDto,
-) -> Result<PaymentDto, String> {
-    let domain = input.try_into().map_err(dto_err)?;
-    state
+) -> Result<PaymentDto, AppError> {
+    let domain = input.try_into()?;
+    state.org()?
         .update_payment
         .execute(domain)
         .map(|p| (&p).into())
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn payment_delete(state: State<'_, AppState>, id: Uuid) -> Result<(), String> {
-    state
+pub fn payment_delete(state: State<'_, AppState>, id: Uuid) -> Result<(), AppError> {
+    state.org()?
         .delete_payment
         .execute(PaymentId(id))
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
@@ -55,8 +48,8 @@ pub fn payment_delete(state: State<'_, AppState>, id: Uuid) -> Result<(), String
 pub fn payment_list(
     state: State<'_, AppState>,
     query: Option<ListPaymentsQueryDto>,
-) -> Result<Vec<PaymentDto>, String> {
-    state
+) -> Result<Vec<PaymentDto>, AppError> {
+    state.org()?
         .list_payments
         .execute(query.unwrap_or_default().into())
         .map(|list| {
@@ -64,7 +57,6 @@ pub fn payment_list(
                 .map(|(p, name)| PaymentDto::from_payment_enriched(p, name.clone()))
                 .collect()
         })
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
@@ -72,10 +64,9 @@ pub fn payment_list(
 pub fn payment_get(
     state: State<'_, AppState>,
     id: Uuid,
-) -> Result<PaymentDto, String> {
-    state
+) -> Result<PaymentDto, AppError> {
+    state.org()?
         .get_payment
         .execute(PaymentId(id))
         .map(|(p, name)| PaymentDto::from_payment_enriched(&p, name))
-        .map_err(to_ipc_err)
 }

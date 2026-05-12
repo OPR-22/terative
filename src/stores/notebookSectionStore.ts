@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { ipc, type NotebookSectionDto } from "../ipc";
+import { registerOrgScopedReset } from "./orgScopedRegistry";
 
 interface NotebookSectionState {
   sections: NotebookSectionDto[];
@@ -12,11 +13,15 @@ interface NotebookSectionState {
   reorder: (orderedIds: string[]) => Promise<void>;
 }
 
+const INITIAL = {
+  sections: [] as NotebookSectionDto[],
+  loading: false,
+  error: null as string | null,
+};
+
 export const useNotebookSectionStore = create<NotebookSectionState>(
   (set, get) => ({
-    sections: [],
-    loading: false,
-    error: null,
+    ...INITIAL,
     refresh: async () => {
       set({ loading: true, error: null });
       try {
@@ -45,4 +50,8 @@ export const useNotebookSectionStore = create<NotebookSectionState>(
       await get().refresh();
     },
   }),
+);
+
+registerOrgScopedReset(() =>
+  useNotebookSectionStore.setState({ ...INITIAL }),
 );

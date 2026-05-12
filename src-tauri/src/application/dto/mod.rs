@@ -86,8 +86,11 @@ pub enum DtoConvertError {
 
 impl From<DtoConvertError> for crate::application::AppError {
     fn from(err: DtoConvertError) -> Self {
-        crate::application::AppError::Repo(crate::application::RepoError::Storage(
-            err.to_string(),
-        ))
+        let mut params = std::collections::HashMap::new();
+        params.insert("detail".to_string(), err.to_string());
+        crate::application::AppError::invalid_argument(
+            crate::application::ErrorCode::DtoConvert,
+        )
+        .with_params(params)
     }
 }

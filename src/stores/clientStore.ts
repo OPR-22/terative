@@ -8,11 +8,23 @@ import {
   type PageDto,
   type UpdateClientDto,
 } from "../ipc";
+import { registerOrgScopedReset } from "./orgScopedRegistry";
 
 const emptyAttributeValues: ClientAttributeValuesDto = {
   gender: [],
   pronouns: [],
   occupation: [],
+};
+
+const INITIAL = {
+  clients: [] as ClientDto[],
+  page: null as PageDto<ClientDto> | null,
+  loading: false,
+  error: null as string | null,
+  query: {} as ListClientsQueryDto,
+  currentPage: 1,
+  perPage: 25,
+  attributeValues: emptyAttributeValues,
 };
 
 interface ClientState {
@@ -40,14 +52,7 @@ interface ClientState {
 }
 
 export const useClientStore = create<ClientState>((set, get) => ({
-  clients: [],
-  page: null,
-  loading: false,
-  error: null,
-  query: {},
-  currentPage: 1,
-  perPage: 25,
-  attributeValues: emptyAttributeValues,
+  ...INITIAL,
   setQuery: (query) => {
     set({ query, currentPage: 1 });
     void get().refresh();
@@ -105,3 +110,5 @@ export const useClientStore = create<ClientState>((set, get) => ({
     await get().refresh();
   },
 }));
+
+registerOrgScopedReset(() => useClientStore.setState({ ...INITIAL }));

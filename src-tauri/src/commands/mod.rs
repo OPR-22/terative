@@ -7,6 +7,7 @@ pub mod email_commands;
 pub mod email_template_commands;
 pub mod invoice_commands;
 pub mod notebook_commands;
+pub mod org_commands;
 pub mod payment_commands;
 #[cfg(debug_assertions)]
 pub mod seed_commands;
@@ -14,10 +15,13 @@ pub mod settings_commands;
 pub mod tax_commands;
 pub mod template_commands;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
+use arc_swap::ArcSwap;
+
 use crate::adapters::sqlite::{
-    SqliteAccountingRepository, SqliteBookmarkRepository, SqliteCatalogItemRepository,
+    Db, SqliteAccountingRepository, SqliteBookmarkRepository, SqliteCatalogItemRepository,
     SqliteClientJournalRepository, SqliteClientNotebookRepository, SqliteClientRepository,
     SqliteEmailLogRepository, SqliteEmailTemplateRepository, SqliteInvoiceNumberGenerator,
     SqliteInvoiceRepository, SqliteNotebookSectionRepository, SqlitePaymentRepository,
@@ -27,13 +31,14 @@ use crate::adapters::{
     FilesystemDataManagement, FilesystemPdfStorage, KeyringCredentialStore, LettreEmailSender,
     TypstPdfGenerator,
 };
-use crate::application::ports::DataManagement;
 use crate::application::accounting_usecases::AccountingService;
 use crate::application::bookmark_usecases::{
     CreateBookmark, DeleteBookmark, ListBookmarks, ReorderBookmarks, UpdateBookmark,
 };
-#[cfg(debug_assertions)]
-use crate::application::seed_usecases::SeedDatabase;
+use crate::application::catalog_item_usecases::{
+    ArchiveCatalogItem, CreateCatalogItem, ListCatalogItems, UnarchiveCatalogItem,
+    UpdateCatalogItem,
+};
 use crate::application::client_usecases::{
     ArchiveClient, CreateClient, GetClientDetail, ListClientAttributeValues, ListClients,
     UnarchiveClient, UpdateClient,
@@ -48,8 +53,7 @@ use crate::application::email_usecases::{
 };
 use crate::application::invoice_usecases::{
     CancelInvoice, CreateDraftInvoice, DuplicateInvoice, FinalizeInvoice, GetInvoice,
-    GetInvoicePdf, OpenInvoiceExternally, PrintInvoice,
-    ListInvoices, UpdateDraftInvoice,
+    GetInvoicePdf, ListInvoices, OpenInvoiceExternally, PrintInvoice, UpdateDraftInvoice,
 };
 use crate::application::notebook_usecases::{
     CountSectionEntries, CreateJournalEntry, CreateNotebookSection, DeleteJournalEntry,
@@ -57,13 +61,13 @@ use crate::application::notebook_usecases::{
     ListNotebookSections, RenameNotebookSection, ReorderNotebookSections, SaveClientNotebook,
     UpdateJournalEntry,
 };
+use crate::application::org_registry::OrgRegistry;
 use crate::application::payment_usecases::{
     DeletePayment, GetPayment, ListPayments, RecordPayment, UpdatePayment,
 };
-use crate::application::catalog_item_usecases::{
-    ArchiveCatalogItem, CreateCatalogItem, ListCatalogItems, UnarchiveCatalogItem,
-    UpdateCatalogItem,
-};
+use crate::application::ports::DataManagement;
+#[cfg(debug_assertions)]
+use crate::application::seed_usecases::SeedDatabase;
 use crate::application::settings_usecases::{
     GetSettings, UpdateAppPreferences, UpdateCurrency, UpdateSellerProfile,
 };
@@ -72,8 +76,18 @@ use crate::application::template_usecases::{
     CreateTemplate, DeleteTemplate, DuplicateTemplate, ListTemplates, PreviewTemplate,
     SetDefaultTemplate, UpdateTemplate,
 };
+use crate::application::AppError;
+use crate::domain::org::OrgCode;
 
-pub struct AppState {
+/// Per-org service bundle: the use cases and Arc-shared adapters that live
+/// inside an open organisation. Constructed by `org_open` and held inside
+/// `AppState` via an `ArcSwap`. Dropping the `Arc<OrgServices>` releases the
+/// underlying SQLite connection.
+pub struct OrgServices {
+    pub code: OrgCode,
+    pub user_backup_dir: PathBuf,
+    pub system_backup_dir: PathBuf,
+
     pub create_client: CreateClient,
     pub update_client: UpdateClient,
     pub archive_client: ArchiveClient,
@@ -146,8 +160,6 @@ pub struct AppState {
     pub accounting: AccountingService,
 
     pub data_management: Arc<dyn DataManagement>,
-    pub user_backup_dir: std::path::PathBuf,
-    pub system_backup_dir: std::path::PathBuf,
 
     pub create_notebook_section: CreateNotebookSection,
     pub rename_notebook_section: RenameNotebookSection,
@@ -169,13 +181,14 @@ pub struct AppState {
     pub seed_database: SeedDatabase,
 }
 
-impl AppState {
+impl OrgServices {
     pub fn new(
-        db: crate::adapters::sqlite::Db,
-        db_path: std::path::PathBuf,
-        default_pdf_dir: std::path::PathBuf,
-        user_backup_dir: std::path::PathBuf,
-        system_backup_dir: std::path::PathBuf,
+        code: OrgCode,
+        db: Db,
+        db_path: PathBuf,
+        default_pdf_dir: PathBuf,
+        user_backup_dir: PathBuf,
+        system_backup_dir: PathBuf,
     ) -> Self {
         let client_repo = Arc::new(SqliteClientRepository::new(db.clone()));
         let catalog_item_repo = Arc::new(SqliteCatalogItemRepository::new(db.clone()));
@@ -207,9 +220,6 @@ impl AppState {
             system_backup_dir.clone(),
         ));
 
-        // Bulk fake-data seeder. Compiled only in debug builds; the
-        // orchestrator clones use cases that share Arcs with the
-        // production ones (Arc::clone is cheap).
         #[cfg(debug_assertions)]
         let seed_database = SeedDatabase::new(
             CreateClient::new(client_repo.clone()),
@@ -242,6 +252,10 @@ impl AppState {
         );
 
         Self {
+            code,
+            user_backup_dir,
+            system_backup_dir,
+
             create_client: CreateClient::new(client_repo.clone()),
             update_client: UpdateClient::new(client_repo.clone()),
             archive_client: ArchiveClient::new(client_repo.clone()),
@@ -356,8 +370,6 @@ impl AppState {
             accounting: AccountingService::new(accounting_repo),
 
             data_management,
-            user_backup_dir,
-            system_backup_dir,
 
             create_notebook_section: CreateNotebookSection::new(notebook_section_repo.clone()),
             rename_notebook_section: RenameNotebookSection::new(notebook_section_repo.clone()),
@@ -384,6 +396,49 @@ impl AppState {
     }
 }
 
-pub fn to_ipc_err(e: crate::application::AppError) -> String {
-    e.to_string()
+/// Permanent app context, registered once at startup. Holds the always-
+/// available `OrgRegistry` and a swappable `OrgServices` for the active
+/// org. Commands access org-scoped use cases via `state.org()?`.
+pub struct AppState {
+    pub org_registry: Arc<OrgRegistry>,
+    active: ArcSwap<Option<Arc<OrgServices>>>,
+}
+
+impl AppState {
+    pub fn new(org_registry: Arc<OrgRegistry>) -> Self {
+        Self {
+            org_registry,
+            active: ArcSwap::new(Arc::new(None)),
+        }
+    }
+
+    /// Returns the active org's services or `NoActiveOrg`. Cheap — clones
+    /// an `Arc` from a lock-free `ArcSwap` snapshot.
+    pub fn org(&self) -> Result<Arc<OrgServices>, AppError> {
+        (**self.active.load())
+            .clone()
+            .ok_or_else(AppError::no_active_org)
+    }
+
+    /// Atomically swap in a freshly-built `OrgServices`. Drops the previous
+    /// one once any in-flight command holding it finishes.
+    pub fn open_org(&self, services: OrgServices) {
+        self.active.store(Arc::new(Some(Arc::new(services))));
+    }
+
+    /// Drop the active org. New commands fail with `NoActiveOrg` until
+    /// `open_org` is called again.
+    pub fn close_org(&self) {
+        self.active.store(Arc::new(None));
+    }
+
+    /// Currently active org's code, if any. Used by the auto-backup ticker
+    /// and by `org_get_active`.
+    pub fn active_code(&self) -> Option<OrgCode> {
+        self.active
+            .load()
+            .as_ref()
+            .as_ref()
+            .map(|s| s.code.clone())
+    }
 }

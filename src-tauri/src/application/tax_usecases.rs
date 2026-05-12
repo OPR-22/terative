@@ -4,6 +4,7 @@ use rust_decimal::Decimal;
 
 use crate::application::ports::TaxRepository;
 use crate::application::AppError;
+#[cfg(test)] use crate::application::ErrorCode;
 use crate::domain::tax::{NewTaxDefinition, TaxDefinition, TaxId};
 
 #[derive(Clone)]
@@ -39,7 +40,7 @@ impl UpdateTax {
         Self { repo }
     }
     pub fn execute(&self, input: UpdateTaxInput) -> Result<TaxDefinition, AppError> {
-        let mut tax = self.repo.get(input.id)?.ok_or(AppError::NotFound)?;
+        let mut tax = self.repo.get(input.id)?.ok_or(AppError::resource_not_found())?;
         let name = input.name.trim().to_string();
         if name.is_empty() {
             return Err(crate::domain::tax::TaxError::EmptyName.into());
@@ -71,7 +72,7 @@ impl ArchiveTax {
         Self { repo }
     }
     pub fn execute(&self, id: TaxId) -> Result<(), AppError> {
-        let mut tax = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        let mut tax = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
         tax.archive(chrono::Utc::now());
         self.repo.update(&tax)?;
         Ok(())
@@ -87,7 +88,7 @@ impl UnarchiveTax {
         Self { repo }
     }
     pub fn execute(&self, id: TaxId) -> Result<(), AppError> {
-        let mut tax = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        let mut tax = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
         tax.unarchive();
         self.repo.update(&tax)?;
         Ok(())
@@ -208,7 +209,7 @@ mod tests {
                 tax_id_number: None,
             })
             .unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 
     #[test]
@@ -229,7 +230,7 @@ mod tests {
                 tax_id_number: None,
             })
             .unwrap_err();
-        assert!(matches!(err, AppError::Tax(_)));
+        assert!(err.is(ErrorCode::TaxEmptyName));
     }
 
     #[test]

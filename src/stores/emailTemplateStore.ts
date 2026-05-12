@@ -5,6 +5,7 @@ import {
   type NewEmailTemplateDto,
   type UpdateEmailTemplateDto,
 } from "../ipc";
+import { registerOrgScopedReset } from "./orgScopedRegistry";
 
 interface EmailTemplateState {
   templates: EmailTemplateDto[];
@@ -17,10 +18,14 @@ interface EmailTemplateState {
   setDefault: (id: string) => Promise<void>;
 }
 
-export const useEmailTemplateStore = create<EmailTemplateState>((set, get) => ({
-  templates: [],
+const INITIAL = {
+  templates: [] as EmailTemplateDto[],
   loading: false,
-  error: null,
+  error: null as string | null,
+};
+
+export const useEmailTemplateStore = create<EmailTemplateState>((set, get) => ({
+  ...INITIAL,
   refresh: async () => {
     set({ loading: true, error: null });
     try {
@@ -49,3 +54,5 @@ export const useEmailTemplateStore = create<EmailTemplateState>((set, get) => ({
     await get().refresh();
   },
 }));
+
+registerOrgScopedReset(() => useEmailTemplateStore.setState({ ...INITIAL }));

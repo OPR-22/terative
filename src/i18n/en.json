@@ -52,6 +52,7 @@
     "view": "View",
     "back": "Back",
     "create": "Create",
+    "creating": "Creating…",
     "new": "New",
     "search": "Search",
     "loading": "Loading…",
@@ -533,5 +534,41 @@
   },
   "placeholder": {
     "coming_soon": "Available in a later phase."
+  },
+  "org_picker": {
+    "title": "Choose an organisation",
+    "subtitle": "Open an existing org or create a new one.",
+    "empty_subtitle": "Create your first org to get started.",
+    "create_first": "Create your first org",
+    "create_new": "Create new org",
+    "create_new_short": "New",
+    "create_title": "New organisation",
+    "create_code_label": "Organisation code",
+    "create_code_placeholder": "acme_corp",
+    "create_code_hint": "Letters (any case), digits, underscore, hyphen. No spaces.",
+    "delete_aria": "Delete org",
+    "delete_title": "Delete this org?",
+    "delete_message": "All data, backups and PDFs in '{{code}}' will be permanently removed. This cannot be undone.",
+    "last_modified": "last opened: {{date}}"
+  },
+  "org_switcher": {
+    "label": "organisation",
+    "manage": "Manage orgs…",
+    "create_new": "Create new org…",
+    "aria_open": "Switch organisation"
+  },
+  "errors": {
+    "status": {
+      "unauthenticated": "Authentication required.",
+      "internal": "Internal error: {{detail}}",
+      "unknown": "Unexpected error: {{detail}}"
+    },
+    "code": {
+      "no_active_org": "No org is currently open.",
+      "org_not_found": "Org not found: {{code}}",
+      "org_code_already_exists": "The code '{{code}}' is already used by another organisation.",
+      "invalid_org_code": "Invalid organisation code ({{reason}}).",
+      "resource_not_found": "Not found."
+    }
   }
 }

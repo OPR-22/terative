@@ -37,14 +37,11 @@ specta = { version = "=2.0.0-rc.24", features = ["derive", "chrono", "uuid", "ru
 specta-typescript = "0.0.11"
 tauri-specta = { version = "=2.0.0-rc.24", features = ["derive", "typescript"] }
 url = "2"
-# Fake-data generator used only by the dev-only seed action (gated on
-# cfg(debug_assertions)). Linked into debug builds; stripped from release
-# binaries because all call sites are cfg-gated.
 fake = { version = "2", features = ["chrono"] }
 rand = "0.8"
+slug = "0.1"
+arc-swap = "1"
 
-# Linux-only: direct GTK access so we can flip the main window's default
-# vbox to horizontal orientation for the bookmark sister-pane layout.
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
 

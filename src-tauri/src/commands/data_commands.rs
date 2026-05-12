@@ -5,7 +5,8 @@ use serde::Serialize;
 use specta::Type;
 use tauri::State;
 
-use super::{to_ipc_err, AppState};
+use super::AppState;
+use crate::application::AppError;
 use crate::application::ports::{BackupKind, BackupMetadata, BackupScope};
 
 #[derive(Debug, Serialize, Type)]
@@ -70,22 +71,22 @@ impl From<BackupMetadata> for BackupDto {
 pub fn data_export(
     state: State<'_, AppState>,
     destination: String,
-) -> Result<String, String> {
-    state
+) -> Result<String, AppError> {
+    state.org()?
         .data_management
         .export_database(&PathBuf::from(destination))
         .map(|p| p.to_string_lossy().to_string())
-        .map_err(|e| to_ipc_err(crate::application::AppError::Repo(e)))
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn data_backup(state: State<'_, AppState>) -> Result<String, String> {
-    state
+pub fn data_backup(state: State<'_, AppState>) -> Result<String, AppError> {
+    state.org()?
         .data_management
         .create_backup()
         .map(|p| p.to_string_lossy().to_string())
-        .map_err(|e| to_ipc_err(crate::application::AppError::Repo(e)))
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -94,11 +95,11 @@ pub fn data_restore(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     source: String,
-) -> Result<(), String> {
-    state
+) -> Result<(), AppError> {
+    state.org()?
         .data_management
         .restore_database(&PathBuf::from(source))
-        .map_err(|e| to_ipc_err(crate::application::AppError::Repo(e)))?;
+        .map_err(AppError::from)?;
     // Restart so the live DB connection is closed and the newly-swapped file
     // is opened cleanly by a fresh process. `restart` never returns.
     app.restart()
@@ -106,12 +107,12 @@ pub fn data_restore(
 
 #[tauri::command]
 #[specta::specta]
-pub fn data_list_backups(state: State<'_, AppState>) -> Result<Vec<BackupDto>, String> {
-    state
+pub fn data_list_backups(state: State<'_, AppState>) -> Result<Vec<BackupDto>, AppError> {
+    state.org()?
         .data_management
         .list_backups()
         .map(|items| items.into_iter().map(BackupDto::from).collect())
-        .map_err(|e| to_ipc_err(crate::application::AppError::Repo(e)))
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
@@ -119,15 +120,15 @@ pub fn data_list_backups(state: State<'_, AppState>) -> Result<Vec<BackupDto>, S
 pub fn data_delete_backup(
     state: State<'_, AppState>,
     path: String,
-) -> Result<(), String> {
-    state
+) -> Result<(), AppError> {
+    state.org()?
         .data_management
         .delete_backup(&PathBuf::from(path))
-        .map_err(|e| to_ipc_err(crate::application::AppError::Repo(e)))
+        .map_err(AppError::from)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn data_user_backup_dir(state: State<'_, AppState>) -> Result<String, String> {
-    Ok(state.user_backup_dir.to_string_lossy().to_string())
+pub fn data_user_backup_dir(state: State<'_, AppState>) -> Result<String, AppError> {
+    Ok(state.org()?.user_backup_dir.to_string_lossy().to_string())
 }

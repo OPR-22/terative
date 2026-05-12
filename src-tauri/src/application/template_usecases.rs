@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::application::ports::{
     ClientRepository, PdfGenerator, PdfRenderInput, SettingsRepository, TemplateRepository,
 };
-use crate::application::AppError;
+use crate::application::{AppError, ErrorCode};
 use crate::domain::client::{Client, ClientId, NewClient};
 use crate::domain::invoice::{AppliedTax, Invoice, InvoiceId, InvoiceNumber, InvoiceStatus};
 use crate::domain::line_item::{LineItem, LineItemId};
@@ -57,7 +57,7 @@ impl UpdateTemplate {
         Self { repo }
     }
     pub fn execute(&self, input: UpdateTemplateInput) -> Result<InvoiceTemplate, AppError> {
-        let existing = self.repo.get(input.id)?.ok_or(AppError::NotFound)?;
+        let existing = self.repo.get(input.id)?.ok_or(AppError::resource_not_found())?;
         let rebuilt = InvoiceTemplate::create(NewInvoiceTemplate {
             name: input.name,
             base_layout: input.base_layout,
@@ -94,7 +94,7 @@ impl DeleteTemplate {
     }
     pub fn execute(&self, id: TemplateId) -> Result<(), AppError> {
         if self.repo.is_used_by_invoice(id)? {
-            return Err(AppError::TemplateInUse);
+            return Err(AppError::failed_precondition(ErrorCode::TemplateInUse));
         }
         self.repo.delete(id)?;
         Ok(())
@@ -110,7 +110,7 @@ impl DuplicateTemplate {
         Self { repo }
     }
     pub fn execute(&self, id: TemplateId) -> Result<InvoiceTemplate, AppError> {
-        let source = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        let source = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
         let copy = InvoiceTemplate {
             id: TemplateId::new(),
             name: format!("{} (copy)", source.name),
@@ -132,7 +132,7 @@ impl SetDefaultTemplate {
     }
     pub fn execute(&self, id: TemplateId) -> Result<(), AppError> {
         if self.repo.get(id)?.is_none() {
-            return Err(AppError::NotFound);
+            return Err(AppError::resource_not_found());
         }
         self.repo.set_default(id)?;
         Ok(())
@@ -176,7 +176,7 @@ impl PreviewTemplate {
 
     pub fn execute(&self, input: PreviewTemplateInput) -> Result<Vec<u8>, AppError> {
         let template = match input.template_id {
-            Some(id) => self.templates.get(id)?.ok_or(AppError::NotFound)?,
+            Some(id) => self.templates.get(id)?.ok_or(AppError::resource_not_found())?,
             None => self
                 .templates
                 .get_default()?
@@ -434,7 +434,7 @@ mod tests {
             .unwrap();
         r.mark_used(t.id);
         let err = DeleteTemplate::new(r.clone()).execute(t.id).unwrap_err();
-        assert!(matches!(err, AppError::TemplateInUse));
+        assert!(err.is(ErrorCode::TemplateInUse));
         assert!(r.inner.lock().contains_key(&t.id));
     }
 
@@ -483,7 +483,7 @@ mod tests {
         let err = SetDefaultTemplate::new(r)
             .execute(TemplateId::new())
             .unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 
     #[test]

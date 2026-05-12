@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::application::ports::BookmarkRepository;
 use crate::application::AppError;
+#[cfg(test)] use crate::application::ErrorCode;
 use crate::domain::bookmark::{Bookmark, BookmarkId};
 
 pub struct CreateBookmarkInput {
@@ -42,7 +43,7 @@ impl UpdateBookmark {
         Self { repo }
     }
     pub fn execute(&self, input: UpdateBookmarkInput) -> Result<Bookmark, AppError> {
-        let mut bookmark = self.repo.get(input.id)?.ok_or(AppError::NotFound)?;
+        let mut bookmark = self.repo.get(input.id)?.ok_or(AppError::resource_not_found())?;
         bookmark.rename(input.label)?;
         bookmark.relocate(input.url)?;
         self.repo.update(&bookmark)?;
@@ -182,10 +183,7 @@ mod tests {
                 url: "ftp://oops".into(),
             })
             .unwrap_err();
-        assert!(matches!(
-            err,
-            AppError::Bookmark(BookmarkError::UnsupportedScheme)
-        ));
+        assert!(err.is(ErrorCode::BookmarkUnsupportedScheme));
     }
 
     #[test]
@@ -218,7 +216,7 @@ mod tests {
                 url: "https://x.com".into(),
             })
             .unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 
     #[test]
@@ -237,7 +235,7 @@ mod tests {
                 url: "https://ok.com".into(),
             })
             .unwrap_err();
-        assert!(matches!(err, AppError::Bookmark(BookmarkError::EmptyLabel)));
+        assert!(err.is(ErrorCode::BookmarkEmptyLabel));
     }
 
     #[test]

@@ -6,6 +6,7 @@ import {
   type NewBookmarkDto,
   type UpdateBookmarkDto,
 } from "../ipc";
+import { registerOrgScopedReset } from "./orgScopedRegistry";
 
 interface BookmarkState {
   bookmarks: BookmarkDto[];
@@ -22,11 +23,15 @@ interface BookmarkState {
   reorder: (orderedIds: string[]) => Promise<void>;
 }
 
-export const useBookmarkStore = create<BookmarkState>((set, get) => ({
-  bookmarks: [],
+const INITIAL = {
+  bookmarks: [] as BookmarkDto[],
   loaded: false,
   loading: false,
-  error: null,
+  error: null as string | null,
+};
+
+export const useBookmarkStore = create<BookmarkState>((set, get) => ({
+  ...INITIAL,
   refresh: async () => {
     set({ loading: true, error: null });
     try {
@@ -60,3 +65,5 @@ export const useBookmarkStore = create<BookmarkState>((set, get) => ({
     await get().refresh();
   },
 }));
+
+registerOrgScopedReset(() => useBookmarkStore.setState({ ...INITIAL }));

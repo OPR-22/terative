@@ -6,6 +6,7 @@ use crate::application::ports::{
     ClientNotebookRepository, ClientJournalRepository, NotebookSectionRepository,
 };
 use crate::application::AppError;
+#[cfg(test)] use crate::application::ErrorCode;
 use crate::domain::client::ClientId;
 use crate::domain::notebook::{
     NotebookEntry, ClientNotebook, ClientJournalEntry, JournalEntryId, NewJournalEntry,
@@ -49,7 +50,7 @@ impl RenameNotebookSection {
         &self,
         input: RenameNotebookSectionInput,
     ) -> Result<NotebookSection, AppError> {
-        let mut section = self.repo.get(input.id)?.ok_or(AppError::NotFound)?;
+        let mut section = self.repo.get(input.id)?.ok_or(AppError::resource_not_found())?;
         section.rename(input.name)?;
         self.repo.update(&section)?;
         Ok(section)
@@ -66,7 +67,7 @@ impl DeleteNotebookSection {
     }
     pub fn execute(&self, id: NotebookSectionId) -> Result<(), AppError> {
         if self.repo.get(id)?.is_none() {
-            return Err(AppError::NotFound);
+            return Err(AppError::resource_not_found());
         }
         self.repo.delete(id)?;
         Ok(())
@@ -228,7 +229,7 @@ impl UpdateJournalEntry {
         &self,
         input: UpdateJournalEntryInput,
     ) -> Result<ClientJournalEntry, AppError> {
-        let mut entry = self.repo.get(input.id)?.ok_or(AppError::NotFound)?;
+        let mut entry = self.repo.get(input.id)?.ok_or(AppError::resource_not_found())?;
         entry.edit(input.entry_date, input.content, Utc::now())?;
         self.repo.update(&entry)?;
         Ok(entry)
@@ -245,7 +246,7 @@ impl DeleteJournalEntry {
     }
     pub fn execute(&self, id: JournalEntryId) -> Result<(), AppError> {
         if self.repo.get(id)?.is_none() {
-            return Err(AppError::NotFound);
+            return Err(AppError::resource_not_found());
         }
         self.repo.delete(id)?;
         Ok(())
@@ -274,7 +275,7 @@ impl GetJournalEntry {
         Self { repo }
     }
     pub fn execute(&self, id: JournalEntryId) -> Result<ClientJournalEntry, AppError> {
-        self.repo.get(id)?.ok_or(AppError::NotFound)
+        self.repo.get(id)?.ok_or(AppError::resource_not_found())
     }
 }
 
@@ -444,7 +445,7 @@ mod tests {
         let err = CreateNotebookSection::new(repo)
             .execute("  ".into())
             .unwrap_err();
-        assert!(matches!(err, AppError::NotebookSection(_)));
+        assert!(err.is(ErrorCode::NotebookSectionEmptyName));
     }
 
     #[test]
@@ -471,7 +472,7 @@ mod tests {
                 name: "X".into(),
             })
             .unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 
     #[test]
@@ -480,7 +481,7 @@ mod tests {
         let err = DeleteNotebookSection::new(repo)
             .execute(NotebookSectionId::new())
             .unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 
     #[test]
@@ -556,7 +557,7 @@ mod tests {
                 ],
             })
             .unwrap_err();
-        assert!(matches!(err, AppError::Notebook(_)));
+        assert!(err.is(ErrorCode::NotebookDuplicateSection));
     }
 
     // ---- journal tests ----
@@ -589,7 +590,7 @@ mod tests {
                 content: "".into(),
             })
             .unwrap_err();
-        assert!(matches!(err, AppError::JournalEntry(_)));
+        assert!(err.is(ErrorCode::JournalEntryEmptyContent));
     }
 
     #[test]
@@ -619,7 +620,7 @@ mod tests {
                 content: "  ".into(),
             })
             .unwrap_err();
-        assert!(matches!(err, AppError::JournalEntry(_)));
+        assert!(err.is(ErrorCode::JournalEntryEmptyContent));
     }
 
     #[test]
@@ -632,7 +633,7 @@ mod tests {
                 content: "x".into(),
             })
             .unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 
     #[test]
@@ -641,7 +642,7 @@ mod tests {
         let err = DeleteJournalEntry::new(repo)
             .execute(JournalEntryId::new())
             .unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 
     #[test]

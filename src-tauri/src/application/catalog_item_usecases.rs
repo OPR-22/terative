@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::application::ports::CatalogItemRepository;
 use crate::application::AppError;
+#[cfg(test)] use crate::application::ErrorCode;
 use crate::domain::catalog_item::{
     CatalogItem, CatalogItemError, CatalogItemId, CatalogItemKind, NewCatalogItem,
 };
@@ -44,7 +45,7 @@ impl UpdateCatalogItem {
     }
 
     pub fn execute(&self, input: UpdateCatalogItemInput) -> Result<CatalogItem, AppError> {
-        let mut item = self.repo.get(input.id)?.ok_or(AppError::NotFound)?;
+        let mut item = self.repo.get(input.id)?.ok_or(AppError::resource_not_found())?;
         let name = input.name.trim().to_string();
         if name.is_empty() {
             return Err(CatalogItemError::EmptyName.into());
@@ -72,7 +73,7 @@ impl ArchiveCatalogItem {
     }
 
     pub fn execute(&self, id: CatalogItemId) -> Result<(), AppError> {
-        let mut item = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        let mut item = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
         item.archive(chrono::Utc::now());
         self.repo.update(&item)?;
         Ok(())
@@ -89,7 +90,7 @@ impl UnarchiveCatalogItem {
     }
 
     pub fn execute(&self, id: CatalogItemId) -> Result<(), AppError> {
-        let mut item = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        let mut item = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
         item.unarchive();
         self.repo.update(&item)?;
         Ok(())
@@ -256,7 +257,7 @@ mod tests {
                 reference: None,
             })
             .unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 
     #[test]
@@ -344,10 +345,7 @@ mod tests {
                 reference: None,
             })
             .unwrap_err();
-        assert!(matches!(
-            err,
-            AppError::CatalogItem(CatalogItemError::NegativePrice)
-        ));
+        assert!(err.is(ErrorCode::CatalogItemNegativePrice));
     }
 
     #[test]

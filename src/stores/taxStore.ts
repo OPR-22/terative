@@ -5,6 +5,7 @@ import {
   type TaxDefinitionDto,
   type UpdateTaxDto,
 } from "../ipc";
+import { registerOrgScopedReset } from "./orgScopedRegistry";
 
 interface TaxState {
   taxes: TaxDefinitionDto[];
@@ -19,11 +20,15 @@ interface TaxState {
   unarchive: (id: string) => Promise<void>;
 }
 
-export const useTaxStore = create<TaxState>((set, get) => ({
-  taxes: [],
+const INITIAL = {
+  taxes: [] as TaxDefinitionDto[],
   includeArchived: false,
   loading: false,
-  error: null,
+  error: null as string | null,
+};
+
+export const useTaxStore = create<TaxState>((set, get) => ({
+  ...INITIAL,
   setIncludeArchived: (includeArchived) => {
     set({ includeArchived });
     void get().refresh();
@@ -56,3 +61,5 @@ export const useTaxStore = create<TaxState>((set, get) => ({
     await get().refresh();
   },
 }));
+
+registerOrgScopedReset(() => useTaxStore.setState({ ...INITIAL }));

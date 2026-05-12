@@ -3,65 +3,72 @@
 Status: `[ ]` todo · `[~]` in progress · `[x]` done · `[!]` blocked
 Tiers: tier-1 foundational · tier-2 new domain/feature · tier-3 targeted UX · tier-4 polish
 
+Task IDs encode the tier (`T<tier>.<seq>`). Adding a task within a tier
+appends without reshuffling other tiers.
+
 ---
 
 ## Tier 1 — Foundational / cross-cutting
 
-- [ ] T01 [tier-1] Multi-organisation — add `org_id` across schema, repos, queries, use cases. Do before other tier-1 items.
-- [ ] T02 [tier-1] Multi-currency — domain `Money`, per-invoice currency, FX, accounting roll-ups.
-- [ ] T03 [tier-1] Database encryption / password — SQLCipher via `rusqlite`, key derivation, unlock at app start, backup/restore impact.
-- [ ] T04 [tier-1] Activity history / audit log — `events` table written by use cases, covers invoices/clients/payments/backups.
-- [ ] T05 [tier-1] Invoice file storage — `year/month/<name>.pdf` layout, numbering reset to `000001`, client name in filename, migrate existing files.
-- [ ] T06 [tier-1] Discounts on invoices — line-level vs invoice-level, tax interaction, PDF, accounting.
-- [ ] T07 [tier-1] Global search — FTS5 index across clients, invoices, catalog items.
+- [ ] T1.01 Multi-organisation — add `org_id` across schema, repos, queries, use cases. Do before other tier-1 items.
+- [ ] T1.02 Multi-currency — domain `Money`, per-invoice currency, FX, accounting roll-ups.
+- [ ] T1.03 Database encryption / password — SQLCipher via `rusqlite`, key derivation, unlock at app start, backup/restore impact.
+- [ ] T1.04 Activity history / audit log — `events` table written by use cases, covers invoices/clients/payments/backups.
+- [ ] T1.05 Invoice file storage — `year/month/<name>.pdf` layout, numbering reset to `000001`, client name in filename, migrate existing files.
+- [ ] T1.06 Discounts on invoices — line-level vs invoice-level, tax interaction, PDF, accounting.
+- [ ] T1.07 Global search — FTS5 index across clients, invoices, catalog items.
 
 ## Tier 2 — New domains / significant features
 
-- [ ] T08 [tier-2] Projects + time tracking — new aggregate, link to invoice/client, tray-running app, dashboard timer.
-- [!] T09 [tier-2] Expenses + receipt OCR — blocked: mobile-upload scope conflicts with local-first. Decide flow (QR upload, desktop drop, local OCR vs API).
-- [ ] T10 [tier-2] PO numbers on invoices — schema + UI + PDF.
-- [ ] T11 [tier-2] Email send modal — preview, per-send overrides (recipient, template, extra body), drag-drop variable insert, localized variable picker, unbound-variable errors.
-- [ ] T12 [tier-2] Client merge tool — similar-name matching, reassign allocations.
-- [ ] T13 [tier-2] CSV transaction export — replaces accounting PDF export, row selection.
-- [ ] T14 [tier-2] Accounting tax breakdown — pre/post-tax revenue + tax collected per period, trimester grouping.
-- [ ] T15 [tier-2] CLI to scaffold domains — dev tooling.
+- [ ] T2.01 Projects + time tracking — new aggregate, link to invoice/client, tray-running app, dashboard timer.
+- [!] T2.02 Expenses + receipt OCR — blocked: mobile-upload scope conflicts with local-first. Decide flow (QR upload, desktop drop, local OCR vs API).
+- [ ] T2.03 PO numbers on invoices — schema + UI + PDF.
+- [ ] T2.04 Email send modal — preview, per-send overrides (recipient, template, extra body), drag-drop variable insert, localized variable picker, unbound-variable errors.
+- [ ] T2.05 Client merge tool — similar-name matching, reassign allocations.
+- [ ] T2.06 CSV transaction export — replaces accounting PDF export, row selection.
+- [ ] T2.07 Accounting tax breakdown — pre/post-tax revenue + tax collected per period, trimester grouping.
+- [ ] T2.08 CLI to scaffold domains — dev tooling.
 
 ## Tier 3 — Targeted feature / UX
 
-- [ ] T16 [tier-3] Client creation: Individual vs Company toggle.
-- [ ] T17 [tier-3] New-invoice page simplified — no payments/emails/preview, edit page keeps full form.
-- [ ] T18 [tier-3] Highlight newly-created invoice + send-email upsell after finalize.
-- [ ] T19 [tier-3] Default service auto-selected when only one exists.
-- [ ] T20 [tier-3] Taxes toggled ON by default.
-- [ ] T21 [tier-3] Private note field on invoice (not rendered, label clearly).
-- [ ] T22 [tier-3] Due-date days flow from settings → invoice; remove placeholder; bigger processed due-date text.
-- [ ] T23 [tier-3] Invoice note: rename to "public note (inserted in invoice)", drop duplicate hint.
-- [ ] T24 [tier-3] "Create from model" dropdown reduced to default + selected.
-- [ ] T25 [tier-3] Logo + signature missing from PDF — bug.
-- [ ] T26 [tier-3] Pagination component (top + bottom).
-- [ ] T27 [tier-3] Settings page → tabs for sub-sections.
-- [ ] T28 [tier-3] Email templates: example-value preview + unbound-variable errors; prettier list.
-- [ ] T29 [tier-3] Email history shows actual sent content from client/invoice.
-- [ ] T30 [tier-3] Carnet link on empty client page.
+- [ ] T3.01 Client creation: Individual vs Company toggle.
+- [ ] T3.02 New-invoice page simplified — no payments/emails/preview, edit page keeps full form.
+- [ ] T3.03 Highlight newly-created invoice + send-email upsell after finalize.
+- [ ] T3.04 Default service auto-selected when only one exists.
+- [ ] T3.05 Taxes toggled ON by default.
+- [ ] T3.06 Private note field on invoice (not rendered, label clearly).
+- [ ] T3.07 Due-date days flow from settings → invoice; remove placeholder; bigger processed due-date text.
+- [ ] T3.08 Invoice note: rename to "public note (inserted in invoice)", drop duplicate hint.
+- [ ] T3.09 "Create from model" dropdown reduced to default + selected.
+- [ ] T3.10 Logo + signature missing from PDF — bug.
+- [ ] T3.11 Pagination component (top + bottom).
+- [ ] T3.12 Settings page → tabs for sub-sections.
+- [ ] T3.13 Email templates: example-value preview + unbound-variable errors, drag-drop variable insert, localized variable picker, prettier list.
+- [ ] T3.14 Email history shows actual sent content from client/invoice.
+- [ ] T3.15 Carnet link on empty client page.
+- [ ] T3.16 add a 'sent' status instead of combining all statuses (draft+finalized+sent) + filters.
+- [ ] T3.17 add sorting by invoice # and date 
 
 ## Tier 4 — Polish
 
-- [ ] T31 [tier-4] Redo dropdowns.
-- [ ] T32 [tier-4] Improve invoice item dropdowns.
-- [ ] T33 [tier-4] Bookmark toolbar redesign to match app.
-- [ ] T34 [tier-4] Remove all "back" buttons — top nav exists.
-- [ ] T35 [tier-4] Fix non-functional breadcrumbs (e.g. email template → list).
-- [ ] T36 [tier-4] Consistent table row actions (edit label vs icon vs row-click).
-- [ ] T37 [tier-4] Full dates in invoice view.
-- [ ] T38 [tier-4] "Encaisser" button uses coins icon.
-- [ ] T39 [tier-4] Description on "cancel invoice" action.
-- [ ] T40 [tier-4] Loaders on slow-action buttons (invoice create, email send).
-- [ ] T41 [tier-4] Recharts (or similar) for dashboard + accounting graphs.
-- [ ] T42 [tier-4] UI animations — tab switch, sidebar collapse.
-- [ ] T43 [tier-4] Logo weight + add to sidebar top.
-- [ ] T44 [tier-4] Remove hover on top-4 dashboard cards.
-- [ ] T45 [tier-4] Error toast lasts 5s.
-- [ ] T46 [tier-4] Remove duplicate workspace name (bottom-left).
-- [ ] T47 [tier-4] Remove import button on client page.
-- [ ] T48 [tier-4] Default values: countries, languages, phone/email labels.
-- [ ] T49 [tier-4] Review product catalog defaults (unit, quantity).
+- [ ] T4.01 Redo dropdowns.
+- [ ] T4.02 Improve invoice item dropdowns.
+- [ ] T4.03 Bookmark toolbar redesign to match app.
+- [ ] T4.04 Remove all "back" buttons — top nav exists.
+- [ ] T4.05 Fix non-functional breadcrumbs (e.g. email template → list).
+- [ ] T4.06 Consistent table row actions (edit label vs icon vs row-click).
+- [ ] T4.07 Full dates in invoice view.
+- [ ] T4.08 "Encaisser" button uses coins icon.
+- [ ] T4.09 Description on "cancel invoice" action.
+- [ ] T4.10 Loaders on slow-action buttons (invoice create, email send).
+- [ ] T4.11 Recharts (or similar) for dashboard + accounting graphs.
+- [ ] T4.12 UI animations — tab switch, sidebar collapse.
+- [ ] T4.13 Logo weight + add to sidebar top.
+- [ ] T4.14 Remove hover on top-4 dashboard cards.
+- [ ] T4.15 Error toast lasts 5s.
+- [ ] T4.16 Remove duplicate workspace name (bottom-left).
+- [ ] T4.17 Remove import button on client page.
+- [ ] T4.18 Default values: countries, languages, phone/email labels.
+- [ ] T4.19 Review product catalog defaults (unit, quantity).
+- [ ] T4.20 Make sure backups/restore work cross-platform.
+- [ ] T4.21 Add 'mark as paid' button on the 'late invoice' section in dashboard.

@@ -5,6 +5,7 @@ import {
   type NewInvoiceTemplateDto,
   type UpdateTemplateDto,
 } from "../ipc";
+import { registerOrgScopedReset } from "./orgScopedRegistry";
 
 interface TemplateState {
   templates: InvoiceTemplateDto[];
@@ -18,10 +19,14 @@ interface TemplateState {
   setDefault: (id: string) => Promise<void>;
 }
 
-export const useTemplateStore = create<TemplateState>((set, get) => ({
-  templates: [],
+const INITIAL = {
+  templates: [] as InvoiceTemplateDto[],
   loading: false,
-  error: null,
+  error: null as string | null,
+};
+
+export const useTemplateStore = create<TemplateState>((set, get) => ({
+  ...INITIAL,
   refresh: async () => {
     set({ loading: true, error: null });
     try {
@@ -55,3 +60,5 @@ export const useTemplateStore = create<TemplateState>((set, get) => ({
     await get().refresh();
   },
 }));
+
+registerOrgScopedReset(() => useTemplateStore.setState({ ...INITIAL }));

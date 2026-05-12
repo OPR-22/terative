@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::application::ports::EmailTemplateRepository;
-use crate::application::AppError;
+use crate::application::{AppError, ErrorCode};
 use crate::domain::email_template::{EmailTemplate, EmailTemplateId, NewEmailTemplate};
 
 pub struct CreateEmailTemplate {
@@ -34,7 +34,7 @@ impl UpdateEmailTemplate {
         subject_template: String,
         body_template: String,
     ) -> Result<EmailTemplate, AppError> {
-        let mut template = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        let mut template = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
         template.update(name, subject_template, body_template)?;
         self.repo.update(&template)?;
         Ok(template)
@@ -50,9 +50,9 @@ impl DeleteEmailTemplate {
         Self { repo }
     }
     pub fn execute(&self, id: EmailTemplateId) -> Result<(), AppError> {
-        let template = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        let template = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
         if template.is_default {
-            return Err(AppError::EmailTemplateIsDefault);
+            return Err(AppError::failed_precondition(ErrorCode::EmailTemplateIsDefault));
         }
         self.repo.delete(id)?;
         Ok(())
@@ -68,7 +68,7 @@ impl SetDefaultEmailTemplate {
         Self { repo }
     }
     pub fn execute(&self, id: EmailTemplateId) -> Result<(), AppError> {
-        let template = self.repo.get(id)?.ok_or(AppError::NotFound)?;
+        let template = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
         self.repo
             .set_default_for_type(id, template.template_type)?;
         Ok(())

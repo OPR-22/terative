@@ -8,24 +8,19 @@ use crate::application::dto::{
 use crate::application::AppError;
 use crate::domain::invoice::InvoiceId;
 
-use super::{to_ipc_err, AppState};
-
-fn dto_err(e: crate::application::dto::DtoConvertError) -> String {
-    to_ipc_err(AppError::from(e))
-}
+use super::AppState;
 
 #[tauri::command]
 #[specta::specta]
 pub fn invoice_create_draft(
     state: State<'_, AppState>,
     input: NewInvoiceDto,
-) -> Result<InvoiceDto, String> {
-    let domain = input.try_into().map_err(dto_err)?;
-    state
+) -> Result<InvoiceDto, AppError> {
+    let domain = input.try_into()?;
+    state.org()?
         .create_draft_invoice
         .execute(domain)
         .map(|i| InvoiceDto::from_invoice_basic(&i))
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
@@ -33,13 +28,12 @@ pub fn invoice_create_draft(
 pub fn invoice_update_draft(
     state: State<'_, AppState>,
     input: UpdateDraftInvoiceDto,
-) -> Result<InvoiceDto, String> {
-    let domain = input.try_into().map_err(dto_err)?;
-    state
+) -> Result<InvoiceDto, AppError> {
+    let domain = input.try_into()?;
+    state.org()?
         .update_draft_invoice
         .execute(domain)
         .map(|i| InvoiceDto::from_invoice_basic(&i))
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
@@ -47,12 +41,11 @@ pub fn invoice_update_draft(
 pub fn invoice_finalize(
     state: State<'_, AppState>,
     id: Uuid,
-) -> Result<InvoiceDto, String> {
-    state
+) -> Result<InvoiceDto, AppError> {
+    state.org()?
         .finalize_invoice
         .execute(InvoiceId(id))
         .map(|i| InvoiceDto::from_invoice_basic(&i))
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
@@ -60,12 +53,11 @@ pub fn invoice_finalize(
 pub fn invoice_duplicate(
     state: State<'_, AppState>,
     id: Uuid,
-) -> Result<InvoiceDto, String> {
-    state
+) -> Result<InvoiceDto, AppError> {
+    state.org()?
         .duplicate_invoice
         .execute(InvoiceId(id))
         .map(|i| InvoiceDto::from_invoice_basic(&i))
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
@@ -73,12 +65,11 @@ pub fn invoice_duplicate(
 pub fn invoice_cancel(
     state: State<'_, AppState>,
     id: Uuid,
-) -> Result<InvoiceDto, String> {
-    state
+) -> Result<InvoiceDto, AppError> {
+    state.org()?
         .cancel_invoice
         .execute(InvoiceId(id))
         .map(|i| InvoiceDto::from_invoice_basic(&i))
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
@@ -86,12 +77,11 @@ pub fn invoice_cancel(
 pub fn invoice_list(
     state: State<'_, AppState>,
     query: Option<ListInvoicesQueryDto>,
-) -> Result<PageDto<InvoiceDto>, String> {
+) -> Result<PageDto<InvoiceDto>, AppError> {
     let today = Utc::now().date_naive();
-    let page = state
+    let page = state.org()?
         .list_invoices
-        .execute(query.unwrap_or_default().into())
-        .map_err(to_ipc_err)?;
+        .execute(query.unwrap_or_default().into())?;
     Ok(page
         .map(|(i, paid, client_name, logs)| {
             InvoiceDto::from_invoice_enriched(&i, paid, today, client_name, &logs)
@@ -104,15 +94,14 @@ pub fn invoice_list(
 pub fn invoice_get(
     state: State<'_, AppState>,
     id: Uuid,
-) -> Result<InvoiceDto, String> {
+) -> Result<InvoiceDto, AppError> {
     let today = Utc::now().date_naive();
-    state
+    state.org()?
         .get_invoice
         .execute(InvoiceId(id))
         .map(|(i, paid, client_name, logs)| {
             InvoiceDto::from_invoice_enriched(&i, paid, today, client_name, &logs)
         })
-        .map_err(to_ipc_err)
 }
 
 /// Returns the rendered PDF bytes for an invoice that has already been
@@ -123,22 +112,20 @@ pub fn invoice_get(
 pub fn invoice_pdf_bytes(
     state: State<'_, AppState>,
     id: Uuid,
-) -> Result<Vec<u8>, String> {
-    state
+) -> Result<Vec<u8>, AppError> {
+    state.org()?
         .get_invoice_pdf
         .execute(InvoiceId(id))
-        .map_err(to_ipc_err)
 }
 
 /// Sends the invoice's rendered PDF to the OS default printer. No print
 /// dialog — users pick their default printer at the OS level.
 #[tauri::command]
 #[specta::specta]
-pub fn invoice_print(state: State<'_, AppState>, id: Uuid) -> Result<(), String> {
-    state
+pub fn invoice_print(state: State<'_, AppState>, id: Uuid) -> Result<(), AppError> {
+    state.org()?
         .print_invoice
         .execute(InvoiceId(id))
-        .map_err(to_ipc_err)
 }
 
 /// Opens the invoice PDF in the OS default application. Unlike
@@ -150,9 +137,8 @@ pub fn invoice_print(state: State<'_, AppState>, id: Uuid) -> Result<(), String>
 pub fn invoice_open_external(
     state: State<'_, AppState>,
     id: Uuid,
-) -> Result<(), String> {
-    state
+) -> Result<(), AppError> {
+    state.org()?
         .open_invoice_externally
         .execute(InvoiceId(id))
-        .map_err(to_ipc_err)
 }

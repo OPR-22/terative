@@ -7,30 +7,29 @@ use crate::application::dto::{
 };
 use crate::domain::client::ClientId;
 
-use super::{to_ipc_err, AppState};
+use super::AppState;
+use crate::application::AppError;
 
 #[tauri::command]
 #[specta::specta]
 pub fn accounting_list_outstanding(
     state: State<'_, AppState>,
-) -> Result<Vec<InvoicePaymentRowDto>, String> {
-    state
+) -> Result<Vec<InvoicePaymentRowDto>, AppError> {
+    state.org()?
         .accounting
         .list_outstanding()
         .map(|list| list.iter().map(Into::into).collect())
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn accounting_list_overdue(
     state: State<'_, AppState>,
-) -> Result<Vec<InvoicePaymentRowDto>, String> {
-    state
+) -> Result<Vec<InvoicePaymentRowDto>, AppError> {
+    state.org()?
         .accounting
         .list_overdue()
         .map(|list| list.iter().map(Into::into).collect())
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
@@ -38,12 +37,11 @@ pub fn accounting_list_overdue(
 pub fn accounting_revenue_by_period(
     state: State<'_, AppState>,
     input: RevenueByPeriodInputDto,
-) -> Result<Vec<RevenueBucketDto>, String> {
-    state
+) -> Result<Vec<RevenueBucketDto>, AppError> {
+    state.org()?
         .accounting
         .revenue_by_period(input.into())
         .map(|list| list.iter().map(Into::into).collect())
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
@@ -51,12 +49,11 @@ pub fn accounting_revenue_by_period(
 pub fn accounting_revenue_by_client(
     state: State<'_, AppState>,
     input: RevenueByClientInputDto,
-) -> Result<Vec<RevenueByClientDto>, String> {
-    state
+) -> Result<Vec<RevenueByClientDto>, AppError> {
+    state.org()?
         .accounting
         .revenue_by_client(input.into())
         .map(|list| list.iter().map(Into::into).collect())
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
@@ -64,46 +61,42 @@ pub fn accounting_revenue_by_client(
 pub fn accounting_client_balance(
     state: State<'_, AppState>,
     client_id: Uuid,
-) -> Result<ClientBalanceDto, String> {
-    state
+) -> Result<ClientBalanceDto, AppError> {
+    state.org()?
         .accounting
         .client_balance(ClientId(client_id))
         .map(|b| (&b).into())
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn accounting_client_balances(
     state: State<'_, AppState>,
-) -> Result<Vec<ClientBalanceDto>, String> {
-    state
+) -> Result<Vec<ClientBalanceDto>, AppError> {
+    state.org()?
         .accounting
         .client_balances()
         .map(|list| list.iter().map(Into::into).collect())
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn accounting_aging_report(
     state: State<'_, AppState>,
-) -> Result<Vec<AgingRowDto>, String> {
-    state
+) -> Result<Vec<AgingRowDto>, AppError> {
+    state.org()?
         .accounting
         .aging_report()
         .map(|list| list.iter().map(Into::into).collect())
-        .map_err(to_ipc_err)
 }
 
 #[tauri::command]
 #[specta::specta]
 pub fn accounting_dashboard_summary(
     state: State<'_, AppState>,
-) -> Result<DashboardSummaryDto, String> {
-    state
+) -> Result<DashboardSummaryDto, AppError> {
+    state.org()?
         .accounting
         .dashboard_summary()
         .map(|s| (&s).into())
-        .map_err(to_ipc_err)
 }

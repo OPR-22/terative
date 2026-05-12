@@ -5,6 +5,7 @@ import {
   type NewCatalogItemDto,
   type UpdateCatalogItemDto,
 } from "../ipc";
+import { registerOrgScopedReset } from "./orgScopedRegistry";
 
 interface CatalogState {
   items: CatalogItemDto[];
@@ -19,11 +20,15 @@ interface CatalogState {
   unarchive: (id: string) => Promise<void>;
 }
 
-export const useCatalogStore = create<CatalogState>((set, get) => ({
-  items: [],
+const INITIAL = {
+  items: [] as CatalogItemDto[],
   loading: false,
-  error: null,
+  error: null as string | null,
   includeArchived: false,
+};
+
+export const useCatalogStore = create<CatalogState>((set, get) => ({
+  ...INITIAL,
   setIncludeArchived: (includeArchived) => {
     set({ includeArchived });
     void get().refresh();
@@ -56,3 +61,5 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
     await get().refresh();
   },
 }));
+
+registerOrgScopedReset(() => useCatalogStore.setState({ ...INITIAL }));

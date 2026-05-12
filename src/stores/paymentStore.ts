@@ -6,6 +6,7 @@ import {
   type PaymentDto,
   type UpdatePaymentDto,
 } from "../ipc";
+import { registerOrgScopedReset } from "./orgScopedRegistry";
 
 interface PaymentState {
   payments: PaymentDto[];
@@ -19,11 +20,15 @@ interface PaymentState {
   remove: (id: string) => Promise<void>;
 }
 
-export const usePaymentStore = create<PaymentState>((set, get) => ({
-  payments: [],
+const INITIAL = {
+  payments: [] as PaymentDto[],
   loading: false,
-  error: null,
-  query: {},
+  error: null as string | null,
+  query: {} as ListPaymentsQueryDto,
+};
+
+export const usePaymentStore = create<PaymentState>((set, get) => ({
+  ...INITIAL,
   setQuery: (query) => {
     set({ query });
     void get().refresh();
@@ -52,3 +57,5 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
     await get().refresh();
   },
 }));
+
+registerOrgScopedReset(() => usePaymentStore.setState({ ...INITIAL }));

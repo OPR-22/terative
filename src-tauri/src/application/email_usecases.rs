@@ -7,7 +7,7 @@ use crate::application::ports::{
     ClientRepository, CredentialStore, EmailAttachment, EmailLogRepository, EmailSender,
     EmailTemplateRepository, InvoiceRepository, OutboundEmail, SettingsRepository,
 };
-use crate::application::AppError;
+use crate::application::{AppError, ErrorCode};
 use crate::domain::email_log::{EmailLog, NewEmailLog};
 use crate::domain::email_template::EmailTemplateType;
 use crate::domain::invoice::{Invoice, InvoiceId, InvoiceStatus};
@@ -76,7 +76,7 @@ impl TestEmailConnection {
         let password = self
             .credentials
             .get_smtp_password()?
-            .ok_or(AppError::MissingSmtpPassword)?;
+            .ok_or_else(|| AppError::failed_precondition(ErrorCode::SmtpPasswordMissing))?;
         self.email
             .test_connection(&cfg.smtp_host, cfg.smtp_port, &cfg.sender_address, &password)?;
         Ok(())
@@ -118,23 +118,20 @@ impl SendInvoice {
     /// every email log row for it (including the just-recorded one), so the
     /// caller can build a response DTO without a second round-trip.
     pub fn execute(&self, id: InvoiceId) -> Result<(Invoice, Vec<EmailLog>), AppError> {
-        let mut invoice = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
+        let mut invoice = self.invoices.get(id)?.ok_or(AppError::resource_not_found())?;
         if invoice.status != InvoiceStatus::Finalized && invoice.status != InvoiceStatus::Sent {
-            return Err(AppError::Invoice(
-                crate::domain::invoice::InvoiceError::NotSendable,
-            ));
+            return Err(crate::domain::invoice::InvoiceError::NotSendable.into());
         }
         let pdf_path = invoice
             .pdf_path
             .clone()
-            .ok_or(AppError::MissingInvoicePdf)?;
-        let pdf_bytes = std::fs::read(&pdf_path)
-            .map_err(|e| AppError::Repo(crate::application::RepoError::Storage(e.to_string())))?;
+            .ok_or_else(|| AppError::failed_precondition(ErrorCode::InvoiceMissingPdf))?;
+        let pdf_bytes = std::fs::read(&pdf_path).map_err(AppError::from)?;
 
         let client = self
             .clients
             .get(invoice.client_id)?
-            .ok_or(AppError::NotFound)?;
+            .ok_or(AppError::resource_not_found())?;
         let seller = self.settings.get_seller_profile()?;
         let currency = self.settings.get_currency_config()?;
         let cfg = self.settings.get_email_config()?;
@@ -143,9 +140,9 @@ impl SendInvoice {
         let to_address = client
             .default_email()
             .map(str::to_owned)
-            .ok_or_else(|| AppError::Email(crate::application::ports::EmailError::NotConfigured(
-                "client has no email address".into(),
-            )))?;
+            .ok_or_else(|| AppError::Internal {
+                detail: "client has no email address".into(),
+            })?;
 
         let prior_logs = self.email_logs.list_by_invoices(&[invoice.id])?;
         let template_type = if prior_logs.get(&invoice.id).is_some_and(|v| !v.is_empty()) {
@@ -156,7 +153,7 @@ impl SendInvoice {
         let email_template = self
             .email_templates
             .get_default_for_type(template_type)?
-            .ok_or(AppError::NoDefaultEmailTemplate)?;
+            .ok_or_else(|| AppError::failed_precondition(ErrorCode::EmailTemplateNoDefault))?;
 
         let vars = build_placeholder_vars(&invoice, &client, &seller, &currency);
         let subject = email_template.render_subject(&vars);
@@ -165,7 +162,7 @@ impl SendInvoice {
         let password = self
             .credentials
             .get_smtp_password()?
-            .ok_or(AppError::MissingSmtpPassword)?;
+            .ok_or_else(|| AppError::failed_precondition(ErrorCode::SmtpPasswordMissing))?;
 
         let file_name = format!(
             "invoice-{}.pdf",
@@ -692,7 +689,7 @@ mod tests {
         let err = TestEmailConnection::new(settings, creds, sender)
             .execute()
             .unwrap_err();
-        assert!(matches!(err, AppError::MissingSmtpPassword));
+        assert!(err.is(ErrorCode::SmtpPasswordMissing));
     }
 
     #[test]
@@ -711,7 +708,7 @@ mod tests {
         let err = TestEmailConnection::new(settings, creds, sender)
             .execute()
             .unwrap_err();
-        assert!(matches!(err, AppError::EmailConfig(_)));
+        assert!(err.is(ErrorCode::EmailConfigEmptyHost));
     }
 
     // --- SendInvoice ---
@@ -803,10 +800,7 @@ mod tests {
         )
         .execute(invoice.id)
         .unwrap_err();
-        assert!(matches!(
-            err,
-            AppError::Invoice(crate::domain::invoice::InvoiceError::NotSendable)
-        ));
+        assert!(err.is(ErrorCode::InvoiceNotSendable));
     }
 
     #[test]
@@ -835,7 +829,7 @@ mod tests {
         )
         .execute(invoice.id)
         .unwrap_err();
-        assert!(matches!(err, AppError::MissingInvoicePdf));
+        assert!(err.is(ErrorCode::InvoiceMissingPdf));
     }
 
     #[test]
@@ -871,7 +865,7 @@ mod tests {
         )
         .execute(invoice.id)
         .unwrap_err();
-        assert!(matches!(err, AppError::Email(EmailError::NotConfigured(_))));
+        assert!(matches!(err, AppError::Internal { .. }));
     }
 
     #[test]
@@ -908,7 +902,7 @@ mod tests {
         )
         .execute(invoice.id)
         .unwrap_err();
-        assert!(matches!(err, AppError::Email(EmailError::Transport(_))));
+        assert!(matches!(err, AppError::Internal { .. }));
         let reloaded = invoices.0.lock().get(&invoice.id).cloned().unwrap();
         assert_eq!(reloaded.status, InvoiceStatus::Finalized);
     }

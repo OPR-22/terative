@@ -7,6 +7,17 @@ import {
   type PageDto,
   type UpdateDraftInvoiceDto,
 } from "../ipc";
+import { registerOrgScopedReset } from "./orgScopedRegistry";
+
+const INITIAL = {
+  invoices: [] as InvoiceDto[],
+  page: null as PageDto<InvoiceDto> | null,
+  loading: false,
+  error: null as string | null,
+  query: {} as ListInvoicesQueryDto,
+  currentPage: 1,
+  perPage: 25,
+};
 
 interface InvoiceState {
   invoices: InvoiceDto[];
@@ -30,13 +41,7 @@ interface InvoiceState {
 }
 
 export const useInvoiceStore = create<InvoiceState>((set, get) => ({
-  invoices: [],
-  page: null,
-  loading: false,
-  error: null,
-  query: {},
-  currentPage: 1,
-  perPage: 25,
+  ...INITIAL,
   setQuery: (query) => {
     set({ query, currentPage: 1 });
     void get().refresh();
@@ -98,3 +103,5 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
     return i;
   },
 }));
+
+registerOrgScopedReset(() => useInvoiceStore.setState({ ...INITIAL }));

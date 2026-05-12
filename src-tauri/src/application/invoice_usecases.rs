@@ -8,6 +8,7 @@ use crate::application::ports::{
     SettingsRepository, TaxRepository, TemplateRepository,
 };
 use crate::application::{AppError, RepoError};
+#[cfg(test)] use crate::application::ErrorCode;
 use crate::domain::invoice::{Invoice, InvoiceId, InvoiceStatus, NewInvoice};
 use crate::domain::money::Money;
 use crate::domain::line_item::NewLineItem;
@@ -36,7 +37,7 @@ fn resolve_template(
     template_id: Option<crate::domain::template::TemplateId>,
 ) -> Result<crate::domain::template::InvoiceTemplate, AppError> {
     if let Some(tid) = template_id {
-        return repo.get(tid)?.ok_or(AppError::NotFound);
+        return repo.get(tid)?.ok_or(AppError::resource_not_found());
     }
     if let Some(tpl) = repo.get_default()? {
         return Ok(tpl);
@@ -100,7 +101,7 @@ impl UpdateDraftInvoice {
         Self { invoices, taxes }
     }
     pub fn execute(&self, input: UpdateDraftInvoiceInput) -> Result<Invoice, AppError> {
-        let mut invoice = self.invoices.get(input.id)?.ok_or(AppError::NotFound)?;
+        let mut invoice = self.invoices.get(input.id)?.ok_or(AppError::resource_not_found())?;
         let taxes = load_taxes(self.taxes.as_ref(), &input.tax_ids)?;
         invoice.update_draft(
             input.line_items,
@@ -150,7 +151,7 @@ impl FinalizeInvoice {
     }
 
     pub fn execute(&self, id: InvoiceId) -> Result<Invoice, AppError> {
-        let mut invoice = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
+        let mut invoice = self.invoices.get(id)?.ok_or(AppError::resource_not_found())?;
         let number = self.numbers.next()?;
         invoice.finalize(number, Utc::now())?;
 
@@ -161,7 +162,7 @@ impl FinalizeInvoice {
         let client = self
             .clients
             .get(invoice.client_id)?
-            .ok_or(AppError::NotFound)?;
+            .ok_or(AppError::resource_not_found())?;
 
         let pdf_bytes = self.pdf.render(PdfRenderInput {
             invoice: &invoice,
@@ -190,7 +191,7 @@ impl DuplicateInvoice {
         Self { invoices }
     }
     pub fn execute(&self, id: InvoiceId) -> Result<Invoice, AppError> {
-        let source = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
+        let source = self.invoices.get(id)?.ok_or(AppError::resource_not_found())?;
         let now = Utc::now();
         let draft = Invoice {
             id: InvoiceId::new(),
@@ -246,7 +247,7 @@ impl CancelInvoice {
         }
     }
     pub fn execute(&self, id: InvoiceId) -> Result<Invoice, AppError> {
-        let mut invoice = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
+        let mut invoice = self.invoices.get(id)?.ok_or(AppError::resource_not_found())?;
         invoice.cancel(Utc::now())?;
 
         // Re-render the PDF with a CANCELLED watermark. If the invoice was never
@@ -261,7 +262,7 @@ impl CancelInvoice {
             let client = self
                 .clients
                 .get(invoice.client_id)?
-                .ok_or(AppError::NotFound)?;
+                .ok_or(AppError::resource_not_found())?;
             let watermark = cancelled_watermark(prefs.language);
             let bytes = self.pdf.render(PdfRenderInput {
                 invoice: &invoice,
@@ -368,8 +369,8 @@ impl GetInvoicePdf {
     }
 
     pub fn execute(&self, id: InvoiceId) -> Result<Vec<u8>, AppError> {
-        let invoice = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
-        let path = invoice.pdf_path.as_deref().ok_or(AppError::NotFound)?;
+        let invoice = self.invoices.get(id)?.ok_or(AppError::resource_not_found())?;
+        let path = invoice.pdf_path.as_deref().ok_or(AppError::resource_not_found())?;
         Ok(self.pdf_storage.read(path)?)
     }
 }
@@ -400,8 +401,8 @@ impl PrintInvoice {
     }
 
     pub fn execute(&self, id: InvoiceId) -> Result<(), AppError> {
-        let invoice = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
-        let path = invoice.pdf_path.as_deref().ok_or(AppError::NotFound)?;
+        let invoice = self.invoices.get(id)?.ok_or(AppError::resource_not_found())?;
+        let path = invoice.pdf_path.as_deref().ok_or(AppError::resource_not_found())?;
 
         #[cfg(target_os = "macos")]
         {
@@ -483,8 +484,8 @@ impl OpenInvoiceExternally {
     }
 
     pub fn execute(&self, id: InvoiceId) -> Result<(), AppError> {
-        let invoice = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
-        let path = invoice.pdf_path.as_deref().ok_or(AppError::NotFound)?;
+        let invoice = self.invoices.get(id)?.ok_or(AppError::resource_not_found())?;
+        let path = invoice.pdf_path.as_deref().ok_or(AppError::resource_not_found())?;
 
         // We deliberately use `spawn()` (not `output()`) and don't wait
         // on the child. Blocking the IPC thread until the opener exits
@@ -539,7 +540,7 @@ impl GetInvoice {
         id: InvoiceId,
     ) -> Result<(Invoice, Money, Option<String>, Vec<crate::domain::email_log::EmailLog>), AppError>
     {
-        let invoice = self.invoices.get(id)?.ok_or(AppError::NotFound)?;
+        let invoice = self.invoices.get(id)?.ok_or(AppError::resource_not_found())?;
         let paid = self.payments.allocated_for_invoice(id)?;
         let names = self.clients.names_for(&[invoice.client_id])?;
         let client_name = names.get(&invoice.client_id).cloned();
@@ -800,7 +801,7 @@ mod tests {
                 notes: None,
             })
             .unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 
     fn make_cancel(
@@ -841,10 +842,7 @@ mod tests {
             .unwrap();
         let (uc, _, _) = make_cancel(inv_repo);
         let err = uc.execute(created.id).unwrap_err();
-        assert!(matches!(
-            err,
-            AppError::Invoice(crate::domain::invoice::InvoiceError::CannotCancelDraft)
-        ));
+        assert!(err.is(ErrorCode::InvoiceCannotCancelDraft));
     }
 
     #[test]
@@ -1054,7 +1052,7 @@ mod tests {
         let err = GetInvoice::new(inv_repo, stub_payments(), stub_clients(), stub_email_logs())
             .execute(InvoiceId::new())
             .unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 
     // --- FinalizeInvoice pipeline test with fake ports ---
@@ -1368,6 +1366,6 @@ mod tests {
             Arc::new(CapturingPdfStorage::default()),
         );
         let err = finalize.execute(InvoiceId::new()).unwrap_err();
-        assert!(matches!(err, AppError::NotFound));
+        assert!(err.is(ErrorCode::ResourceNotFound));
     }
 }
