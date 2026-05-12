@@ -63,6 +63,14 @@ impl OrgRegistry {
         self.dir_for(code).join("backups").join("system")
     }
 
+    /// Per-bookmark webview data directory, scoped to the org. Used by the
+    /// bookmark webviews so each org keeps its own cookies, localStorage,
+    /// service-worker caches — different Gmail accounts logged in per org,
+    /// for example.
+    pub fn bookmark_webview_dir(&self, code: &OrgCode, bookmark_id: &str) -> PathBuf {
+        self.dir_for(code).join("webviews").join(bookmark_id)
+    }
+
     /// True if an org folder exists on disk for `code`. Uses the OS's
     /// native path semantics — case-sensitive on Linux, case-insensitive
     /// on macOS/Windows — so distinct-code orgs can coexist where the

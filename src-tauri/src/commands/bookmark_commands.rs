@@ -1,8 +1,10 @@
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::Mutex;
 use tauri::webview::{NewWindowResponse, WebviewBuilder, WebviewWindowBuilder};
 use tauri::{LogicalPosition, LogicalSize, Manager, Url, WebviewUrl};
+use uuid::Uuid;
 
 use crate::application::AppError;
 
@@ -71,6 +73,53 @@ fn label_for(id: &str) -> String {
 
 fn is_bookmark_label(label: &str) -> bool {
     label.starts_with(BOOKMARK_LABEL_PREFIX)
+}
+
+/// True for any webview created by the bookmark feature — the per-URL
+/// `bookmark:*` content webviews and the shared `bookmark-toolbar`.
+/// Used by `close_all_bookmark_webviews` only; layout/hide logic uses
+/// the narrower `is_bookmark_label`.
+fn is_bookmark_owned_label(label: &str) -> bool {
+    is_bookmark_label(label) || label == TOOLBAR_LABEL
+}
+
+/// Namespace UUID for deriving per-(org, bookmark) data-store identifiers.
+/// Picked once at design time and never changes — switching it would
+/// orphan every persisted WKWebsiteDataStore on macOS users' disks.
+const TERATIVE_WEBVIEW_NAMESPACE: Uuid = Uuid::from_bytes([
+    0x54, 0x45, 0x52, 0x41, 0x42, 0x4f, 0x4f, 0x4b,
+    0x4d, 0x41, 0x52, 0x4b, 0x57, 0x45, 0x42, 0x56,
+]);
+
+/// Stable 16-byte identifier for a (org, bookmark) pair. Used as
+/// `WKWebsiteDataStore` identifier on macOS — the WebView-level analogue
+/// of a data directory on platforms that don't expose disk paths for
+/// per-webview storage. Derived deterministically so reopening the same
+/// org+bookmark always lands in the same storage partition.
+fn webview_data_store_id(org_code: &str, bookmark_id: &str) -> [u8; 16] {
+    let name = format!("{org_code}/{bookmark_id}");
+    *Uuid::new_v5(&TERATIVE_WEBVIEW_NAMESPACE, name.as_bytes()).as_bytes()
+}
+
+/// Closes every bookmark + toolbar webview. Called when the active org
+/// changes so the next bookmark open is built against the new org's
+/// `data_directory` / `data_store_identifier`.
+///
+/// Webviews persist for the app's lifetime by design; the only time they
+/// get torn down outside this path is window close.
+pub(crate) fn close_all_bookmark_webviews(app: &tauri::AppHandle) {
+    *ACTIVE_BOOKMARK.lock() = None;
+    let labels: Vec<String> = app
+        .webviews()
+        .keys()
+        .filter(|l| is_bookmark_owned_label(l))
+        .cloned()
+        .collect();
+    for label in labels {
+        if let Some(w) = app.get_webview(&label) {
+            let _ = w.close();
+        }
+    }
 }
 
 fn parse_url(s: &str) -> Result<Url, AppError> {
@@ -339,6 +388,7 @@ fn ensure_toolbar_webview(
 #[specta::specta]
 pub fn bookmark_nav_open(
     app: tauri::AppHandle,
+    state: tauri::State<'_, super::AppState>,
     id: String,
     url: String,
     x: f64,
@@ -347,6 +397,7 @@ pub fn bookmark_nav_open(
     height: f64,
     dpr: f64,
 ) -> Result<(), AppError> {
+    let org_code = state.active_code().ok_or_else(AppError::no_active_org)?;
     let parsed = parse_url(&url)?;
     let label = label_for(&id);
     hide_other_bookmarks(&app, &label);
@@ -385,6 +436,14 @@ pub fn bookmark_nav_open(
     let main_webview = app
         .get_webview("main")
         .ok_or_else(|| "main webview not found".to_string())?;
+
+    // Per-org webview storage: cookies, localStorage, and service-worker
+    // caches all live under <orgs_root>/<code>/webviews/<bookmark_id>/.
+    // Different orgs → different login sessions for the same site.
+    let data_dir: PathBuf = state.org_registry.bookmark_webview_dir(&org_code, &id);
+    std::fs::create_dir_all(&data_dir).map_err(AppError::from)?;
+    let store_id = webview_data_store_id(org_code.as_str(), &id);
+
     // Native engine-level callback for `window.open` and `target=_blank`
     // links. Tauri forwards this to wry's `with_new_window_req_handler`,
     // which fires inside WKWebView/webkit2gtk/WebView2 *before* the popup
@@ -393,8 +452,15 @@ pub fn bookmark_nav_open(
     // `window_features(features)` carries the platform-linking glue
     // (related_view on Linux, environment on Windows, webview_configuration
     // on macOS) that wry needs to keep the popup associated with its opener.
+    //
+    // Popups MUST share storage with the parent bookmark webview — OAuth
+    // callbacks need to read/write cookies in the parent's partition.
     let app_for_popups = app.clone();
+    let popup_data_dir = data_dir.clone();
+    let popup_store_id = store_id;
     let builder = WebviewBuilder::new(&label, WebviewUrl::External(parsed))
+        .data_directory(data_dir.clone())
+        .data_store_identifier(store_id)
         .on_new_window(move |target_url: tauri::Url, features| {
             let n = POPUP_LABEL_SEQ.fetch_add(1, Ordering::Relaxed);
             let popup_label = format!("bookmark-popup-{n}");
@@ -410,6 +476,8 @@ pub fn bookmark_nav_open(
                 popup_label,
                 WebviewUrl::External(target_url),
             )
+            .data_directory(popup_data_dir.clone())
+            .data_store_identifier(popup_store_id)
             .window_features(features)
             .title(initial_title)
             .on_document_title_changed(|window, title| {
@@ -566,7 +634,6 @@ pub fn bookmark_nav_hide(app: tauri::AppHandle) -> Result<(), AppError> {
 use crate::application::dto::{BookmarkDto, NewBookmarkDto, UpdateBookmarkDto};
 use crate::domain::bookmark::BookmarkId;
 use tauri::State;
-use uuid::Uuid;
 
 #[tauri::command]
 #[specta::specta]

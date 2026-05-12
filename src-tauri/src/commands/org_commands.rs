@@ -64,12 +64,18 @@ pub fn org_create(
 #[tauri::command]
 #[specta::specta]
 pub fn org_open(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     code: String,
     _password: Option<String>, // reserved for T03 encryption
 ) -> Result<OrgInfoDto, AppError> {
     let parsed = OrgCode::parse(&code)?;
     let db_path = state.org_registry.db_path(&parsed);
+
+    // Bookmark webviews are bound to a per-(org, bookmark) data partition
+    // at construction. Close any open ones so the next bookmark navigation
+    // creates fresh webviews against the new org's storage.
+    crate::commands::bookmark_commands::close_all_bookmark_webviews(&app);
 
     let db = open_org_db(&db_path).map_err(|e| match e {
         OpenOrgError::NotFound => AppError::org_not_found(code.clone()),
@@ -106,17 +112,27 @@ pub fn org_open(
 
 #[tauri::command]
 #[specta::specta]
-pub fn org_close(state: State<'_, AppState>) -> Result<(), AppError> {
+pub fn org_close(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), AppError> {
+    crate::commands::bookmark_commands::close_all_bookmark_webviews(&app);
     state.close_org();
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn org_delete(state: State<'_, AppState>, code: String) -> Result<(), AppError> {
+pub fn org_delete(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    code: String,
+) -> Result<(), AppError> {
     let parsed = OrgCode::parse(&code)?;
     // If the org is currently active, close it first so the DB handle is
     // released (Windows would otherwise refuse the directory delete).
+    // Tear down its bookmark webviews unconditionally — they hold open
+    // file handles inside the org folder we're about to delete.
     if state
         .active_code()
         .map(|c| c.as_str() == parsed.as_str())
@@ -124,6 +140,7 @@ pub fn org_delete(state: State<'_, AppState>, code: String) -> Result<(), AppErr
     {
         state.close_org();
     }
+    crate::commands::bookmark_commands::close_all_bookmark_webviews(&app);
     state.org_registry.delete(&parsed)
 }
 
