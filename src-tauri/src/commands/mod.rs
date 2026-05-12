@@ -210,7 +210,13 @@ impl OrgServices {
             settings_repo.clone(),
             default_pdf_dir,
         ));
-        let credentials = Arc::new(KeyringCredentialStore::new("terative", "smtp"));
+        // Per-org SMTP credential entry. The keyring "user" includes the org
+        // code so different orgs each get their own slot in the OS keychain —
+        // setting an SMTP password in one org never affects another.
+        let credentials = Arc::new(KeyringCredentialStore::new(
+            "terative",
+            format!("smtp:{}", code.as_str()),
+        ));
         let email_sender = Arc::new(LettreEmailSender::new());
         let data_management: Arc<dyn DataManagement> = Arc::new(FilesystemDataManagement::new(
             db.clone(),

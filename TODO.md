@@ -10,13 +10,15 @@ appends without reshuffling other tiers.
 
 ## Tier 1 — Foundational / cross-cutting
 
-- [ ] T1.01 Multi-organisation — add `org_id` across schema, repos, queries, use cases. Do before other tier-1 items.
+- [x] T1.01 Multi-organisation — add `org_id` across schema, repos, queries, use cases. Do before other tier-1 items.
 - [ ] T1.02 Multi-currency — domain `Money`, per-invoice currency, FX, accounting roll-ups.
-- [ ] T1.03 Database encryption / password — SQLCipher via `rusqlite`, key derivation, unlock at app start, backup/restore impact.
+- [ ] T1.02.5 Tax groups (grouping up multiple taxes so it shows up as a single checkbox in UI) 
+- [ ] T1.03 Database encryption / password — SQLCipher via `rusqlite`, key derivation, unlock on org selection, backup/restore impact.
 - [ ] T1.04 Activity history / audit log — `events` table written by use cases, covers invoices/clients/payments/backups.
 - [ ] T1.05 Invoice file storage — `year/month/<name>.pdf` layout, numbering reset to `000001`, client name in filename, migrate existing files.
 - [ ] T1.06 Discounts on invoices — line-level vs invoice-level, tax interaction, PDF, accounting.
 - [ ] T1.07 Global search — FTS5 index across clients, invoices, catalog items.
+- [ ] T1.08 App updates (like discord ? Like freetube ? apple/microsoft dev account required ?) 
 
 ## Tier 2 — New domains / significant features
 
@@ -45,9 +47,10 @@ appends without reshuffling other tiers.
 - [ ] T3.12 Settings page → tabs for sub-sections.
 - [ ] T3.13 Email templates: example-value preview + unbound-variable errors, drag-drop variable insert, localized variable picker, prettier list.
 - [ ] T3.14 Email history shows actual sent content from client/invoice.
-- [ ] T3.15 Carnet link on empty client page.
+- [ ] T3.15 Carnet link to settings on empty client page.
 - [ ] T3.16 add a 'sent' status instead of combining all statuses (draft+finalized+sent) + filters.
 - [ ] T3.17 add sorting by invoice # and date 
+- [ ] T3.18 Smart save forms in memory (ex: so a user can click on a user profile and come back to the invoice without losing invoice entered data)
 
 ## Tier 4 — Polish
 
@@ -58,12 +61,12 @@ appends without reshuffling other tiers.
 - [ ] T4.05 Fix non-functional breadcrumbs (e.g. email template → list).
 - [ ] T4.06 Consistent table row actions (edit label vs icon vs row-click).
 - [ ] T4.07 Full dates in invoice view.
-- [ ] T4.08 "Encaisser" button uses coins icon.
+- [ ] T4.08 "Encaisser" button must use coins icon everywhere.
 - [ ] T4.09 Description on "cancel invoice" action.
 - [ ] T4.10 Loaders on slow-action buttons (invoice create, email send).
 - [ ] T4.11 Recharts (or similar) for dashboard + accounting graphs.
 - [ ] T4.12 UI animations — tab switch, sidebar collapse.
-- [ ] T4.13 Logo weight + add to sidebar top.
+- [ ] T4.13 Increase logo icon weight + add to sidebar top.
 - [ ] T4.14 Remove hover on top-4 dashboard cards.
 - [ ] T4.15 Error toast lasts 5s.
 - [ ] T4.16 Remove duplicate workspace name (bottom-left).
@@ -72,3 +75,7 @@ appends without reshuffling other tiers.
 - [ ] T4.19 Review product catalog defaults (unit, quantity).
 - [ ] T4.20 Make sure backups/restore work cross-platform.
 - [ ] T4.21 Add 'mark as paid' button on the 'late invoice' section in dashboard.
+- [ ] T4.22 Hide $ numbers on dashboards, like wealthsimple (replace number by dots)
+
+## Tier 5 - Marketing
+- [ ] T5.01 Website  
