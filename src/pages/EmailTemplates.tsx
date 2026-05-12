@@ -85,7 +85,7 @@ export function EmailTemplates() {
       }
       closeEditor();
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     }
   };
 
@@ -263,7 +263,7 @@ export function EmailTemplates() {
                                 leadingIcon={<Star size={11} strokeWidth={1.5} />}
                                 onClick={() =>
                                   void setDefault(tmpl.id).catch((e) =>
-                                    toast.error(String(e)),
+                                    toast.error(e),
                                   )
                                 }
                               >
@@ -277,7 +277,7 @@ export function EmailTemplates() {
                                 onClick={() => {
                                   if (confirm(t("common.confirm_delete"))) {
                                     void remove(tmpl.id).catch((e) =>
-                                      toast.error(String(e)),
+                                      toast.error(e),
                                     );
                                   }
                                 }}

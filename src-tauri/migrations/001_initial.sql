@@ -22,6 +22,9 @@ CREATE TABLE clients (
     pronouns            TEXT,
     occupation          TEXT,
     language            TEXT,    -- ISO 639-1 code (fr, en, nl, ...)
+    -- Pre-fills the currency on new invoices created for this client. Does
+    -- NOT restrict: the user can still invoice in any currency.
+    default_currency    TEXT NOT NULL,
     archived_at         TEXT,    -- RFC 3339 timestamp; NULL = active
     created_at          TEXT NOT NULL
 );
@@ -118,14 +121,26 @@ CREATE TABLE catalog_items (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
     kind            TEXT NOT NULL CHECK (kind IN ('Product', 'Service')),
-    default_price   INTEGER NOT NULL,
-    currency        TEXT NOT NULL DEFAULT 'EUR',
     unit            TEXT,
     reference       TEXT,
     archived_at     TEXT
 );
 
+-- Per-currency prices for a catalog item. A single item may have one row
+-- per currency it can be quoted in. Strict-silos accounting: there is no
+-- conversion between rows here; each price is the authoritative amount
+-- in that currency. An item with no row for a given currency simply
+-- can't be auto-priced when added to an invoice in that currency
+-- (the user enters the unit price manually for that line).
+CREATE TABLE catalog_item_prices (
+    catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id) ON DELETE CASCADE,
+    currency        TEXT NOT NULL,
+    amount          INTEGER NOT NULL,             -- minor units of `currency`
+    PRIMARY KEY (catalog_item_id, currency)
+);
+
 CREATE INDEX idx_catalog_items_reference ON catalog_items(reference);
+CREATE INDEX idx_catalog_item_prices_item ON catalog_item_prices(catalog_item_id);
 
 CREATE TABLE tax_definitions (
     id              TEXT PRIMARY KEY,
@@ -182,14 +197,20 @@ CREATE TABLE invoices (
 );
 
 CREATE TABLE invoice_line_items (
-    id          TEXT PRIMARY KEY,
-    invoice_id  TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
-    description TEXT NOT NULL,
-    quantity    REAL NOT NULL DEFAULT 1.0,
-    unit_price  INTEGER NOT NULL,
-    total       INTEGER NOT NULL,
-    sort_order  INTEGER NOT NULL DEFAULT 0
+    id              TEXT PRIMARY KEY,
+    invoice_id      TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    -- Optional FK back to the catalog item the line was seeded from. The `unit_price` is a denormalized snapshot
+    catalog_item_id TEXT REFERENCES catalog_items(id) ON DELETE SET NULL,
+    description     TEXT NOT NULL,
+    quantity        REAL NOT NULL DEFAULT 1.0,
+    unit_price      INTEGER NOT NULL,
+    total           INTEGER NOT NULL,
+    sort_order      INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE INDEX idx_invoice_line_items_catalog_item
+    ON invoice_line_items(catalog_item_id)
+    WHERE catalog_item_id IS NOT NULL;
 
 CREATE TABLE invoice_taxes (
     id                  TEXT PRIMARY KEY,
@@ -330,25 +351,39 @@ FROM invoices i
 LEFT JOIN payment_allocations pa ON pa.invoice_id = i.id
 GROUP BY i.id;
 
+-- Per-currency client balance. Strict silos: there is no cross-currency
+-- conversion, so each (client, currency) pair gets its own row. Clients
+-- that have never been invoiced and have never paid produce no rows
+-- here — the clients table is the source of truth for "clients I have",
+-- this view is the source of truth for "balances I'm carrying".
 CREATE VIEW v_client_balance AS
+WITH inv AS (
+    SELECT client_id, currency, SUM(total) AS total_invoiced
+    FROM invoices
+    WHERE status IN ('Finalized', 'Sent')
+    GROUP BY client_id, currency
+),
+pay AS (
+    SELECT client_id, currency, SUM(amount) AS total_paid
+    FROM payments
+    GROUP BY client_id, currency
+),
+keys AS (
+    SELECT client_id, currency FROM inv
+    UNION
+    SELECT client_id, currency FROM pay
+)
 SELECT
     c.id,
     c.name,
+    k.currency,
     COALESCE(inv.total_invoiced, 0) AS total_invoiced,
     COALESCE(pay.total_paid, 0) AS total_paid,
     COALESCE(inv.total_invoiced, 0) - COALESCE(pay.total_paid, 0) AS outstanding
 FROM clients c
-LEFT JOIN (
-    SELECT client_id, SUM(total) AS total_invoiced
-    FROM invoices
-    WHERE status IN ('Finalized', 'Sent')
-    GROUP BY client_id
-) inv ON inv.client_id = c.id
-LEFT JOIN (
-    SELECT client_id, SUM(amount) AS total_paid
-    FROM payments
-    GROUP BY client_id
-) pay ON pay.client_id = c.id
+JOIN keys k ON k.client_id = c.id
+LEFT JOIN inv ON inv.client_id = c.id AND inv.currency = k.currency
+LEFT JOIN pay ON pay.client_id = c.id AND pay.currency = k.currency
 WHERE c.archived_at IS NULL;
 
 CREATE VIEW v_aging_report AS
@@ -357,6 +392,7 @@ SELECT
     i.number,
     i.client_id,
     c.name AS client_name,
+    i.currency,
     i.total,
     i.total - COALESCE(alloc.allocated, 0) AS amount_due,
     i.due_date,

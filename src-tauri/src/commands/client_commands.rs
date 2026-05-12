@@ -18,7 +18,7 @@ pub fn client_create(
 ) -> Result<ClientDto, AppError> {
     state.org()?
         .create_client
-        .execute(input.into())
+        .execute(input.try_into()?)
         .map(|c| (&c).into())
 }
 
@@ -30,7 +30,7 @@ pub fn client_update(
 ) -> Result<ClientDto, AppError> {
     state.org()?
         .update_client
-        .execute(input.into())
+        .execute(input.try_into()?)
         .map(|c| (&c).into())
 }
 

@@ -401,7 +401,8 @@ mod tests {
     fn insert_client(db: &Db, id: &str, name: &str) {
         let conn = db.lock();
         conn.execute(
-            "INSERT INTO clients (id, name, archived_at, created_at) VALUES (?1, ?2, NULL, ?3)",
+            "INSERT INTO clients (id, name, default_currency, archived_at, created_at)
+             VALUES (?1, ?2, 'EUR', NULL, ?3)",
             rusqlite::params![id, name, "2026-01-01T00:00:00Z"],
         )
         .unwrap();

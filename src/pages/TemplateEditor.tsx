@@ -142,7 +142,7 @@ export function TemplateEditor() {
       }
       navigate("/templates");
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setSubmitting(false);
     }

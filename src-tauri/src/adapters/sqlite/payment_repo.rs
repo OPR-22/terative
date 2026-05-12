@@ -267,24 +267,27 @@ impl PaymentRepository for SqlitePaymentRepository {
         Ok(())
     }
 
-    fn allocated_for_invoice(&self, id: InvoiceId) -> Result<Money, RepoError> {
+    fn allocated_for_invoice(
+        &self,
+        id: InvoiceId,
+        invoice_currency: Currency,
+    ) -> Result<Money, RepoError> {
         let conn = self.db.lock();
-        let row: (i64, Option<String>) = conn
+        // Strict silos: only sum allocations whose payment currency matches
+        // the invoice's currency. The use-case layer should already prevent
+        // mismatches from reaching the DB, but filtering here makes the
+        // query correct even if a future bug let one through.
+        let sum: i64 = conn
             .query_row(
-                "SELECT COALESCE(SUM(pa.amount), 0), MAX(p.currency)
+                "SELECT COALESCE(SUM(pa.amount), 0)
                  FROM payment_allocations pa
                  JOIN payments p ON p.id = pa.payment_id
-                 WHERE pa.invoice_id = ?1",
-                params![id.to_string()],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                 WHERE pa.invoice_id = ?1 AND p.currency = ?2",
+                params![id.to_string(), invoice_currency.code()],
+                |r| r.get(0),
             )
             .map_err(map_err)?;
-        let currency = row
-            .1
-            .as_deref()
-            .and_then(|c| Currency::new(c).ok())
-            .unwrap_or_else(|| Currency::new("EUR").unwrap());
-        Ok(Money::new(row.0, currency))
+        Ok(Money::new(sum, invoice_currency))
     }
 
     fn allocated_for_invoices(
@@ -434,6 +437,7 @@ mod tests {
                 date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
                 due_date: None,
                 line_items: vec![NewLineItem {
+                    catalog_item_id: None,
                     description: "Widget".into(),
                     quantity: dec!(1),
                     unit_price: Money::new(total_cents, eur()),
@@ -555,7 +559,7 @@ mod tests {
         ))
         .unwrap();
 
-        let allocated = repo.allocated_for_invoice(invoice_id).unwrap();
+        let allocated = repo.allocated_for_invoice(invoice_id, eur()).unwrap();
         assert_eq!(allocated.minor_units(), 1200);
     }
 
@@ -668,6 +672,9 @@ mod tests {
         repo.insert(&payment).unwrap();
         repo.delete(payment.id).unwrap();
         assert!(repo.get(payment.id).unwrap().is_none());
-        assert_eq!(repo.allocated_for_invoice(invoice_id).unwrap().minor_units(), 0);
+        assert_eq!(
+            repo.allocated_for_invoice(invoice_id, eur()).unwrap().minor_units(),
+            0
+        );
     }
 }

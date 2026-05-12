@@ -91,6 +91,11 @@ impl UpdatePayment {
 /// Enforces the cross-aggregate rule that `Payment::create` can't see:
 /// `sum(allocations on an invoice across all payments) <= invoice.total`.
 ///
+/// Also enforces the strict-silos rule that payment.currency == invoice.currency.
+/// This check is lifted out of the invoice domain on purpose: a future FX
+/// layer would relax this single condition (adding a per-allocation recorded
+/// rate) without touching domain invariants.
+///
 /// `previous` is the payment being updated (or `None` for create). When
 /// present, its own prior allocation on each invoice is subtracted from the
 /// "already allocated" total so re-saving doesn't reject itself.
@@ -104,7 +109,18 @@ fn validate_cross_aggregate_allocations(
         let invoice = invoices
             .get(alloc.invoice_id)?
             .ok_or(AppError::resource_not_found())?;
-        let total_allocated = payments.allocated_for_invoice(alloc.invoice_id)?;
+        // Strict-silos: the allocation (and therefore the payment, since
+        // Payment::create enforces allocation == payment currency) must be
+        // in the same currency as the invoice. Reject up front with a
+        // dedicated error code rather than letting can_accept_allocation
+        // surface the lower-level InvoiceAllocationCurrencyMismatch.
+        if alloc.amount.currency() != invoice.currency {
+            return Err(AppError::failed_precondition(
+                crate::application::ErrorCode::PaymentInvoiceCurrencyMismatch,
+            ));
+        }
+        let total_allocated =
+            payments.allocated_for_invoice(alloc.invoice_id, invoice.currency)?;
         let previous_self = previous
             .map(|p| sum_allocations_to(p, alloc.invoice_id, invoice.currency))
             .unwrap_or_else(|| Money::new(0, invoice.currency));
@@ -254,15 +270,19 @@ mod tests {
             self.inner.lock().remove(&id);
             Ok(())
         }
-        fn allocated_for_invoice(&self, id: InvoiceId) -> Result<Money, RepoError> {
+        fn allocated_for_invoice(
+            &self,
+            id: InvoiceId,
+            invoice_currency: Currency,
+        ) -> Result<Money, RepoError> {
             let g = self.inner.lock();
             let sum: i64 = g
                 .values()
                 .flat_map(|p| p.allocations.iter())
-                .filter(|a| a.invoice_id == id)
+                .filter(|a| a.invoice_id == id && a.amount.currency() == invoice_currency)
                 .map(|a| a.amount.minor_units())
                 .sum();
-            Ok(Money::new(sum, Currency::new("EUR").unwrap()))
+            Ok(Money::new(sum, invoice_currency))
         }
         fn allocated_for_invoices(
             &self,
@@ -361,7 +381,15 @@ mod tests {
         Currency::new("EUR").unwrap()
     }
 
+    fn usd() -> Currency {
+        Currency::new("USD").unwrap()
+    }
+
     fn make_finalized_invoice(total_cents: i64) -> Invoice {
+        make_finalized_invoice_in(total_cents, eur())
+    }
+
+    fn make_finalized_invoice_in(total_cents: i64, currency: Currency) -> Invoice {
         let mut inv = Invoice::create_draft(
             NewInvoice {
                 client_id: ClientId::new(),
@@ -369,13 +397,14 @@ mod tests {
                 date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
                 due_date: None,
                 line_items: vec![NewLineItem {
+                    catalog_item_id: None,
                     description: "line".into(),
                     quantity: Decimal::from(1),
-                    unit_price: Money::new(total_cents, eur()),
+                    unit_price: Money::new(total_cents, currency),
                 }],
                 tax_ids: vec![],
                 notes: None,
-                currency: eur(),
+                currency,
             },
             &[],
             Utc::now(),
@@ -635,6 +664,24 @@ mod tests {
     }
 
     #[test]
+    fn record_payment_rejects_allocation_to_invoice_in_different_currency() {
+        // Strict-silos: a EUR payment cannot be allocated to a USD invoice.
+        // The use case must reject this with PaymentInvoiceCurrencyMismatch
+        // — not InvoiceAllocationCurrencyMismatch (which is the lower-level
+        // domain rule) — so a future FX layer can lift exactly this check.
+        let (payments, invoices) = repos();
+        let usd_invoice = make_finalized_invoice_in(1000, usd());
+        invoices.seed(usd_invoice.clone());
+        let err = RecordPayment::new(payments, invoices)
+            .execute(new_input(1000, vec![alloc(usd_invoice.id, 1000)]))
+            .unwrap_err();
+        assert!(
+            err.is(ErrorCode::PaymentInvoiceCurrencyMismatch),
+            "expected PaymentInvoiceCurrencyMismatch, got {err:?}"
+        );
+    }
+
+    #[test]
     fn record_payment_rejects_draft_invoice_allocation() {
         let (payments, invoices) = repos();
         let draft = Invoice::create_draft(
@@ -644,6 +691,7 @@ mod tests {
                 date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
                 due_date: None,
                 line_items: vec![NewLineItem {
+                    catalog_item_id: None,
                     description: "x".into(),
                     quantity: Decimal::from(1),
                     unit_price: Money::new(1000, eur()),

@@ -13,7 +13,6 @@ import { Input } from "../components/ui/Input";
 import { Table, Td, Th, THead, Tr } from "../components/ui/Table";
 import { useMoneyFormat } from "../lib/money";
 import { usePaymentStore } from "../stores/paymentStore";
-import { useSettingsStore } from "../stores/settingsStore";
 import type { PaymentMethodDto } from "../ipc";
 
 function paymentMethodLabel(method: PaymentMethodDto, t: (k: string) => string): string {
@@ -35,23 +34,18 @@ export function PaymentList() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { payments, loading, error, refresh, remove } = usePaymentStore();
-  const { snapshot, load } = useSettingsStore();
 
   useEffect(() => {
     void refresh();
-    if (!snapshot) void load();
-  }, [refresh, load, snapshot]);
+  }, [refresh]);
 
-  const { formatMinor } = useMoneyFormat();
-  const currencyCode = snapshot?.currency.code ?? "EUR";
-
-  const totalAmount = payments.reduce((sum, p) => sum + p.amount.amount_minor, 0);
+  const { formatAmount } = useMoneyFormat();
 
   return (
     <Page
       crumbs={[t("payments.title")]}
       title={t("payments.title")}
-      subtitle={`${t("payments.summary_count", { count: payments.length })} · ${t("payments.summary_collected", { total: formatMinor(totalAmount, currencyCode) })}`}
+      subtitle={t("payments.summary_count", { count: payments.length })}
       actions={
         <Button
           variant="primary"
@@ -94,6 +88,7 @@ export function PaymentList() {
                 <Th>{t("payments.client")}</Th>
                 <Th>{t("payments.method")}</Th>
                 <Th>{t("payments.reference")}</Th>
+                <Th>{t("accounting.currency")}</Th>
                 <Th numeric>{t("payments.amount")}</Th>
                 <Th numeric>{t("payments.allocated")}</Th>
                 <Th numeric>{t("payments.unallocated")}</Th>
@@ -103,10 +98,10 @@ export function PaymentList() {
             <tbody>
               {payments.map((p) => {
                 const allocated = p.allocations.reduce(
-                  (sum, a) => sum + a.amount.amount_minor,
+                  (sum, a) => sum + a.amount.amount,
                   0,
                 );
-                const rest = p.amount.amount_minor - allocated;
+                const rest = p.amount.amount - allocated;
                 const name = p.client_name ?? "—";
                 return (
                   <Tr key={p.id}>
@@ -125,12 +120,15 @@ export function PaymentList() {
                     <Td muted mono>
                       {p.reference ?? "—"}
                     </Td>
-                    <Td numeric>{formatMinor(p.amount.amount_minor, p.amount.currency)}</Td>
-                    <Td numeric>{formatMinor(allocated, currencyCode)}</Td>
+                    <Td muted mono>
+                      {p.amount.currency.code}
+                    </Td>
+                    <Td numeric>{formatAmount(p.amount)}</Td>
+                    <Td numeric>{formatAmount({ ...p.amount, amount: allocated })}</Td>
                     <Td numeric>
                       {rest > 0 ? (
                         <span className="text-warn">
-                          {formatMinor(rest, currencyCode)}
+                          {formatAmount({ ...p.amount, amount: rest })}
                         </span>
                       ) : (
                         <span className="text-ink-4">—</span>

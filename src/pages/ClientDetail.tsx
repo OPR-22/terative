@@ -22,6 +22,7 @@ import { ContactListEditor } from "../components/client/ContactListEditor";
 import { ClientAttributeDatalists } from "../components/client/ClientAttributeDatalists";
 import { useMoneyFormat } from "../lib/money";
 import { useClientStore } from "../stores/clientStore";
+import { useCurrencyCatalogStore } from "../stores/currencyCatalogStore";
 import {
   ipc,
   type ClientAddressDto,
@@ -83,7 +84,7 @@ export function ClientDetail() {
         if (!cancelled) setClient(c);
       })
       .catch((e) => {
-        if (!cancelled) toast.error(String(e));
+        if (!cancelled) toast.error(e);
       });
     return () => {
       cancelled = true;
@@ -192,6 +193,11 @@ function InfoTab({
   const [pronouns, setPronouns] = useState(client.pronouns ?? "");
   const [occupation, setOccupation] = useState(client.occupation ?? "");
   const [language, setLanguage] = useState(client.language ?? "");
+  const [defaultCurrency, setDefaultCurrency] = useState(client.default_currency);
+  const { all: currencies, load: loadCurrencies } = useCurrencyCatalogStore();
+  useEffect(() => {
+    void loadCurrencies();
+  }, [loadCurrencies]);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -213,6 +219,7 @@ function InfoTab({
     setPronouns(client.pronouns ?? "");
     setOccupation(client.occupation ?? "");
     setLanguage(client.language ?? "");
+    setDefaultCurrency(client.default_currency);
   }, [client]);
 
   const onSubmit = async (e: React.FormEvent) => {
@@ -240,13 +247,14 @@ function InfoTab({
         pronouns: pronouns.trim() || null,
         occupation: occupation.trim() || null,
         language: language || null,
+        default_currency: defaultCurrency,
       };
       const updated = await ipc.clientUpdate(payload);
       onSaved(updated);
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -352,6 +360,18 @@ function InfoTab({
                   <option value="de">Deutsch</option>
                 </Select>
               </Field>
+              <Field label={t("clients.default_currency")}>
+                <Select
+                  value={defaultCurrency}
+                  onChange={(e) => setDefaultCurrency(e.target.value)}
+                >
+                  {currencies.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.code} — {c.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
               <Field label={t("clients.referred_by")} className="col-span-2">
                 <Select
                   value={referredBy ?? ""}
@@ -434,13 +454,14 @@ function AddressesTab({
         pronouns: client.pronouns,
         occupation: client.occupation,
         language: client.language,
+        default_currency: client.default_currency,
       };
       const updated = await ipc.clientUpdate(payload);
       onSaved(updated);
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -495,7 +516,7 @@ function NotebookTab({ clientId }: { clientId: string }) {
         setContents(map);
         setDirty(false);
       })
-      .catch((e) => toast.error(String(e)));
+      .catch((e) => toast.error(e));
   };
 
   useEffect(() => {
@@ -524,7 +545,7 @@ function NotebookTab({ clientId }: { clientId: string }) {
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -597,7 +618,7 @@ function JournalTab({ clientId }: { clientId: string }) {
     ipc
       .journalListForClient(clientId)
       .then(setEntries)
-      .catch((e) => toast.error(String(e)));
+      .catch((e) => toast.error(e));
   };
 
   useEffect(() => {
@@ -611,7 +632,7 @@ function JournalTab({ clientId }: { clientId: string }) {
       await ipc.journalEntryDelete(id);
       refresh();
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     }
   };
 
@@ -734,7 +755,7 @@ function JournalEntryModal({
       }
       onClose();
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -788,7 +809,7 @@ function InvoicesTab({ clientId }: { clientId: string }) {
   const navigate = useNavigate();
   const [items, setItems] = useState<InvoiceDto[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const { format } = useMoneyFormat();
+  const { formatAmount } = useMoneyFormat();
 
   useEffect(() => {
     let cancelled = false;
@@ -822,6 +843,7 @@ function InvoicesTab({ clientId }: { clientId: string }) {
           <Tr>
             <Th>{t("invoices.number")}</Th>
             <Th>{t("common.date")}</Th>
+            <Th>{t("accounting.currency")}</Th>
             <Th numeric>{t("invoices.total")}</Th>
             <Th>{t("common.status")}</Th>
             <Th>{t("invoices.payment_status")}</Th>
@@ -836,7 +858,8 @@ function InvoicesTab({ clientId }: { clientId: string }) {
             >
               <Td mono>#{inv.number ?? "—"}</Td>
               <Td muted>{inv.date}</Td>
-              <Td numeric>{format(inv.total)}</Td>
+              <Td muted mono>{inv.total.currency.code}</Td>
+              <Td numeric>{formatAmount(inv.total)}</Td>
               <Td>
                 <StatusBadge status={inv.status} />
               </Td>
@@ -883,7 +906,7 @@ function PaymentsTab({ clientId }: { clientId: string }) {
   const navigate = useNavigate();
   const [items, setItems] = useState<PaymentDto[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const { format } = useMoneyFormat();
+  const { formatAmount } = useMoneyFormat();
 
   useEffect(() => {
     let cancelled = false;
@@ -917,6 +940,7 @@ function PaymentsTab({ clientId }: { clientId: string }) {
           <Tr>
             <Th>{t("common.date")}</Th>
             <Th>{t("payments.method")}</Th>
+            <Th>{t("accounting.currency")}</Th>
             <Th numeric>{t("payments.amount")}</Th>
             <Th>{t("payments.reference")}</Th>
           </Tr>
@@ -930,7 +954,8 @@ function PaymentsTab({ clientId }: { clientId: string }) {
             >
               <Td muted>{p.date}</Td>
               <Td>{paymentMethodLabel(p.method, t)}</Td>
-              <Td numeric>{format(p.amount)}</Td>
+              <Td muted mono>{p.amount.currency.code}</Td>
+              <Td numeric>{formatAmount(p.amount)}</Td>
               <Td muted>{p.reference ?? "—"}</Td>
             </Tr>
           ))}

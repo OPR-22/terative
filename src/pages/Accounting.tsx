@@ -21,7 +21,6 @@ import {
   type RevenueGroupingDto,
 } from "../ipc";
 import { useMoneyFormat } from "../lib/money";
-import { useSettingsStore } from "../stores/settingsStore";
 
 type Tab = "revenue" | "aging" | "balances";
 
@@ -73,9 +72,7 @@ function RevenueTab() {
   const [buckets, setBuckets] = useState<RevenueBucketDto[]>([]);
   const [byClient, setByClient] = useState<RevenueByClientDto[]>([]);
 
-  const { formatMinor } = useMoneyFormat();
-  const currencyCode = useSettingsStore().snapshot?.currency.code ?? "EUR";
-  const fmt = (minor: number) => formatMinor(minor, currencyCode);
+  const { formatAmount, formatMinor } = useMoneyFormat();
 
   useEffect(() => {
     let cancelled = false;
@@ -89,16 +86,29 @@ function RevenueTab() {
         setByClient(c);
       })
       .catch((e) => {
-        if (!cancelled) toast.error(String(e));
+        if (!cancelled) toast.error(e);
       });
     return () => {
       cancelled = true;
     };
   }, [start, end, grouping]);
 
-  const total = buckets.reduce((sum, b) => sum + b.amount.amount_minor, 0);
-  const maxBucket = Math.max(1, ...buckets.map((b) => b.amount.amount_minor));
-  const totalAll = byClient.reduce((s, r) => s + r.total_invoiced.amount_minor, 0);
+  // Strict silos: every (currency) gets its own chart and table. No
+  // cross-currency total exists.
+  const bucketsByCurrency = useMemo(
+    () => groupBy(buckets, (b) => b.amount.currency.code),
+    [buckets],
+  );
+  const byClientByCurrency = useMemo(
+    () => groupBy(byClient, (r) => r.total_invoiced.currency.code),
+    [byClient],
+  );
+  const currencies = useMemo(() => {
+    const set = new Set<string>();
+    for (const b of buckets) set.add(b.amount.currency.code);
+    for (const r of byClient) set.add(r.total_invoiced.currency.code);
+    return Array.from(set).sort();
+  }, [buckets, byClient]);
 
   return (
     <div className="flex flex-col">
@@ -130,144 +140,159 @@ function RevenueTab() {
               <option value="Year">{t("accounting.grouping_year")}</option>
             </Select>
           </Field>
-          <div className="ml-auto text-right">
-            <p className="text-[12px] font-medium text-ink-3">
-              {t("accounting.total")}
-            </p>
-            <p className="text-[22px] font-semibold tabular leading-none mt-1">
-              {fmt(total)}
-            </p>
-          </div>
         </CardBody>
       </Card>
 
-
-      <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-5">
+      {currencies.length === 0 ? (
         <Card>
-          <CardHead title={t("accounting.revenue_by_period")} />
           <CardBody>
-            {buckets.length === 0 ? (
-              <EmptyState description={t("common.empty")} />
-            ) : (
-              <div className="flex flex-col gap-2.5">
-                {buckets.map((bucket) => {
-                  const pct = (bucket.amount.amount_minor / maxBucket) * 100;
-                  return (
-                    <div
-                      key={bucket.bucket_start}
-                      className="grid items-center gap-3.5"
-                      style={{ gridTemplateColumns: "110px 1fr 110px" }}
-                    >
-                      <span className="text-[12px] text-ink-3 font-mono tabular">
-                        {bucket.bucket_start}
-                      </span>
-                      <div className="h-[18px] bg-paper-3 relative">
-                        <div
-                          className="absolute inset-y-0 left-0 bg-accent"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <span className="text-right font-mono tabular text-[13px]">
-                        {fmt(bucket.amount.amount_minor)}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <EmptyState description={t("common.empty")} />
           </CardBody>
         </Card>
-
-        <Card>
-          <CardHead title={t("accounting.revenue_by_client")} />
-          {byClient.length === 0 ? (
-            <EmptyState description={t("common.empty")} />
-          ) : (
-            <Table>
-              <THead>
-                <Tr>
-                  <Th>{t("invoices.client")}</Th>
-                  <Th numeric>{t("accounting.invoice_count")}</Th>
-                  <Th numeric>{t("accounting.total")}</Th>
-                  <Th numeric className="w-16">
-                    %
-                  </Th>
-                </Tr>
-              </THead>
-              <tbody>
-                {byClient.map((row) => {
-                  const pct =
-                    totalAll > 0
-                      ? (row.total_invoiced.amount_minor / totalAll) * 100
-                      : 0;
-                  return (
-                    <Tr key={row.client_id}>
-                      <Td>
-                        <div className="flex items-center gap-2">
-                          <Avatar name={row.client_name} size={22} />
-                          <span className="font-medium">{row.client_name}</span>
+      ) : (
+        <div className="flex flex-col gap-5">
+          {currencies.map((code) => {
+            const buckets = bucketsByCurrency.get(code) ?? [];
+            const byClient = byClientByCurrency.get(code) ?? [];
+            const total = buckets.reduce((s, b) => s + b.amount.amount, 0);
+            const maxBucket = Math.max(1, ...buckets.map((b) => b.amount.amount));
+            const totalAll = byClient.reduce(
+              (s, r) => s + r.total_invoiced.amount,
+              0,
+            );
+            return (
+              <div key={code} className="flex flex-col gap-3">
+                <h3 className="text-[18px] font-semibold font-mono tabular leading-none">
+                  {formatMinor(total, code)}
+                </h3>
+                <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-5">
+                  <Card>
+                    <CardHead title={t("accounting.revenue_by_period")} />
+                    <CardBody>
+                      {buckets.length === 0 ? (
+                        <EmptyState description={t("common.empty")} />
+                      ) : (
+                        <div className="flex flex-col gap-2.5">
+                          {buckets.map((bucket) => {
+                            const pct =
+                              (bucket.amount.amount / maxBucket) * 100;
+                            return (
+                              <div
+                                key={bucket.bucket_start}
+                                className="grid items-center gap-3.5"
+                                style={{ gridTemplateColumns: "110px 1fr 110px" }}
+                              >
+                                <span className="text-[12px] text-ink-3 font-mono tabular">
+                                  {bucket.bucket_start}
+                                </span>
+                                <div className="h-[18px] bg-paper-3 relative">
+                                  <div
+                                    className="absolute inset-y-0 left-0 bg-accent"
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                                <span className="text-right font-mono tabular text-[13px]">
+                                  {formatAmount(bucket.amount)}
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
-                      </Td>
-                      <Td numeric muted>
-                        {row.invoice_count}
-                      </Td>
-                      <Td numeric>{fmt(row.total_invoiced.amount_minor)}</Td>
-                      <Td numeric className="text-[11px]">
-                        {pct.toFixed(1)} %
-                      </Td>
-                    </Tr>
-                  );
-                })}
-              </tbody>
-            </Table>
-          )}
-        </Card>
-      </div>
+                      )}
+                    </CardBody>
+                  </Card>
+
+                  <Card>
+                    <CardHead title={t("accounting.revenue_by_client")} />
+                    {byClient.length === 0 ? (
+                      <EmptyState description={t("common.empty")} />
+                    ) : (
+                      <Table>
+                        <THead>
+                          <Tr>
+                            <Th>{t("invoices.client")}</Th>
+                            <Th numeric>{t("accounting.invoice_count")}</Th>
+                            <Th numeric>{t("accounting.total")}</Th>
+                            <Th numeric className="w-16">
+                              %
+                            </Th>
+                          </Tr>
+                        </THead>
+                        <tbody>
+                          {byClient.map((row) => {
+                            const pct =
+                              totalAll > 0
+                                ? (row.total_invoiced.amount / totalAll) * 100
+                                : 0;
+                            return (
+                              <Tr key={row.client_id}>
+                                <Td>
+                                  <div className="flex items-center gap-2">
+                                    <Avatar name={row.client_name} size={22} />
+                                    <span className="font-medium">
+                                      {row.client_name}
+                                    </span>
+                                  </div>
+                                </Td>
+                                <Td numeric muted>
+                                  {row.invoice_count}
+                                </Td>
+                                <Td numeric>{formatAmount(row.total_invoiced)}</Td>
+                                <Td numeric className="text-[11px]">
+                                  {pct.toFixed(1)} %
+                                </Td>
+                              </Tr>
+                            );
+                          })}
+                        </tbody>
+                      </Table>
+                    )}
+                  </Card>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
+}
+
+function groupBy<T, K>(items: T[], key: (item: T) => K): Map<K, T[]> {
+  const out = new Map<K, T[]>();
+  for (const item of items) {
+    const k = key(item);
+    const arr = out.get(k);
+    if (arr) arr.push(item);
+    else out.set(k, [item]);
+  }
+  return out;
 }
 
 function AgingTab() {
   const { t } = useTranslation();
   const [rows, setRows] = useState<AgingRowDto[]>([]);
-  const { formatMinor } = useMoneyFormat();
-  const currencyCode = useSettingsStore().snapshot?.currency.code ?? "EUR";
-  const fmt = (minor: number) => formatMinor(minor, currencyCode);
+  const { formatAmount, formatMinor } = useMoneyFormat();
 
   useEffect(() => {
     let cancelled = false;
     ipc
       .accountingAgingReport()
       .then((r) => !cancelled && setRows(r))
-      .catch((e) => !cancelled && toast.error(String(e)));
+      .catch((e) => !cancelled && toast.error(e));
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const grouped = useMemo(() => {
-    const buckets: Record<AgingBucketDto, AgingRowDto[]> = {
-      Current: [],
-      Days1To30: [],
-      Days31To60: [],
-      Days61To90: [],
-      Days91Plus: [],
-    };
-    for (const row of rows) buckets[row.bucket].push(row);
-    return buckets;
-  }, [rows]);
-
-  const totals = useMemo(() => {
-    const t: Record<AgingBucketDto, number> = {
-      Current: 0,
-      Days1To30: 0,
-      Days31To60: 0,
-      Days61To90: 0,
-      Days91Plus: 0,
-    };
-    for (const row of rows) t[row.bucket] += row.amount_due.amount_minor;
-    return t;
-  }, [rows]);
+  const byCurrency = useMemo(
+    () => groupBy(rows, (r) => r.amount_due.currency.code),
+    [rows],
+  );
+  const currencies = useMemo(
+    () => Array.from(byCurrency.keys()).sort(),
+    [byCurrency],
+  );
 
   const BUCKETS: { id: AgingBucketDto; tone: string }[] = [
     { id: "Current", tone: "var(--color-ok)" },
@@ -277,61 +302,95 @@ function AgingTab() {
     { id: "Days91Plus", tone: "var(--color-danger)" },
   ];
 
-  return (
-    <div className="flex flex-col">
-
-      <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-5 mb-5">
-        {BUCKETS.map((b) => (
-          <Card key={b.id} className="p-4 flex flex-col gap-2">
-            <div className="flex items-center gap-2.5">
-              <span className="w-1.5 h-6" style={{ background: b.tone }} />
-              <div>
-                <p className="text-[12px] font-medium text-ink-3">
-                  {t(`accounting.bucket_${b.id.toLowerCase()}`)}
-                </p>
-                <p className="text-[18px] font-semibold tabular leading-tight mt-0.5">
-                  {fmt(totals[b.id])}
-                </p>
-                <p className="text-[11px] text-ink-3">
-                  {grouped[b.id].length} {t("accounting.invoices")}
-                </p>
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
-
+  if (rows.length === 0) {
+    return (
       <Card>
-        <CardHead title={t("accounting.aging_detail")} />
-        {rows.length === 0 ? (
+        <CardBody>
           <EmptyState description={t("common.empty")} />
-        ) : (
-          <Table>
-            <THead>
-              <Tr>
-                <Th>{t("invoices.number")}</Th>
-                <Th>{t("invoices.client")}</Th>
-                <Th>{t("invoices.due_date")}</Th>
-                <Th>{t("accounting.bucket")}</Th>
-                <Th numeric>{t("accounting.amount_due")}</Th>
-              </Tr>
-            </THead>
-            <tbody>
-              {rows.map((row) => (
-                <Tr key={row.invoice_id}>
-                  <Td mono>#{row.number ?? "—"}</Td>
-                  <Td>{row.client_name}</Td>
-                  <Td muted mono>
-                    {row.due_date ?? "—"}
-                  </Td>
-                  <Td muted>{t(`accounting.bucket_${row.bucket.toLowerCase()}`)}</Td>
-                  <Td numeric>{fmt(row.amount_due.amount_minor)}</Td>
-                </Tr>
-              ))}
-            </tbody>
-          </Table>
-        )}
+        </CardBody>
       </Card>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {currencies.map((code) => {
+        const rowsForCurrency = byCurrency.get(code) ?? [];
+        const grouped: Record<AgingBucketDto, AgingRowDto[]> = {
+          Current: [],
+          Days1To30: [],
+          Days31To60: [],
+          Days61To90: [],
+          Days91Plus: [],
+        };
+        const totals: Record<AgingBucketDto, number> = {
+          Current: 0,
+          Days1To30: 0,
+          Days31To60: 0,
+          Days61To90: 0,
+          Days91Plus: 0,
+        };
+        for (const row of rowsForCurrency) {
+          grouped[row.bucket].push(row);
+          totals[row.bucket] += row.amount_due.amount;
+        }
+        return (
+          <div key={code} className="flex flex-col gap-3">
+            <h3 className="text-[14px] font-semibold tabular tracking-tight">
+              {code}
+            </h3>
+            <div className="grid grid-cols-2 gap-3.5 lg:grid-cols-5">
+              {BUCKETS.map((b) => (
+                <Card key={b.id} className="p-4 flex flex-col gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-1.5 h-6" style={{ background: b.tone }} />
+                    <div>
+                      <p className="text-[12px] font-medium text-ink-3">
+                        {t(`accounting.bucket_${b.id.toLowerCase()}`)}
+                      </p>
+                      <p className="text-[18px] font-semibold font-mono tabular leading-tight mt-0.5">
+                        {formatMinor(totals[b.id], code)}
+                      </p>
+                      <p className="text-[11px] text-ink-3">
+                        {grouped[b.id].length} {t("accounting.invoices")}
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+            <Card>
+              <CardHead title={t("accounting.aging_detail")} />
+              <Table>
+                <THead>
+                  <Tr>
+                    <Th>{t("invoices.number")}</Th>
+                    <Th>{t("invoices.client")}</Th>
+                    <Th>{t("invoices.due_date")}</Th>
+                    <Th>{t("accounting.bucket")}</Th>
+                    <Th numeric>{t("accounting.amount_due")}</Th>
+                  </Tr>
+                </THead>
+                <tbody>
+                  {rowsForCurrency.map((row) => (
+                    <Tr key={row.invoice_id}>
+                      <Td mono>#{row.number ?? "—"}</Td>
+                      <Td>{row.client_name}</Td>
+                      <Td muted mono>
+                        {row.due_date ?? "—"}
+                      </Td>
+                      <Td muted>
+                        {t(`accounting.bucket_${row.bucket.toLowerCase()}`)}
+                      </Td>
+                      <Td numeric>{formatAmount(row.amount_due)}</Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            </Card>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -339,65 +398,90 @@ function AgingTab() {
 function BalancesTab() {
   const { t } = useTranslation();
   const [rows, setRows] = useState<ClientBalanceDto[]>([]);
-  const { formatMinor } = useMoneyFormat();
-  const currencyCode = useSettingsStore().snapshot?.currency.code ?? "EUR";
-  const fmt = (minor: number) => formatMinor(minor, currencyCode);
+  const { formatAmount } = useMoneyFormat();
 
   useEffect(() => {
     let cancelled = false;
     ipc
       .accountingClientBalances()
       .then((r) => !cancelled && setRows(r))
-      .catch((e) => !cancelled && toast.error(String(e)));
+      .catch((e) => !cancelled && toast.error(e));
     return () => {
       cancelled = true;
     };
   }, []);
 
+  const byCurrency = useMemo(
+    () => groupBy(rows, (r) => r.outstanding.currency.code),
+    [rows],
+  );
+  const currencies = useMemo(
+    () => Array.from(byCurrency.keys()).sort(),
+    [byCurrency],
+  );
+
+  if (rows.length === 0) {
+    return (
+      <Card>
+        <CardBody>
+          <EmptyState description={t("common.empty")} />
+        </CardBody>
+      </Card>
+    );
+  }
+
   return (
-    <Card>
-      {rows.length === 0 ? (
-        <EmptyState description={t("common.empty")} />
-      ) : (
-        <Table>
-          <THead>
-            <Tr>
-              <Th>{t("invoices.client")}</Th>
-              <Th numeric>{t("accounting.total_invoiced")}</Th>
-              <Th numeric>{t("accounting.total_paid")}</Th>
-              <Th numeric>{t("accounting.outstanding")}</Th>
-            </Tr>
-          </THead>
-          <tbody>
-            {rows.map((row) => (
-              <Tr key={row.client_id}>
-                <Td>
-                  <div className="flex items-center gap-2">
-                    <Avatar name={row.client_name} size={22} />
-                    <span className="font-medium">{row.client_name}</span>
-                  </div>
-                </Td>
-                <Td numeric muted>
-                  {fmt(row.total_invoiced.amount_minor)}
-                </Td>
-                <Td numeric muted>
-                  {fmt(row.total_paid.amount_minor)}
-                </Td>
-                <Td
-                  numeric
-                  className={
-                    row.outstanding.amount_minor > 0
-                      ? "text-warn font-medium"
-                      : "font-medium"
-                  }
-                >
-                  {fmt(row.outstanding.amount_minor)}
-                </Td>
-              </Tr>
-            ))}
-          </tbody>
-        </Table>
-      )}
-    </Card>
+    <div className="flex flex-col gap-5">
+      {currencies.map((code) => {
+        const list = byCurrency.get(code) ?? [];
+        return (
+          <div key={code} className="flex flex-col gap-3">
+            <h3 className="text-[14px] font-semibold tabular tracking-tight">
+              {code}
+            </h3>
+            <Card>
+              <Table>
+                <THead>
+                  <Tr>
+                    <Th>{t("invoices.client")}</Th>
+                    <Th numeric>{t("accounting.total_invoiced")}</Th>
+                    <Th numeric>{t("accounting.total_paid")}</Th>
+                    <Th numeric>{t("accounting.outstanding")}</Th>
+                  </Tr>
+                </THead>
+                <tbody>
+                  {list.map((row) => (
+                    <Tr key={`${row.client_id}-${row.outstanding.currency}`}>
+                      <Td>
+                        <div className="flex items-center gap-2">
+                          <Avatar name={row.client_name} size={22} />
+                          <span className="font-medium">{row.client_name}</span>
+                        </div>
+                      </Td>
+                      <Td numeric muted>
+                        {formatAmount(row.total_invoiced)}
+                      </Td>
+                      <Td numeric muted>
+                        {formatAmount(row.total_paid)}
+                      </Td>
+                      <Td
+                        numeric
+                        className={
+                          row.outstanding.amount > 0
+                            ? "text-warn font-medium"
+                            : "font-medium"
+                        }
+                      >
+                        {formatAmount(row.outstanding)}
+                      </Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            </Card>
+          </div>
+        );
+      })}
+    </div>
   );
 }

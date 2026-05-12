@@ -21,7 +21,9 @@ export function Th({ numeric, className = "", children, ...rest }: ThProps) {
     <th
       className={[
         "text-left font-medium text-[12px] text-ink-3 px-3.5 py-2.5 bg-paper-2 border-b border-line",
-        numeric ? "text-right tabular font-mono" : "",
+        // Numeric headers shrink to content so the amount/currency columns
+        // sit flush against each other. Slack falls into text columns instead.
+        numeric ? "text-right w-px whitespace-nowrap" : "",
         className,
       ].join(" ")}
       {...rest}
@@ -49,9 +51,12 @@ export function Td({
     <td
       className={[
         "px-3.5 py-3 text-[13px] border-b border-line-soft align-middle",
-        numeric ? "text-right tabular font-mono" : "",
+        // Numeric / mono cells hug their content. `w-px whitespace-nowrap` is
+        // the table trick: a width of 1px tells the auto layout to shrink
+        // this column to its minimum, leaving slack to the text columns.
+        numeric ? "text-right tabular font-mono w-px whitespace-nowrap" : "",
         muted ? "text-ink-3" : "text-ink",
-        mono && !numeric ? "font-mono tabular" : "",
+        mono && !numeric ? "font-mono tabular w-px whitespace-nowrap" : "",
         className,
       ].join(" ")}
       {...rest}

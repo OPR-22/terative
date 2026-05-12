@@ -135,6 +135,9 @@ pub struct ClientDto {
     pub pronouns: Option<String>,
     pub occupation: Option<String>,
     pub language: Option<String>,
+    /// ISO 4217 code (e.g. "EUR"). Pre-fills the currency on new invoices
+    /// for this client.
+    pub default_currency: String,
     pub archived_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }
@@ -159,6 +162,7 @@ impl From<&Client> for ClientDto {
             pronouns: c.pronouns.clone(),
             occupation: c.occupation.clone(),
             language: c.language.clone(),
+            default_currency: c.default_currency.code().to_string(),
             archived_at: c.archived_at,
             created_at: c.created_at,
         }
@@ -190,11 +194,21 @@ pub struct NewClientDto {
     pub pronouns: Option<String>,
     pub occupation: Option<String>,
     pub language: Option<String>,
+    /// ISO 4217 code. `None` lets the use case fall back to the org's
+    /// currency at creation time.
+    #[serde(default)]
+    pub default_currency: Option<String>,
 }
 
-impl From<NewClientDto> for NewClient {
-    fn from(dto: NewClientDto) -> Self {
-        NewClient {
+impl TryFrom<NewClientDto> for NewClient {
+    type Error = DtoConvertError;
+    fn try_from(dto: NewClientDto) -> Result<Self, Self::Error> {
+        let default_currency = match dto.default_currency.as_deref() {
+            Some(code) => crate::domain::money::Currency::new(code)
+                .map_err(|_| DtoConvertError::InvalidCurrency(code.to_string()))?,
+            None => crate::domain::money::Currency::Eur,
+        };
+        Ok(NewClient {
             kind: dto.kind.into(),
             name: dto.name,
             contact_name: dto.contact_name,
@@ -211,7 +225,8 @@ impl From<NewClientDto> for NewClient {
             pronouns: dto.pronouns,
             occupation: dto.occupation,
             language: dto.language,
-        }
+            default_currency,
+        })
     }
 }
 
@@ -235,11 +250,15 @@ pub struct UpdateClientDto {
     pub pronouns: Option<String>,
     pub occupation: Option<String>,
     pub language: Option<String>,
+    pub default_currency: String,
 }
 
-impl From<UpdateClientDto> for UpdateClientInput {
-    fn from(dto: UpdateClientDto) -> Self {
-        UpdateClientInput {
+impl TryFrom<UpdateClientDto> for UpdateClientInput {
+    type Error = DtoConvertError;
+    fn try_from(dto: UpdateClientDto) -> Result<Self, Self::Error> {
+        let default_currency = crate::domain::money::Currency::new(&dto.default_currency)
+            .map_err(|_| DtoConvertError::InvalidCurrency(dto.default_currency.clone()))?;
+        Ok(UpdateClientInput {
             id: ClientId(dto.id),
             kind: dto.kind.into(),
             name: dto.name,
@@ -257,7 +276,8 @@ impl From<UpdateClientDto> for UpdateClientInput {
             pronouns: dto.pronouns,
             occupation: dto.occupation,
             language: dto.language,
-        }
+            default_currency,
+        })
     }
 }
 
@@ -348,6 +368,7 @@ mod tests {
             pronouns: None,
             occupation: None,
             language: None,
+            default_currency: crate::domain::money::Currency::Eur,
             archived_at: None,
             created_at: Utc.with_ymd_and_hms(2026, 4, 14, 9, 0, 0).unwrap(),
         }
@@ -387,7 +408,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        let input: NewClient = dto.clone().into();
+        let input: NewClient = dto.clone().try_into().unwrap();
         assert_eq!(input.name, dto.name);
         assert_eq!(input.kind, ClientKind::Company);
         assert_eq!(input.tax_id.as_deref(), Some("FR12345"));
@@ -417,12 +438,14 @@ mod tests {
             pronouns: None,
             occupation: None,
             language: None,
+            default_currency: "USD".into(),
         };
-        let input: UpdateClientInput = dto.into();
+        let input: UpdateClientInput = dto.try_into().unwrap();
         assert_eq!(input.id.0, id);
         assert_eq!(input.name, "New");
         assert_eq!(input.notes.as_deref(), Some("hi"));
         assert_eq!(input.referred_by.map(|r| r.0), Some(referrer));
+        assert_eq!(input.default_currency, crate::domain::money::Currency::Usd);
     }
 
     #[test]

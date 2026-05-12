@@ -21,8 +21,9 @@ pub mod tax_repository;
 pub mod template_repository;
 
 pub use accounting_queries::{
-    AccountingQueries, AgingBucket, AgingRow, ClientBalance, DashboardSummary,
-    DerivedPaymentStatus, InvoicePaymentRow, RevenueBucket, RevenueByClient, RevenueGrouping,
+    AccountingQueries, AgingBucket, AgingRow, ClientBalance, DashboardOutstandingRow,
+    DashboardRevenueRow, DashboardSummary, DerivedPaymentStatus, InvoicePaymentRow,
+    RevenueBucket, RevenueByClient, RevenueGrouping,
 };
 pub use client_journal_repository::ClientJournalRepository;
 pub use client_notebook_repository::ClientNotebookRepository;

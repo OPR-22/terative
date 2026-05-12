@@ -361,6 +361,16 @@ impl fmt::Display for Currency {
     }
 }
 
+/// EUR is the default when a `Currency` is needed without an explicit pick.
+/// The org's chosen currency overrides this everywhere it matters — this
+/// default exists to keep callers that genuinely don't care (test builders,
+/// dev-mode seeds) from having to spell out a currency.
+impl Default for Currency {
+    fn default() -> Self {
+        Self::Eur
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Money {
     minor_units: i64,
@@ -476,12 +486,16 @@ impl Money {
         Ok(Self::from_minor(minor, self.currency))
     }
 
-    /// Format as a human-readable string using the currency's own symbol and
-    /// fraction-digit count. Examples:
+    /// Format as a human-readable string using the currency's ISO 4217 code
+    /// (always suffixed, space-separated). The code is preferred over the
+    /// symbol because several symbols are ambiguous: DKK/NOK/SEK all render
+    /// as "kr"; USD/MXN/CAD all use "$". The code is unambiguous and matches
+    /// accounting conventions.
     ///
-    /// - `Money::from_minor(12345, Eur).format()` → `"123.45 €"`
-    /// - `Money::from_minor(12345, Jpy).format()` → `"¥12345"`
-    /// - `Money::from_minor(-500, Usd).format()`  → `"$-5.00"`
+    /// Examples:
+    /// - `Money::from_minor(12345, Eur).format()` → `"123.45 EUR"`
+    /// - `Money::from_minor(12345, Jpy).format()` → `"12345 JPY"`
+    /// - `Money::from_minor(-500, Usd).format()`  → `"-5.00 USD"`
     pub fn format(&self) -> String {
         let meta = self.currency.meta();
         let scale = self.currency.minor_unit_scale();
@@ -497,10 +511,7 @@ impl Money {
                 width = meta.fraction_digits as usize
             )
         };
-        match meta.symbol_position {
-            SymbolPosition::Before => format!("{}{}", meta.symbol, number),
-            SymbolPosition::After => format!("{} {}", number, meta.symbol),
-        }
+        format!("{} {}", number, meta.code)
     }
 
     fn ensure_same_currency(&self, other: &Money) -> Result<(), MoneyError> {
@@ -725,33 +736,45 @@ mod tests {
     // --- Formatting ---
 
     #[test]
-    fn format_eur_has_two_fraction_digits_and_symbol_after() {
-        assert_eq!(Money::from_minor(12345, Currency::Eur).format(), "123.45 €");
-        assert_eq!(Money::from_minor(0, Currency::Eur).format(), "0.00 €");
-        assert_eq!(Money::from_minor(5, Currency::Eur).format(), "0.05 €");
+    fn format_eur_uses_iso_code_suffix() {
+        assert_eq!(Money::from_minor(12345, Currency::Eur).format(), "123.45 EUR");
+        assert_eq!(Money::from_minor(0, Currency::Eur).format(), "0.00 EUR");
+        assert_eq!(Money::from_minor(5, Currency::Eur).format(), "0.05 EUR");
     }
 
     #[test]
-    fn format_usd_has_symbol_before() {
-        assert_eq!(Money::from_minor(12345, Currency::Usd).format(), "$123.45");
+    fn format_usd_uses_iso_code_suffix() {
+        assert_eq!(Money::from_minor(12345, Currency::Usd).format(), "123.45 USD");
     }
 
     #[test]
     fn format_jpy_has_no_fraction_digits() {
-        assert_eq!(Money::from_minor(12345, Currency::Jpy).format(), "¥12345");
-        assert_eq!(Money::from_minor(0, Currency::Jpy).format(), "¥0");
+        assert_eq!(Money::from_minor(12345, Currency::Jpy).format(), "12345 JPY");
+        assert_eq!(Money::from_minor(0, Currency::Jpy).format(), "0 JPY");
     }
 
     #[test]
     fn format_krw_has_no_fraction_digits() {
-        assert_eq!(Money::from_minor(1000, Currency::Krw).format(), "₩1000");
+        assert_eq!(Money::from_minor(1000, Currency::Krw).format(), "1000 KRW");
     }
 
     #[test]
     fn format_negative_eur() {
         assert_eq!(
             Money::from_minor(-12345, Currency::Eur).format(),
-            "-123.45 €"
+            "-123.45 EUR"
         );
+    }
+
+    #[test]
+    fn format_disambiguates_currencies_that_share_a_symbol() {
+        // DKK, NOK, SEK all use "kr"; USD, MXN, CAD all use "$". The ISO
+        // code is the only unambiguous identifier — use it consistently.
+        assert_eq!(Money::from_minor(100, Currency::Dkk).format(), "1.00 DKK");
+        assert_eq!(Money::from_minor(100, Currency::Nok).format(), "1.00 NOK");
+        assert_eq!(Money::from_minor(100, Currency::Sek).format(), "1.00 SEK");
+        assert_eq!(Money::from_minor(100, Currency::Usd).format(), "1.00 USD");
+        assert_eq!(Money::from_minor(100, Currency::Mxn).format(), "1.00 MXN");
+        assert_eq!(Money::from_minor(100, Currency::Cad).format(), "1.00 CAD");
     }
 }

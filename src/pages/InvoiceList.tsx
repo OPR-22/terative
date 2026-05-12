@@ -51,7 +51,7 @@ export function InvoiceList() {
     cancel,
     send,
   } = useInvoiceStore();
-  const { format } = useMoneyFormat();
+  const { formatAmount } = useMoneyFormat();
   const [payFor, setPayFor] = useState<InvoiceDto | null>(null);
   const [cancelTarget, setCancelTarget] = useState<InvoiceDto | null>(null);
 
@@ -129,6 +129,7 @@ export function InvoiceList() {
                 <Th>{t("invoices.client")}</Th>
                 <Th>{t("common.status")}</Th>
                 <Th>{t("invoices.payment")}</Th>
+                <Th>{t("accounting.currency")}</Th>
                 <Th numeric>{t("invoices.total")}</Th>
                 <Th />
               </Tr>
@@ -167,7 +168,7 @@ export function InvoiceList() {
                     label: t("invoices.send_reminder"),
                     icon: <Send size={13} strokeWidth={1.5} />,
                     onSelect: () =>
-                      void send(inv.id).catch((e) => toast.error(String(e))),
+                      void send(inv.id).catch((e) => toast.error(e)),
                   });
                 }
                 menuItems.push({
@@ -213,8 +214,11 @@ export function InvoiceList() {
                         rawStatus={inv.status}
                       />
                     </Td>
+                    <Td muted mono>
+                      {inv.total.currency.code}
+                    </Td>
                     <Td numeric className="font-medium">
-                      {format(inv.total)}
+                      {formatAmount(inv.total)}
                     </Td>
                     <Td
                       className="text-right whitespace-nowrap"
@@ -227,7 +231,7 @@ export function InvoiceList() {
                             size="sm"
                             variant="primary"
                             onClick={() =>
-                              void finalize(inv.id).catch((e) => toast.error(String(e)))
+                              void finalize(inv.id).catch((e) => toast.error(e))
                             }
                           >
                             {t("invoices.finalize")}
@@ -240,7 +244,7 @@ export function InvoiceList() {
                               variant="accent"
                               leadingIcon={<Send size={11} strokeWidth={1.5} />}
                               onClick={() =>
-                                void send(inv.id).catch((e) => toast.error(String(e)))
+                                void send(inv.id).catch((e) => toast.error(e))
                               }
                             >
                               {t("invoices.send")}
@@ -259,7 +263,6 @@ export function InvoiceList() {
                         {inv.status === "Sent" && unpaid ? (
                           <Button
                             size="sm"
-                            variant="primary"
                             leadingIcon={<Coins size={11} strokeWidth={1.5} />}
                             onClick={() => setPayFor(inv)}
                           >

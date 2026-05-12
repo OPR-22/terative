@@ -14,7 +14,6 @@ import {
   type PaymentMethodDto,
 } from "../../ipc";
 import { usePaymentStore } from "../../stores/paymentStore";
-import { useSettingsStore } from "../../stores/settingsStore";
 
 type PaymentMethodKind = PaymentMethodDto["kind"];
 
@@ -37,10 +36,12 @@ interface Props {
 export function MarkPaidModal({ invoice, onClose, onPaid }: Props) {
   const { t } = useTranslation();
   const { record } = usePaymentStore();
-  const { snapshot } = useSettingsStore();
   const { formatMinor } = useMoneyFormat();
-  const currency = snapshot?.currency;
-  const currencyCode = currency?.code ?? invoice.currency;
+  // Strict silos: a payment against an invoice must be in the invoice's
+  // own currency, not the org's default. `invoice.total.currency` carries
+  // the full CurrencyConfigDto inline, so we never need a catalog lookup.
+  const currency = invoice.total.currency;
+  const currencyCode = currency.code;
 
   const [loading, setLoading] = useState(true);
   const [amountDueCents, setAmountDueCents] = useState(0);
@@ -63,19 +64,19 @@ export function MarkPaidModal({ invoice, onClose, onPaid }: Props) {
       .then((rows) => {
         if (cancelled) return;
         const row = rows.find((r) => r.invoice_id === invoice.id);
-        if (!row || row.amount_due.amount_minor <= 0) {
+        if (!row || row.amount_due.amount <= 0) {
           setFullyPaid(true);
           setAmountDueCents(0);
           setAmountCents(0);
         } else {
-          setAmountDueCents(row.amount_due.amount_minor);
-          setAmountCents(row.amount_due.amount_minor);
+          setAmountDueCents(row.amount_due.amount);
+          setAmountCents(row.amount_due.amount);
         }
         setLoading(false);
       })
       .catch((e) => {
         if (!cancelled) {
-          toast.error(String(e));
+          toast.error(e);
           setLoading(false);
         }
       });
@@ -104,18 +105,19 @@ export function MarkPaidModal({ invoice, onClose, onPaid }: Props) {
       setErr(t("payments.err_method_detail"));
       return;
     }
+    const money = { amount: amountCents, currency };
     setSubmitting(true);
     try {
       const payload: NewPaymentDto = {
         client_id: invoice.client_id,
         date,
-        amount: { amount_minor: amountCents, currency: currencyCode },
+        amount: money,
         method: buildMethod(),
         reference: reference || null,
         allocations: [
           {
             invoice_id: invoice.id,
-            amount: { amount_minor: amountCents, currency: currencyCode },
+            amount: money,
           },
         ],
         notes: notes || null,
@@ -124,7 +126,7 @@ export function MarkPaidModal({ invoice, onClose, onPaid }: Props) {
       onPaid();
       onClose();
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setSubmitting(false);
     }
@@ -175,15 +177,13 @@ export function MarkPaidModal({ invoice, onClose, onPaid }: Props) {
         </p>
       ) : (
         <form id="mark-paid-form" onSubmit={submit} className="grid gap-3.5 grid-cols-2">
-          {currency ? (
-            <Field label={t("payments.amount")}>
-              <MoneyInput
-                valueMinor={amountCents}
-                currency={currency}
-                onChangeMinor={setAmountCents}
-              />
-            </Field>
-          ) : null}
+          <Field label={t("payments.amount")}>
+            <MoneyInput
+              valueMinor={amountCents}
+              currency={currency}
+              onChangeMinor={setAmountCents}
+            />
+          </Field>
           <Field label={t("common.date")}>
             <Input
               mono

@@ -134,7 +134,7 @@ export function TemplateList() {
                         aria-label={t("common.delete")}
                         onClick={() => {
                           if (confirm(t("common.confirm_delete"))) {
-                            void remove(tpl.id).catch((e) => toast.error(String(e)));
+                            void remove(tpl.id).catch((e) => toast.error(e));
                           }
                         }}
                       >

@@ -61,11 +61,11 @@ pub fn accounting_revenue_by_client(
 pub fn accounting_client_balance(
     state: State<'_, AppState>,
     client_id: Uuid,
-) -> Result<ClientBalanceDto, AppError> {
+) -> Result<Vec<ClientBalanceDto>, AppError> {
     state.org()?
         .accounting
         .client_balance(ClientId(client_id))
-        .map(|b| (&b).into())
+        .map(|list| list.iter().map(Into::into).collect())
 }
 
 #[tauri::command]

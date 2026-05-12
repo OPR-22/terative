@@ -421,7 +421,7 @@ interface CurrencyProps {
 }
 
 function CurrencySection({ currency, onSave }: CurrencyProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { all, load: loadCatalog } = useCurrencyCatalogStore();
   const [code, setCode] = useState<string>(currency.code);
   const [saved, setSaved] = useState(false);
@@ -438,7 +438,7 @@ function CurrencySection({ currency, onSave }: CurrencyProps) {
   const selected = all.find((c) => c.code === code) ?? currency;
   const sampleMinor =
     selected.fraction_digits === 0 ? BigInt(1000) : BigInt(123456);
-  const sampleMoney = new Money(sampleMinor, selected.code);
+  const sampleMoney = new Money(sampleMinor, selected);
 
   return (
     <section>
@@ -455,7 +455,7 @@ function CurrencySection({ currency, onSave }: CurrencyProps) {
             setSaved(true);
             setTimeout(() => setSaved(false), 1500);
           } catch (e) {
-            toast.error(String(e));
+            toast.error(e);
           }
         }}
       >
@@ -475,7 +475,8 @@ function CurrencySection({ currency, onSave }: CurrencyProps) {
           </select>
         </label>
         <p className="text-xs text-fg-subtle">
-          {t("settings.currency_sample")}: {sampleMoney.format(selected)}
+          {t("settings.currency_sample")}:{" "}
+          {sampleMoney.formatWithSymbol(i18n.language)}
         </p>
         <div className="flex items-center gap-3">
           <Button type="submit">{t("common.save")}</Button>
@@ -624,7 +625,7 @@ function EmailSection({
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     }
   };
 
@@ -636,7 +637,7 @@ function EmailSection({
       setPwSaved(true);
       setTimeout(() => setPwSaved(false), 1500);
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     }
   };
 
@@ -649,7 +650,7 @@ function EmailSection({
       setTimeout(() => setTestState("idle"), 2500);
     } catch (e) {
       setTestState("err");
-      toast.error(String(e));
+      toast.error(e);
     }
   };
 
@@ -776,7 +777,7 @@ function NotebookSectionsSection() {
       await create(trimmed);
       setNewName("");
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -800,7 +801,7 @@ function NotebookSectionsSection() {
       await rename(editingId, trimmed);
       setEditingId(null);
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -826,7 +827,7 @@ function NotebookSectionsSection() {
     try {
       await remove(id);
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -842,7 +843,7 @@ function NotebookSectionsSection() {
     try {
       await reorder(ordered);
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -971,7 +972,7 @@ function BookmarksSection() {
       setNewLabel("");
       setNewUrl("");
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -997,7 +998,7 @@ function BookmarksSection() {
       await update({ id: editingId, label, url });
       setEditingId(null);
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -1010,7 +1011,7 @@ function BookmarksSection() {
     try {
       await remove(id);
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -1026,7 +1027,7 @@ function BookmarksSection() {
     try {
       await reorder(ordered);
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setBusy(false);
     }

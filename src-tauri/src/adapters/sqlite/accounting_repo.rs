@@ -1,10 +1,11 @@
-use chrono::{Datelike, NaiveDate};
-use rusqlite::{params, OptionalExtension, Row};
+use chrono::{Datelike, Duration, NaiveDate};
+use rusqlite::{params, Row};
 use uuid::Uuid;
 
 use crate::adapters::sqlite::connection::Db;
 use crate::application::ports::{
-    AccountingQueries, AgingBucket, AgingRow, ClientBalance, DashboardSummary,
+    AccountingQueries, AgingBucket, AgingRow, ClientBalance,
+    DashboardOutstandingRow, DashboardRevenueRow, DashboardSummary,
     DerivedPaymentStatus, InvoicePaymentRow, RevenueBucket, RevenueByClient, RevenueGrouping,
 };
 use crate::application::RepoError;
@@ -135,17 +136,19 @@ impl AccountingQueries for SqliteAccountingRepository {
             RevenueGrouping::Month => ("%Y-%m", "date || '-01'"),
             RevenueGrouping::Year => ("%Y", "date || '-01-01'"),
         };
+        // GROUP BY (bucket, currency) — strict silos means a bucket that has
+        // activity in two currencies produces two rows.
         let sql = format!(
             "SELECT strftime('{fmt}', date) AS bucket_key,
                     MIN({bs}) AS bucket_start,
                     SUM(total) AS amount,
                     COUNT(*) AS invoice_count,
-                    MAX(currency) AS currency
+                    currency
              FROM invoices
              WHERE status IN ('Finalized', 'Sent')
                AND date >= ?1 AND date <= ?2
-             GROUP BY bucket_key
-             ORDER BY bucket_key ASC",
+             GROUP BY bucket_key, currency
+             ORDER BY bucket_key ASC, currency ASC",
             fmt = format_expr,
             bs = bucket_start_sql,
         );
@@ -162,11 +165,8 @@ impl AccountingQueries for SqliteAccountingRepository {
                     let bucket_start = parse_date(&normalized)?;
                     let amount_minor: i64 = row.get("amount")?;
                     let count: i64 = row.get("invoice_count")?;
-                    let currency_code: Option<String> = row.get("currency")?;
-                    let currency = currency_code
-                        .as_deref()
-                        .map(currency_from_code)
-                        .unwrap_or_else(|| Currency::new("EUR").unwrap());
+                    let currency_code: String = row.get("currency")?;
+                    let currency = currency_from_code(&currency_code);
                     Ok(RevenueBucket {
                         bucket_start,
                         amount: Money::new(amount_minor, currency),
@@ -186,13 +186,13 @@ impl AccountingQueries for SqliteAccountingRepository {
         let conn = self.db.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT i.client_id, c.name, SUM(i.total) AS total, COUNT(*) AS cnt, MAX(i.currency) AS currency
+                "SELECT i.client_id, c.name, SUM(i.total) AS total, COUNT(*) AS cnt, i.currency
                  FROM invoices i
                  JOIN clients c ON c.id = i.client_id
                  WHERE i.status IN ('Finalized', 'Sent')
                    AND i.date >= ?1 AND i.date <= ?2
-                 GROUP BY i.client_id
-                 ORDER BY total DESC",
+                 GROUP BY i.client_id, i.currency
+                 ORDER BY i.currency ASC, total DESC",
             )
             .map_err(map_err)?;
         let rows = stmt
@@ -207,11 +207,8 @@ impl AccountingQueries for SqliteAccountingRepository {
                     let name: String = row.get("name")?;
                     let total: i64 = row.get("total")?;
                     let cnt: i64 = row.get("cnt")?;
-                    let currency_code: Option<String> = row.get("currency")?;
-                    let currency = currency_code
-                        .as_deref()
-                        .map(currency_from_code)
-                        .unwrap_or_else(|| Currency::new("EUR").unwrap());
+                    let currency_code: String = row.get("currency")?;
+                    let currency = currency_from_code(&currency_code);
                     Ok(RevenueByClient {
                         client_id,
                         client_name: name,
@@ -224,54 +221,32 @@ impl AccountingQueries for SqliteAccountingRepository {
         rows.collect::<rusqlite::Result<Vec<_>>>().map_err(map_err)
     }
 
-    fn client_balance(&self, client_id: ClientId) -> Result<ClientBalance, RepoError> {
+    fn client_balance(&self, client_id: ClientId) -> Result<Vec<ClientBalance>, RepoError> {
         let conn = self.db.lock();
-        conn.query_row(
-            "SELECT c.id, c.name,
-                    COALESCE(inv.total_invoiced, 0) AS total_invoiced,
-                    COALESCE(pay.total_paid, 0) AS total_paid,
-                    COALESCE(inv.total_invoiced, 0) - COALESCE(pay.total_paid, 0) AS outstanding
-             FROM clients c
-             LEFT JOIN (
-                 SELECT client_id, SUM(total) AS total_invoiced
-                 FROM invoices
-                 WHERE status IN ('Finalized', 'Sent')
-                 GROUP BY client_id
-             ) inv ON inv.client_id = c.id
-             LEFT JOIN (
-                 SELECT client_id, SUM(amount) AS total_paid
-                 FROM payments
-                 GROUP BY client_id
-             ) pay ON pay.client_id = c.id
-             WHERE c.id = ?1",
-            params![client_id.to_string()],
-            row_to_client_balance,
-        )
-        .map_err(map_err)
+        // v_client_balance already emits one row per (client, currency) with
+        // activity. Empty result means the client has no invoices and no
+        // payments yet.
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, name, currency, total_invoiced, total_paid, outstanding
+                 FROM v_client_balance
+                 WHERE id = ?1
+                 ORDER BY currency ASC",
+            )
+            .map_err(map_err)?;
+        let rows = stmt
+            .query_map(params![client_id.to_string()], row_to_client_balance)
+            .map_err(map_err)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>().map_err(map_err)
     }
 
     fn client_balances(&self) -> Result<Vec<ClientBalance>, RepoError> {
         let conn = self.db.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT c.id, c.name,
-                        COALESCE(inv.total_invoiced, 0) AS total_invoiced,
-                        COALESCE(pay.total_paid, 0) AS total_paid,
-                        COALESCE(inv.total_invoiced, 0) - COALESCE(pay.total_paid, 0) AS outstanding
-                 FROM clients c
-                 LEFT JOIN (
-                     SELECT client_id, SUM(total) AS total_invoiced
-                     FROM invoices
-                     WHERE status IN ('Finalized', 'Sent')
-                     GROUP BY client_id
-                 ) inv ON inv.client_id = c.id
-                 LEFT JOIN (
-                     SELECT client_id, SUM(amount) AS total_paid
-                     FROM payments
-                     GROUP BY client_id
-                 ) pay ON pay.client_id = c.id
-                 WHERE c.archived_at IS NULL
-                 ORDER BY outstanding DESC",
+                "SELECT id, name, currency, total_invoiced, total_paid, outstanding
+                 FROM v_client_balance
+                 ORDER BY currency ASC, outstanding DESC",
             )
             .map_err(map_err)?;
         let rows = stmt.query_map([], row_to_client_balance).map_err(map_err)?;
@@ -334,73 +309,173 @@ impl AccountingQueries for SqliteAccountingRepository {
     fn dashboard_summary(&self, today: NaiveDate) -> Result<DashboardSummary, RepoError> {
         let conn = self.db.lock();
         let year_start = NaiveDate::from_ymd_opt(today.year(), 1, 1).unwrap();
-        let revenue_cents: i64 = conn
-            .query_row(
-                "SELECT COALESCE(SUM(total), 0) FROM invoices
-                 WHERE status IN ('Finalized', 'Sent') AND date >= ?1",
-                params![year_start.format("%Y-%m-%d").to_string()],
-                |r| r.get(0),
-            )
-            .map_err(map_err)?;
-        let currency_code: Option<String> = conn
-            .query_row(
-                "SELECT MAX(currency) FROM invoices",
-                [],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(map_err)?
-            .flatten();
-        let currency = currency_code
-            .as_deref()
-            .map(currency_from_code)
-            .unwrap_or_else(|| Currency::new("EUR").unwrap());
+        let today_str = today.format("%Y-%m-%d").to_string();
+        let year_start_str = year_start.format("%Y-%m-%d").to_string();
 
-        let outstanding_cents: i64 = conn
-            .query_row(
-                "SELECT COALESCE(SUM(total - amount_paid), 0)
-                 FROM v_invoice_payment_status
-                 WHERE status IN ('Finalized', 'Sent')",
-                [],
-                |r| r.get(0),
+        // --- Revenue card: per-currency revenue + invoice count this year.
+        let mut stmt = conn
+            .prepare(
+                "SELECT currency,
+                        COALESCE(SUM(total), 0) AS amount,
+                        COUNT(*) AS invoice_count
+                 FROM invoices
+                 WHERE status IN ('Finalized', 'Sent') AND date >= ?1
+                 GROUP BY currency
+                 ORDER BY currency ASC",
             )
             .map_err(map_err)?;
-        let overdue_count: i64 = conn
+        let revenue_this_year: Vec<DashboardRevenueRow> = stmt
+            .query_map(params![year_start_str], |row| {
+                let code: String = row.get("currency")?;
+                let amount: i64 = row.get("amount")?;
+                let count: i64 = row.get("invoice_count")?;
+                Ok(DashboardRevenueRow {
+                    amount: Money::new(amount, currency_from_code(&code)),
+                    invoice_count: count as u64,
+                })
+            })
+            .map_err(map_err)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(map_err)?;
+        drop(stmt);
+
+        // --- Outstanding card: per-currency outstanding + overdue subset.
+        // Single GROUP BY currency, with conditional sums for the overdue
+        // subset (due_date < today AND still has a positive balance).
+        let mut stmt = conn
+            .prepare(
+                "SELECT currency,
+                        COALESCE(SUM(total - amount_paid), 0) AS outstanding,
+                        COALESCE(SUM(
+                            CASE
+                                WHEN due_date IS NOT NULL AND due_date < ?1
+                                THEN total - amount_paid
+                                ELSE 0
+                            END
+                        ), 0) AS overdue,
+                        COUNT(*) AS open_count,
+                        SUM(
+                            CASE
+                                WHEN due_date IS NOT NULL AND due_date < ?1
+                                THEN 1 ELSE 0
+                            END
+                        ) AS overdue_count
+                 FROM v_invoice_payment_status
+                 WHERE status IN ('Finalized', 'Sent')
+                   AND total - amount_paid > 0
+                 GROUP BY currency
+                 ORDER BY currency ASC",
+            )
+            .map_err(map_err)?;
+        let outstanding: Vec<DashboardOutstandingRow> = stmt
+            .query_map(params![today_str], |row| {
+                let code: String = row.get("currency")?;
+                let cur = currency_from_code(&code);
+                let outstanding: i64 = row.get("outstanding")?;
+                let overdue: i64 = row.get("overdue")?;
+                let open_count: i64 = row.get("open_count")?;
+                let overdue_count: i64 = row.get("overdue_count")?;
+                Ok(DashboardOutstandingRow {
+                    outstanding: Money::new(outstanding, cur),
+                    overdue: Money::new(overdue, cur),
+                    open_count: open_count as u64,
+                    overdue_count: overdue_count as u64,
+                })
+            })
+            .map_err(map_err)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(map_err)?;
+        drop(stmt);
+
+        // --- Outstanding card footer: global overdue count + max days.
+        let (overdue_count, overdue_max_days): (i64, i64) = conn
             .query_row(
-                "SELECT COUNT(*) FROM v_invoice_payment_status
+                "SELECT COUNT(*),
+                        COALESCE(MAX(CAST(julianday(?1) - julianday(due_date) AS INTEGER)), 0)
+                 FROM v_invoice_payment_status
                  WHERE status IN ('Finalized', 'Sent')
                    AND due_date IS NOT NULL
                    AND due_date < ?1
                    AND total - amount_paid > 0",
-                params![today.format("%Y-%m-%d").to_string()],
-                |r| r.get(0),
+                params![today_str],
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .map_err(map_err)?;
-        let draft_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM invoices WHERE status = 'Draft'", [], |r| {
-                r.get(0)
-            })
-            .map_err(map_err)?;
-        let finalized_count: i64 = conn
+
+        // --- Activity card: avg payment delay over the last 12 months.
+        // Computed as the difference between an invoice's issue date and its
+        // first allocated payment date. Allocations carry the payment date
+        // via the parent payment, joined here. A NULL `AVG(...)` (no rows
+        // in window) becomes `None`.
+        let twelve_months_ago = today - Duration::days(365);
+        let avg_payment_delay_days: Option<f64> = conn
             .query_row(
-                "SELECT COUNT(*) FROM invoices WHERE status = 'Finalized'",
+                "SELECT AVG(julianday(p.date) - julianday(i.date))
+                 FROM payment_allocations pa
+                 JOIN payments p ON p.id = pa.payment_id
+                 JOIN invoices i ON i.id = pa.invoice_id
+                 WHERE p.date >= ?1",
+                params![twelve_months_ago.format("%Y-%m-%d").to_string()],
+                |r| r.get::<_, Option<f64>>(0),
+            )
+            .map_err(map_err)?;
+
+        // --- Activity card: target due-days from settings.
+        let avg_payment_delay_target_days: i64 = conn
+            .query_row(
+                "SELECT default_invoice_due_days FROM app_preferences WHERE id = 1",
                 [],
                 |r| r.get(0),
             )
             .map_err(map_err)?;
-        let sent_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM invoices WHERE status = 'Sent'", [], |r| {
-                r.get(0)
-            })
+
+        // --- Activity card: client counts.
+        let active_clients_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM clients WHERE archived_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(map_err)?;
+        let new_clients_this_year_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM clients WHERE substr(created_at, 1, 4) = ?1",
+                params![format!("{:04}", today.year())],
+                |r| r.get(0),
+            )
+            .map_err(map_err)?;
+
+        // --- Activity card: invoice counts this year.
+        let finalized_this_year_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM invoices
+                 WHERE status IN ('Finalized', 'Sent') AND date >= ?1",
+                params![year_start_str],
+                |r| r.get(0),
+            )
+            .map_err(map_err)?;
+        // Drafts use `created_at` (not `date`) — a draft's `date` is a
+        // user-entered intended issue date and may sit in any year.
+        let drafts_this_year_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM invoices
+                 WHERE status = 'Draft' AND substr(created_at, 1, 4) = ?1",
+                params![format!("{:04}", today.year())],
+                |r| r.get(0),
+            )
             .map_err(map_err)?;
 
         Ok(DashboardSummary {
-            revenue_this_year: Money::new(revenue_cents, currency),
-            outstanding_total: Money::new(outstanding_cents, currency),
+            revenue_this_year,
+            outstanding,
             overdue_count: overdue_count as u64,
-            draft_count: draft_count as u64,
-            finalized_count: finalized_count as u64,
-            sent_count: sent_count as u64,
+            overdue_max_days: overdue_max_days as u64,
+            avg_payment_delay_days,
+            avg_payment_delay_target_days: avg_payment_delay_target_days as u64,
+            active_clients_count: active_clients_count as u64,
+            new_clients_this_year_count: new_clients_this_year_count as u64,
+            finalized_this_year_count: finalized_this_year_count as u64,
+            drafts_this_year_count: drafts_this_year_count as u64,
         })
     }
 }
@@ -409,11 +484,11 @@ fn row_to_client_balance(row: &Row<'_>) -> rusqlite::Result<ClientBalance> {
     let id_str: String = row.get("id")?;
     let client_id: ClientId = parse_uuid(&id_str, ClientId)?;
     let name: String = row.get("name")?;
+    let currency_code: String = row.get("currency")?;
+    let currency = currency_from_code(&currency_code);
     let total_invoiced: i64 = row.get("total_invoiced")?;
     let total_paid: i64 = row.get("total_paid")?;
     let outstanding: i64 = row.get("outstanding")?;
-    // Balances are denominated in the app currency; we pick a sensible fallback.
-    let currency = Currency::new("EUR").unwrap();
     Ok(ClientBalance {
         client_id,
         client_name: name,
@@ -507,6 +582,18 @@ mod tests {
         due_date: Option<NaiveDate>,
         total_cents: i64,
     ) -> InvoiceId {
+        seed_invoice_in(db, client_id, date, due_date, total_cents, "EUR")
+    }
+
+    fn seed_invoice_in(
+        db: &Db,
+        client_id: ClientId,
+        date: NaiveDate,
+        due_date: Option<NaiveDate>,
+        total_cents: i64,
+        currency_code: &str,
+    ) -> InvoiceId {
+        let currency = Currency::new(currency_code).unwrap();
         let mut invoice = Invoice::create_draft(
             NewInvoice {
                 client_id,
@@ -514,13 +601,14 @@ mod tests {
                 date,
                 due_date,
                 line_items: vec![NewLineItem {
+                    catalog_item_id: None,
                     description: "W".into(),
                     quantity: dec!(1),
-                    unit_price: Money::new(total_cents, eur()),
+                    unit_price: Money::new(total_cents, currency),
                 }],
                 tax_ids: vec![],
                 notes: None,
-                currency: eur(),
+                currency,
             },
             &[],
             Utc::now(),
@@ -706,8 +794,11 @@ mod tests {
             }],
         );
         let repo = SqliteAccountingRepository::new(db);
-        let balance = repo.client_balance(client).unwrap();
+        let balances = repo.client_balance(client).unwrap();
+        assert_eq!(balances.len(), 1, "single-currency client = one row");
+        let balance = &balances[0];
         assert_eq!(balance.total_invoiced.minor_units(), 1000);
+        assert_eq!(balance.total_invoiced.currency().code(), "EUR");
         assert_eq!(balance.total_paid.minor_units(), 400);
         assert_eq!(balance.outstanding.minor_units(), 600);
     }
@@ -774,10 +865,93 @@ mod tests {
         let repo = SqliteAccountingRepository::new(db);
         let today = NaiveDate::from_ymd_opt(2026, 4, 14).unwrap();
         let summary = repo.dashboard_summary(today).unwrap();
-        // Only the 2026 invoice counts toward revenue_this_year.
-        assert_eq!(summary.revenue_this_year.minor_units(), 1000);
-        assert_eq!(summary.outstanding_total.minor_units(), 3000);
+        // Only the 2026 invoice counts toward revenue / finalized this year.
+        // The 2025 invoice is still outstanding & overdue though, so it
+        // contributes to the outstanding card and overdue footer.
+        assert_eq!(summary.revenue_this_year.len(), 1);
+        assert_eq!(summary.revenue_this_year[0].amount.minor_units(), 1000);
+        assert_eq!(summary.revenue_this_year[0].amount.currency().code(), "EUR");
+        assert_eq!(summary.revenue_this_year[0].invoice_count, 1);
+        assert_eq!(summary.outstanding.len(), 1);
+        assert_eq!(summary.outstanding[0].outstanding.minor_units(), 3000);
+        assert_eq!(summary.outstanding[0].overdue.minor_units(), 2000);
+        assert_eq!(summary.outstanding[0].open_count, 2);
+        assert_eq!(summary.outstanding[0].overdue_count, 1);
         assert_eq!(summary.overdue_count, 1);
-        assert_eq!(summary.finalized_count, 2);
+        assert!(summary.overdue_max_days > 0);
+        assert_eq!(summary.finalized_this_year_count, 1);
+    }
+
+    #[test]
+    fn client_balance_is_empty_for_client_with_no_activity() {
+        let db = open_memory();
+        let client = seed_client(&db, "Quiet");
+        let repo = SqliteAccountingRepository::new(db);
+        let balances = repo.client_balance(client).unwrap();
+        assert!(balances.is_empty());
+    }
+
+    #[test]
+    fn client_balance_emits_one_row_per_currency() {
+        let db = open_memory();
+        let client = seed_client(&db, "Multi");
+        seed_invoice_in(
+            &db,
+            client,
+            NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
+            None,
+            1000,
+            "EUR",
+        );
+        seed_invoice_in(
+            &db,
+            client,
+            NaiveDate::from_ymd_opt(2026, 3, 2).unwrap(),
+            None,
+            500,
+            "USD",
+        );
+        let repo = SqliteAccountingRepository::new(db);
+        let balances = repo.client_balance(client).unwrap();
+        assert_eq!(balances.len(), 2);
+        let by_currency: std::collections::HashMap<String, i64> = balances
+            .iter()
+            .map(|b| (b.outstanding.currency().code().to_string(), b.outstanding.minor_units()))
+            .collect();
+        assert_eq!(by_currency.get("EUR"), Some(&1000));
+        assert_eq!(by_currency.get("USD"), Some(&500));
+    }
+
+    #[test]
+    fn dashboard_summary_emits_one_row_per_currency() {
+        let db = open_memory();
+        let client = seed_client(&db, "Multi");
+        seed_invoice_in(
+            &db,
+            client,
+            NaiveDate::from_ymd_opt(2026, 2, 1).unwrap(),
+            None,
+            1000,
+            "EUR",
+        );
+        seed_invoice_in(
+            &db,
+            client,
+            NaiveDate::from_ymd_opt(2026, 2, 2).unwrap(),
+            None,
+            500,
+            "USD",
+        );
+        let repo = SqliteAccountingRepository::new(db);
+        let today = NaiveDate::from_ymd_opt(2026, 4, 14).unwrap();
+        let summary = repo.dashboard_summary(today).unwrap();
+        assert_eq!(summary.revenue_this_year.len(), 2);
+        let codes: Vec<&str> = summary
+            .revenue_this_year
+            .iter()
+            .map(|r| r.amount.currency().code())
+            .collect();
+        assert!(codes.contains(&"EUR"));
+        assert!(codes.contains(&"USD"));
     }
 }

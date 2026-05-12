@@ -11,6 +11,8 @@ import { AddressListEditor } from "../components/client/AddressListEditor";
 import { ContactListEditor } from "../components/client/ContactListEditor";
 import { ClientAttributeDatalists } from "../components/client/ClientAttributeDatalists";
 import { useClientStore } from "../stores/clientStore";
+import { useCurrencyCatalogStore } from "../stores/currencyCatalogStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import type { NewClientDto, UpdateClientDto } from "../ipc";
 
 const empty: NewClientDto = {
@@ -30,6 +32,10 @@ const empty: NewClientDto = {
   pronouns: null,
   occupation: null,
   language: null,
+  // `null` lets the backend fall back to the org's currency at creation
+  // time. Once the user picks a currency explicitly, this becomes the
+  // chosen code; on edit it's always populated.
+  default_currency: null,
 };
 
 export function ClientEditor() {
@@ -40,11 +46,14 @@ export function ClientEditor() {
 
   const { clients, refresh, create, update, attributeValues, refreshAttributeValues } =
     useClientStore();
+  const { all: currencies, load: loadCurrencies } = useCurrencyCatalogStore();
+  const orgCurrency = useSettingsStore((s) => s.snapshot?.currency.code);
 
   useEffect(() => {
     if (clients.length === 0) void refresh();
     void refreshAttributeValues();
-  }, [clients.length, refresh, refreshAttributeValues]);
+    void loadCurrencies();
+  }, [clients.length, refresh, refreshAttributeValues, loadCurrencies]);
 
   const existing = useMemo(() => clients.find((c) => c.id === id), [clients, id]);
 
@@ -74,6 +83,7 @@ export function ClientEditor() {
         pronouns: existing.pronouns,
         occupation: existing.occupation,
         language: existing.language,
+        default_currency: existing.default_currency,
       });
     }
   }, [existing]);
@@ -84,7 +94,14 @@ export function ClientEditor() {
     setSubmitting(true);
     try {
       if (editing && existing) {
-        const payload: UpdateClientDto = { id: existing.id, ...form };
+        // On update the currency is always populated (preloaded from the
+        // existing client). The DTO requires a string here; fall back to
+        // the existing record's value if the form somehow lacks one.
+        const payload: UpdateClientDto = {
+          id: existing.id,
+          ...form,
+          default_currency: form.default_currency ?? existing.default_currency,
+        };
         await update(payload);
         navigate(`/clients/${existing.id}`);
       } else {
@@ -92,7 +109,7 @@ export function ClientEditor() {
         navigate("/clients");
       }
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setSubmitting(false);
     }
@@ -212,6 +229,21 @@ export function ClientEditor() {
                     <option value="en">English</option>
                     <option value="nl">Nederlands</option>
                     <option value="de">Deutsch</option>
+                  </Select>
+                </Field>
+
+                <Field label={t("clients.default_currency")}>
+                  <Select
+                    value={form.default_currency ?? orgCurrency ?? ""}
+                    onChange={(e) =>
+                      setForm({ ...form, default_currency: e.target.value || null })
+                    }
+                  >
+                    {currencies.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.code} — {c.name}
+                      </option>
+                    ))}
                   </Select>
                 </Field>
               </div>

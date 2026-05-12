@@ -34,7 +34,7 @@ pub struct UpdateCatalogItemInput {
     pub id: CatalogItemId,
     pub name: String,
     pub kind: CatalogItemKind,
-    pub default_price: Money,
+    pub prices: Vec<Money>,
     pub unit: Option<String>,
     pub reference: Option<String>,
 }
@@ -50,12 +50,9 @@ impl UpdateCatalogItem {
         if name.is_empty() {
             return Err(CatalogItemError::EmptyName.into());
         }
-        if input.default_price.is_negative() {
-            return Err(CatalogItemError::NegativePrice.into());
-        }
         item.name = name;
         item.kind = input.kind;
-        item.default_price = input.default_price;
+        item.replace_prices(input.prices)?;
         item.unit = input.unit.and_then(normalize);
         item.reference = input.reference.and_then(normalize);
         self.repo.update(&item)?;
@@ -169,11 +166,15 @@ mod tests {
         Currency::new("EUR").unwrap()
     }
 
+    fn usd() -> Currency {
+        Currency::new("USD").unwrap()
+    }
+
     fn new_service(name: &str, cents: i64) -> NewCatalogItem {
         NewCatalogItem {
             name: name.into(),
             kind: CatalogItemKind::Service,
-            default_price: Money::new(cents, eur()),
+            prices: vec![Money::new(cents, eur())],
             unit: Some("hour".into()),
             reference: None,
         }
@@ -186,7 +187,7 @@ mod tests {
             .execute(NewCatalogItem {
                 name: "Consulting".into(),
                 kind: CatalogItemKind::Service,
-                default_price: Money::new(10000, eur()),
+                prices: vec![Money::new(10000, eur())],
                 unit: Some("hour".into()),
                 reference: Some("CONS-01".into()),
             })
@@ -198,8 +199,6 @@ mod tests {
         assert!(!s.is_archived());
         assert_eq!(repo.inner.lock().len(), 1);
 
-        // Confirm the stored copy matches (the repo receives the fully
-        // constructed domain entity, not the input).
         let stored = repo.inner.lock().get(&s.id).cloned().unwrap();
         assert_eq!(stored, s);
     }
@@ -211,7 +210,7 @@ mod tests {
             .execute(NewCatalogItem {
                 name: "Book".into(),
                 kind: CatalogItemKind::Product,
-                default_price: Money::new(2500, eur()),
+                prices: vec![Money::new(2500, eur())],
                 unit: Some("piece".into()),
                 reference: Some("SKU-042".into()),
             })
@@ -233,15 +232,38 @@ mod tests {
                 id: s.id,
                 name: "Consulting (senior)".into(),
                 kind: CatalogItemKind::Service,
-                default_price: Money::new(20000, eur()),
+                prices: vec![Money::new(20000, eur())],
                 unit: Some("day".into()),
                 reference: Some("SR-001".into()),
             })
             .unwrap();
-        assert_eq!(updated.default_price.minor_units(), 20000);
+        assert_eq!(updated.price_for(eur()).unwrap().minor_units(), 20000);
         assert_eq!(updated.name, "Consulting (senior)");
         assert_eq!(updated.unit.as_deref(), Some("day"));
         assert_eq!(updated.reference.as_deref(), Some("SR-001"));
+    }
+
+    #[test]
+    fn update_can_add_a_second_currency_price() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let s = CreateCatalogItem::new(repo.clone())
+            .execute(new_service("Consulting", 10000))
+            .unwrap();
+        let updated = UpdateCatalogItem::new(repo)
+            .execute(UpdateCatalogItemInput {
+                id: s.id,
+                name: "Consulting".into(),
+                kind: CatalogItemKind::Service,
+                prices: vec![
+                    Money::new(10000, eur()),
+                    Money::new(11000, usd()),
+                ],
+                unit: Some("hour".into()),
+                reference: None,
+            })
+            .unwrap();
+        assert_eq!(updated.prices.len(), 2);
+        assert_eq!(updated.price_for(usd()).unwrap().minor_units(), 11000);
     }
 
     #[test]
@@ -252,7 +274,7 @@ mod tests {
                 id: CatalogItemId::new(),
                 name: "X".into(),
                 kind: CatalogItemKind::Service,
-                default_price: Money::zero(eur()),
+                prices: vec![],
                 unit: None,
                 reference: None,
             })
@@ -272,7 +294,7 @@ mod tests {
                 id: s.id,
                 name: "Online course".into(),
                 kind: CatalogItemKind::Product,
-                default_price: s.default_price,
+                prices: s.prices.clone(),
                 unit: Some("license".into()),
                 reference: Some("COURSE-01".into()),
             })
@@ -288,7 +310,7 @@ mod tests {
             .execute(NewCatalogItem {
                 name: "Consulting".into(),
                 kind: CatalogItemKind::Service,
-                default_price: Money::new(15000, eur()),
+                prices: vec![Money::new(15000, eur())],
                 unit: Some("hour".into()),
                 reference: Some("CONS-01".into()),
             })
@@ -298,7 +320,7 @@ mod tests {
                 id: s.id,
                 name: "Consulting".into(),
                 kind: CatalogItemKind::Service,
-                default_price: Money::new(15000, eur()),
+                prices: vec![Money::new(15000, eur())],
                 unit: None,
                 reference: None,
             })
@@ -309,8 +331,6 @@ mod tests {
 
     #[test]
     fn update_trims_blank_optional_fields_to_none() {
-        // A "  " string coming from an over-eager frontend must be normalized
-        // to None rather than stored as whitespace.
         let repo = Arc::new(InMemoryRepo::default());
         let s = CreateCatalogItem::new(repo.clone())
             .execute(new_service("Consulting", 10000))
@@ -320,7 +340,7 @@ mod tests {
                 id: s.id,
                 name: "Consulting".into(),
                 kind: CatalogItemKind::Service,
-                default_price: Money::new(10000, eur()),
+                prices: vec![Money::new(10000, eur())],
                 unit: Some("   ".into()),
                 reference: Some("".into()),
             })
@@ -340,12 +360,34 @@ mod tests {
                 id: s.id,
                 name: "Consulting".into(),
                 kind: CatalogItemKind::Service,
-                default_price: Money::new(-1, eur()),
+                prices: vec![Money::new(-1, eur())],
                 unit: None,
                 reference: None,
             })
             .unwrap_err();
         assert!(err.is(ErrorCode::CatalogItemNegativePrice));
+    }
+
+    #[test]
+    fn update_rejects_duplicate_currency() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let s = CreateCatalogItem::new(repo.clone())
+            .execute(new_service("Consulting", 10000))
+            .unwrap();
+        let err = UpdateCatalogItem::new(repo)
+            .execute(UpdateCatalogItemInput {
+                id: s.id,
+                name: "Consulting".into(),
+                kind: CatalogItemKind::Service,
+                prices: vec![
+                    Money::new(10000, eur()),
+                    Money::new(20000, eur()),
+                ],
+                unit: None,
+                reference: None,
+            })
+            .unwrap_err();
+        assert!(err.is(ErrorCode::CatalogItemDuplicateCurrency));
     }
 
     #[test]

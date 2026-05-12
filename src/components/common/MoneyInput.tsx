@@ -55,6 +55,9 @@ export function MoneyInput({
 
   const input = (
     <div className="flex items-center gap-2">
+      <span className="text-[12px] text-ink-3 font-mono tabular shrink-0">
+        {currency.code}
+      </span>
       <Input
         mono
         type="number"
@@ -65,7 +68,6 @@ export function MoneyInput({
         disabled={disabled}
         className="text-right"
       />
-      <span className="text-[12px] text-ink-3 shrink-0">{currency.symbol}</span>
     </div>
   );
 

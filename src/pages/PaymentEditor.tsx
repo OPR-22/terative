@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "../stores/toastStore";
 import { useNavigate, useParams } from "react-router-dom";
@@ -19,6 +19,7 @@ import {
 } from "../ipc";
 import { useMoneyFormat } from "../lib/money";
 import { useClientStore } from "../stores/clientStore";
+import { useCurrencyCatalogStore } from "../stores/currencyCatalogStore";
 import { usePaymentStore } from "../stores/paymentStore";
 import { useSettingsStore } from "../stores/settingsStore";
 
@@ -36,17 +37,41 @@ export function PaymentEditor() {
   const { payments, refresh, record, update } = usePaymentStore();
   const { clients, refresh: refreshClients } = useClientStore();
   const { snapshot, load } = useSettingsStore();
+  const {
+    all: currencyCatalog,
+    load: loadCurrencyCatalog,
+    byCode,
+  } = useCurrencyCatalogStore();
   const { formatMinor } = useMoneyFormat();
 
   useEffect(() => {
     if (payments.length === 0) void refresh();
     if (clients.length === 0) void refreshClients();
     if (!snapshot) void load();
-  }, [payments.length, clients.length, snapshot, refresh, refreshClients, load]);
+    if (currencyCatalog.length === 0) void loadCurrencyCatalog();
+  }, [
+    payments.length,
+    clients.length,
+    snapshot,
+    currencyCatalog.length,
+    refresh,
+    refreshClients,
+    load,
+    loadCurrencyCatalog,
+  ]);
 
   const existing = useMemo(() => payments.find((p) => p.id === id), [payments, id]);
-  const currency = snapshot?.currency;
-  const currencyCode = currency?.code ?? "EUR";
+
+  const [currencyCode, setCurrencyCode] = useState<string>("");
+  // Seed from the org default once the snapshot loads, the existing payment's
+  // currency on edit, and let the client picker overwrite it below.
+  useEffect(() => {
+    if (currencyCode) return;
+    if (existing) setCurrencyCode(existing.amount.currency.code);
+    else if (snapshot) setCurrencyCode(snapshot.currency.code);
+  }, [existing, snapshot, currencyCode]);
+
+  const currency = byCode(currencyCode);
 
   const [clientId, setClientId] = useState("");
   const [date, setDate] = useState(today());
@@ -64,13 +89,13 @@ export function PaymentEditor() {
     if (!existing) return;
     setClientId(existing.client_id);
     setDate(existing.date);
-    setAmountCents(existing.amount.amount_minor);
+    setAmountCents(existing.amount.amount);
     setMethodKind(existing.method.kind);
     setMethodDetail(existing.method.kind === "Other" ? existing.method.detail : "");
     setReference(existing.reference ?? "");
     setNotes(existing.notes ?? "");
     const m: Record<string, number> = {};
-    for (const a of existing.allocations) m[a.invoice_id] = a.amount.amount_minor;
+    for (const a of existing.allocations) m[a.invoice_id] = a.amount.amount;
     setAllocations(m);
   }, [existing]);
 
@@ -82,7 +107,7 @@ export function PaymentEditor() {
         if (!cancelled) setOutstanding(rows);
       })
       .catch((e) => {
-        if (!cancelled) toast.error(String(e));
+        if (!cancelled) toast.error(e);
       });
     return () => {
       cancelled = true;
@@ -94,6 +119,35 @@ export function PaymentEditor() {
     [outstanding, clientId],
   );
 
+  // Split the client's open invoices by whether they match the payment's
+  // currency. Strict silos means we can only allocate against same-currency
+  // invoices; the rest get summarised below the table.
+  const clientOutstandingInCurrency = useMemo(
+    () =>
+      clientOutstanding.filter(
+        (r) => r.amount_due.currency.code === currencyCode,
+      ),
+    [clientOutstanding, currencyCode],
+  );
+  const otherCurrencyCount = clientOutstanding.length - clientOutstandingInCurrency.length;
+
+  // When a client is selected (and this isn't an edit of an existing
+  // payment), default the payment's currency to the client's default —
+  // mirrors the invoice editor behaviour. Switching currency invalidates
+  // any allocations carried over, so we reset them.
+  const seededClientCurrencyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (existing) return;
+    if (!clientId) return;
+    if (seededClientCurrencyRef.current === clientId) return;
+    const client = clients.find((c) => c.id === clientId);
+    if (!client) return;
+    seededClientCurrencyRef.current = clientId;
+    if (client.default_currency === currencyCode) return;
+    setCurrencyCode(client.default_currency);
+    setAllocations({});
+  }, [clientId, clients, existing, currencyCode]);
+
   const allocatedTotal = Object.values(allocations).reduce((sum, c) => sum + c, 0);
   const unallocated = amountCents - allocatedTotal;
 
@@ -104,7 +158,7 @@ export function PaymentEditor() {
         delete next[row.invoice_id];
       } else {
         const remaining = Math.max(0, amountCents - allocatedTotal);
-        next[row.invoice_id] = Math.min(remaining, row.amount_due.amount_minor);
+        next[row.invoice_id] = Math.min(remaining, row.amount_due.amount);
       }
       return next;
     });
@@ -122,12 +176,14 @@ export function PaymentEditor() {
     }
   };
 
-  const buildAllocations = (): NewPaymentAllocationDto[] =>
+  const buildAllocations = (
+    currency: NonNullable<typeof snapshot>["currency"],
+  ): NewPaymentAllocationDto[] =>
     Object.entries(allocations)
       .filter(([, c]) => c > 0)
       .map(([invoice_id, c]) => ({
         invoice_id,
-        amount: { amount_minor: c, currency: currencyCode },
+        amount: { amount: c, currency },
       }));
 
   const submit = async (e: React.FormEvent) => {
@@ -140,15 +196,16 @@ export function PaymentEditor() {
       if (methodKind === "Other" && methodDetail.trim() === "")
         throw new Error(t("payments.err_method_detail"));
       if (unallocated < 0) throw new Error(t("payments.err_over_allocated"));
+      if (!currency) throw new Error(t("payments.err_currency_unknown"));
 
       if (editing && existing) {
         const payload: UpdatePaymentDto = {
           id: existing.id,
           date,
-          amount: { amount_minor: amountCents, currency: currencyCode },
+          amount: { amount: amountCents, currency },
           method: buildMethod(),
           reference: reference || null,
-          allocations: buildAllocations(),
+          allocations: buildAllocations(currency),
           notes: notes || null,
         };
         await update(payload);
@@ -156,17 +213,17 @@ export function PaymentEditor() {
         const payload: NewPaymentDto = {
           client_id: clientId,
           date,
-          amount: { amount_minor: amountCents, currency: currencyCode },
+          amount: { amount: amountCents, currency },
           method: buildMethod(),
           reference: reference || null,
-          allocations: buildAllocations(),
+          allocations: buildAllocations(currency),
           notes: notes || null,
         };
         await record(payload);
       }
       navigate("/payments");
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setSubmitting(false);
     }
@@ -209,6 +266,22 @@ export function PaymentEditor() {
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
                 />
+              </Field>
+              <Field label={t("accounting.currency")}>
+                <Select
+                  value={currencyCode}
+                  onChange={(e) => {
+                    setCurrencyCode(e.target.value);
+                    setAllocations({});
+                  }}
+                  disabled={editing || currencyCatalog.length === 0}
+                >
+                  {currencyCatalog.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.code}
+                    </option>
+                  ))}
+                </Select>
               </Field>
               {currency ? (
                 <Field label={t("payments.amount")}>
@@ -265,47 +338,65 @@ export function PaymentEditor() {
             ) : clientOutstanding.length === 0 ? (
               <p className="text-[12px] text-ink-4">{t("payments.no_outstanding")}</p>
             ) : (
-              <div className="border border-line rounded-card overflow-hidden">
-                <div
-                  className="grid items-center px-3 py-2 text-[12px] font-medium text-ink-3 bg-paper-2 border-b border-line"
-                  style={{ gridTemplateColumns: "24px 60px 1fr 100px 140px" }}
-                >
-                  <span />
-                  <span>N°</span>
-                  <span>Date / échéance</span>
-                  <span className="text-right">{t("accounting.amount_due")}</span>
-                  <span className="text-right">{t("payments.allocate_amount")}</span>
-                </div>
-                {clientOutstanding.map((row) => {
-                  const checked = row.invoice_id in allocations;
-                  const cents = allocations[row.invoice_id] ?? 0;
-                  return (
+              <>
+                {clientOutstandingInCurrency.length === 0 ? (
+                  <p className="text-[12px] text-ink-4">
+                    {t("payments.no_outstanding_in_currency", {
+                      currency: currencyCode,
+                    })}
+                  </p>
+                ) : (
+                  <div className="border border-line rounded-card overflow-hidden">
                     <div
-                      key={row.invoice_id}
-                      className="grid items-center px-3 py-2.5 border-b border-line-soft last:border-b-0 text-[13px]"
+                      className="grid items-center px-3 py-2 text-[12px] font-medium text-ink-3 bg-paper-2 border-b border-line"
                       style={{ gridTemplateColumns: "24px 60px 1fr 100px 140px" }}
                     >
-                      <Checkbox checked={checked} onChange={() => toggleAllocation(row)} />
-                      <span className="font-mono tabular">#{row.number ?? "—"}</span>
-                      <span className="text-ink-3 text-[12px]">
-                        {row.due_date ?? "—"}
-                      </span>
-                      <span className="text-right font-mono tabular">
-                        {formatMinor(row.amount_due.amount_minor, row.amount_due.currency)}
-                      </span>
-                      <span className="text-right">
-                        {checked && currency ? (
-                          <MoneyInput
-                            valueMinor={cents}
-                            currency={currency}
-                            onChangeMinor={(c) => updateAllocation(row.invoice_id, c)}
-                          />
-                        ) : null}
-                      </span>
+                      <span />
+                      <span>N°</span>
+                      <span>Date / échéance</span>
+                      <span className="text-right">{t("accounting.amount_due")}</span>
+                      <span className="text-right">{t("payments.allocate_amount")}</span>
                     </div>
-                  );
-                })}
-              </div>
+                    {clientOutstandingInCurrency.map((row) => {
+                      const checked = row.invoice_id in allocations;
+                      const cents = allocations[row.invoice_id] ?? 0;
+                      return (
+                        <div
+                          key={row.invoice_id}
+                          className="grid items-center px-3 py-2.5 border-b border-line-soft last:border-b-0 text-[13px]"
+                          style={{ gridTemplateColumns: "24px 60px 1fr 100px 140px" }}
+                        >
+                          <Checkbox checked={checked} onChange={() => toggleAllocation(row)} />
+                          <span className="font-mono tabular">#{row.number ?? "—"}</span>
+                          <span className="text-ink-3 text-[12px]">
+                            {row.due_date ?? "—"}
+                          </span>
+                          <span className="text-right font-mono tabular">
+                            {formatMinor(row.amount_due.amount, row.amount_due.currency.code)}
+                          </span>
+                          <span className="text-right">
+                            {checked && currency ? (
+                              <MoneyInput
+                                valueMinor={cents}
+                                currency={currency}
+                                onChangeMinor={(c) => updateAllocation(row.invoice_id, c)}
+                              />
+                            ) : null}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {otherCurrencyCount > 0 ? (
+                  <p className="mt-2 text-[12px] text-ink-3 italic">
+                    {t("payments.invoices_in_other_currencies", {
+                      count: otherCurrencyCount,
+                      currency: currencyCode,
+                    })}
+                  </p>
+                ) : null}
+              </>
             )}
             <div className="mt-3.5 flex justify-between text-[13px]">
               <span className="text-ink-3">

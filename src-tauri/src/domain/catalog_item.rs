@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::domain::money::{Money, MoneyError};
+use crate::domain::money::{Currency, Money, MoneyError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct CatalogItemId(pub Uuid);
@@ -52,14 +52,13 @@ pub struct CatalogItem {
     pub id: CatalogItemId,
     pub name: String,
     pub kind: CatalogItemKind,
-    pub default_price: Money,
-    /// Free-text billing unit, e.g. "hour", "day", "piece", "kg". `None` when
-    /// the item has no natural unit (or the user didn't bother).
+    /// Per-currency prices. Invariant: at most one `Money` per `Currency`,
+    /// every entry is non-negative. May be empty — an item with no prices
+    /// is valid (and means the user enters the unit price by hand each
+    /// time the item is added to an invoice).
+    pub prices: Vec<Money>,
     pub unit: Option<String>,
-    /// Optional internal reference / SKU. Free-text, searchable.
     pub reference: Option<String>,
-    /// `None` = active. `Some(timestamp)` = archived; the timestamp records
-    /// when the user clicked "archive".
     pub archived_at: Option<DateTime<Utc>>,
 }
 
@@ -67,8 +66,10 @@ pub struct CatalogItem {
 pub enum CatalogItemError {
     #[error("catalog item name cannot be empty")]
     EmptyName,
-    #[error("catalog item default price cannot be negative")]
+    #[error("catalog item price cannot be negative")]
     NegativePrice,
+    #[error("catalog item has more than one price for the same currency")]
+    DuplicateCurrency,
     #[error(transparent)]
     Money(#[from] MoneyError),
 }
@@ -77,7 +78,7 @@ pub enum CatalogItemError {
 pub struct NewCatalogItem {
     pub name: String,
     pub kind: CatalogItemKind,
-    pub default_price: Money,
+    pub prices: Vec<Money>,
     pub unit: Option<String>,
     pub reference: Option<String>,
 }
@@ -88,18 +89,28 @@ impl CatalogItem {
         if name.is_empty() {
             return Err(CatalogItemError::EmptyName);
         }
-        if input.default_price.is_negative() {
-            return Err(CatalogItemError::NegativePrice);
-        }
+        let prices = validate_prices(input.prices)?;
         Ok(Self {
             id: CatalogItemId::new(),
             name,
             kind: input.kind,
-            default_price: input.default_price,
+            prices,
             unit: input.unit.and_then(non_empty),
             reference: input.reference.and_then(non_empty),
             archived_at: None,
         })
+    }
+
+    /// Returns the stored price for `currency`, or `None` if this item has
+    /// no entry for that currency. Lookup is linear — the price list is
+    /// expected to be small (one per supported currency at most).
+    pub fn price_for(&self, currency: Currency) -> Option<Money> {
+        self.prices.iter().find(|m| m.currency() == currency).copied()
+    }
+
+    pub fn replace_prices(&mut self, new_prices: Vec<Money>) -> Result<(), CatalogItemError> {
+        self.prices = validate_prices(new_prices)?;
+        Ok(())
     }
 
     pub fn is_archived(&self) -> bool {
@@ -113,6 +124,19 @@ impl CatalogItem {
     pub fn unarchive(&mut self) {
         self.archived_at = None;
     }
+}
+
+fn validate_prices(input: Vec<Money>) -> Result<Vec<Money>, CatalogItemError> {
+    let mut seen: std::collections::HashSet<Currency> = std::collections::HashSet::new();
+    for m in &input {
+        if m.is_negative() {
+            return Err(CatalogItemError::NegativePrice);
+        }
+        if !seen.insert(m.currency()) {
+            return Err(CatalogItemError::DuplicateCurrency);
+        }
+    }
+    Ok(input)
 }
 
 fn non_empty(s: String) -> Option<String> {
@@ -133,11 +157,15 @@ mod tests {
         Currency::new("EUR").unwrap()
     }
 
+    fn usd() -> Currency {
+        Currency::new("USD").unwrap()
+    }
+
     fn new_service(name: &str) -> NewCatalogItem {
         NewCatalogItem {
             name: name.into(),
             kind: CatalogItemKind::Service,
-            default_price: Money::new(15000, eur()),
+            prices: vec![Money::new(15000, eur())],
             unit: Some("hour".into()),
             reference: None,
         }
@@ -148,7 +176,8 @@ mod tests {
         let s = CatalogItem::create(new_service("Consulting")).unwrap();
         assert_eq!(s.name, "Consulting");
         assert_eq!(s.kind, CatalogItemKind::Service);
-        assert_eq!(s.default_price.minor_units(), 15000);
+        assert_eq!(s.prices.len(), 1);
+        assert_eq!(s.prices[0].minor_units(), 15000);
         assert_eq!(s.unit.as_deref(), Some("hour"));
         assert!(!s.is_archived());
     }
@@ -158,7 +187,7 @@ mod tests {
         let s = CatalogItem::create(NewCatalogItem {
             name: "  Consulting  ".into(),
             kind: CatalogItemKind::Service,
-            default_price: Money::zero(eur()),
+            prices: vec![],
             unit: Some("  hour  ".into()),
             reference: Some("   ".into()),
         })
@@ -173,7 +202,7 @@ mod tests {
         let err = CatalogItem::create(NewCatalogItem {
             name: "".into(),
             kind: CatalogItemKind::Service,
-            default_price: Money::zero(eur()),
+            prices: vec![],
             unit: None,
             reference: None,
         })
@@ -186,7 +215,7 @@ mod tests {
         let err = CatalogItem::create(NewCatalogItem {
             name: "Consulting".into(),
             kind: CatalogItemKind::Service,
-            default_price: Money::new(-1, eur()),
+            prices: vec![Money::new(-1, eur())],
             unit: None,
             reference: None,
         })
@@ -199,12 +228,72 @@ mod tests {
         let s = CatalogItem::create(NewCatalogItem {
             name: "Freebie".into(),
             kind: CatalogItemKind::Service,
-            default_price: Money::zero(eur()),
+            prices: vec![Money::zero(eur())],
             unit: None,
             reference: None,
         })
         .unwrap();
-        assert!(s.default_price.is_zero());
+        assert!(s.prices[0].is_zero());
+    }
+
+    #[test]
+    fn create_allows_empty_prices_list() {
+        let s = CatalogItem::create(NewCatalogItem {
+            name: "Custom Quote".into(),
+            kind: CatalogItemKind::Service,
+            prices: vec![],
+            unit: None,
+            reference: None,
+        })
+        .unwrap();
+        assert!(s.prices.is_empty());
+    }
+
+    #[test]
+    fn create_accepts_multiple_currencies() {
+        let s = CatalogItem::create(NewCatalogItem {
+            name: "Consulting".into(),
+            kind: CatalogItemKind::Service,
+            prices: vec![Money::new(15000, eur()), Money::new(17000, usd())],
+            unit: None,
+            reference: None,
+        })
+        .unwrap();
+        assert_eq!(s.prices.len(), 2);
+    }
+
+    #[test]
+    fn create_rejects_duplicate_currency() {
+        let err = CatalogItem::create(NewCatalogItem {
+            name: "Consulting".into(),
+            kind: CatalogItemKind::Service,
+            prices: vec![Money::new(15000, eur()), Money::new(20000, eur())],
+            unit: None,
+            reference: None,
+        })
+        .unwrap_err();
+        assert_eq!(err, CatalogItemError::DuplicateCurrency);
+    }
+
+    #[test]
+    fn price_for_returns_matching_currency() {
+        let s = CatalogItem::create(NewCatalogItem {
+            name: "Consulting".into(),
+            kind: CatalogItemKind::Service,
+            prices: vec![Money::new(15000, eur()), Money::new(17000, usd())],
+            unit: None,
+            reference: None,
+        })
+        .unwrap();
+        assert_eq!(s.price_for(eur()).unwrap().minor_units(), 15000);
+        assert_eq!(s.price_for(usd()).unwrap().minor_units(), 17000);
+    }
+
+    #[test]
+    fn price_for_returns_none_for_missing_currency() {
+        let s = CatalogItem::create(new_service("Consulting")).unwrap();
+        let jpy = Currency::new("JPY").unwrap();
+        assert!(s.price_for(jpy).is_none());
     }
 
     #[test]
@@ -212,13 +301,33 @@ mod tests {
         let p = CatalogItem::create(NewCatalogItem {
             name: "Book".into(),
             kind: CatalogItemKind::Product,
-            default_price: Money::new(2500, eur()),
+            prices: vec![Money::new(2500, eur())],
             unit: Some("piece".into()),
             reference: Some("SKU-042".into()),
         })
         .unwrap();
         assert_eq!(p.kind, CatalogItemKind::Product);
         assert_eq!(p.reference.as_deref(), Some("SKU-042"));
+    }
+
+    #[test]
+    fn replace_prices_swaps_list_and_revalidates() {
+        let mut s = CatalogItem::create(new_service("Consulting")).unwrap();
+        s.replace_prices(vec![Money::new(20000, usd())]).unwrap();
+        assert_eq!(s.prices.len(), 1);
+        assert_eq!(s.prices[0].currency(), usd());
+    }
+
+    #[test]
+    fn replace_prices_rejects_duplicate_currency() {
+        let mut s = CatalogItem::create(new_service("Consulting")).unwrap();
+        let err = s
+            .replace_prices(vec![
+                Money::new(1, eur()),
+                Money::new(2, eur()),
+            ])
+            .unwrap_err();
+        assert_eq!(err, CatalogItemError::DuplicateCurrency);
     }
 
     #[test]

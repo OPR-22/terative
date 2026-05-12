@@ -101,7 +101,7 @@ export const commands = {
 	accountingListOverdue: () => typedError<InvoicePaymentRowDto[], AppError>(__TAURI_INVOKE("accounting_list_overdue")),
 	accountingRevenueByPeriod: (input: RevenueByPeriodInputDto) => typedError<RevenueBucketDto[], AppError>(__TAURI_INVOKE("accounting_revenue_by_period", { input })),
 	accountingRevenueByClient: (input: RevenueByClientInputDto) => typedError<RevenueByClientDto[], AppError>(__TAURI_INVOKE("accounting_revenue_by_client", { input })),
-	accountingClientBalance: (clientId: string) => typedError<ClientBalanceDto, AppError>(__TAURI_INVOKE("accounting_client_balance", { clientId })),
+	accountingClientBalance: (clientId: string) => typedError<ClientBalanceDto[], AppError>(__TAURI_INVOKE("accounting_client_balance", { clientId })),
 	accountingClientBalances: () => typedError<ClientBalanceDto[], AppError>(__TAURI_INVOKE("accounting_client_balances")),
 	accountingAgingReport: () => typedError<AgingRowDto[], AppError>(__TAURI_INVOKE("accounting_aging_report")),
 	accountingDashboardSummary: () => typedError<DashboardSummaryDto, AppError>(__TAURI_INVOKE("accounting_dashboard_summary")),
@@ -279,7 +279,8 @@ export type CatalogItemDto = {
 	id: string,
 	name: string,
 	kind: CatalogItemKindDto,
-	default_price: MoneyDto,
+	// One entry per currency the item is priced in. May be empty.
+	prices: MoneyDto[],
 	unit: string | null,
 	reference: string | null,
 	archived_at: string | null,
@@ -332,6 +333,11 @@ export type ClientDto = {
 	pronouns: string | null,
 	occupation: string | null,
 	language: string | null,
+	/**
+	 *  ISO 4217 code (e.g. "EUR"). Pre-fills the currency on new invoices
+	 *  for this client.
+	 */
+	default_currency: string,
 	archived_at: string | null,
 	created_at: string,
 };
@@ -380,13 +386,29 @@ export type CurrencyConfigDto = {
 	sub_unit_name: string | null,
 };
 
-export type DashboardSummaryDto = {
-	revenue_this_year: MoneyDto,
-	outstanding_total: MoneyDto,
+export type DashboardOutstandingRowDto = {
+	outstanding: MoneyDto,
+	overdue: MoneyDto,
+	open_count: number,
 	overdue_count: number,
-	draft_count: number,
-	finalized_count: number,
-	sent_count: number,
+};
+
+export type DashboardRevenueRowDto = {
+	amount: MoneyDto,
+	invoice_count: number,
+};
+
+export type DashboardSummaryDto = {
+	revenue_this_year: DashboardRevenueRowDto[],
+	outstanding: DashboardOutstandingRowDto[],
+	overdue_count: number,
+	overdue_max_days: number,
+	avg_payment_delay_days: number | null,
+	avg_payment_delay_target_days: number,
+	active_clients_count: number,
+	new_clients_this_year_count: number,
+	finalized_this_year_count: number,
+	drafts_this_year_count: number,
 };
 
 export type DerivedPaymentStatusDto = "Draft" | "Unpaid" | "Partial" | "Paid" | "Overdue" | "Cancelled";
@@ -435,7 +457,7 @@ export type EmailTemplateTypeDto = "InitialContact" | "FollowUp";
  *  `AlreadyExists` / `FailedPrecondition`. They are the i18n keys used by
  *  the frontend's `errorCatalog`.
  */
-export type ErrorCode = "resource_not_found" | "no_active_org" | "org_not_found" | "org_code_already_exists" | "invalid_org_code" | "bookmark_empty_label" | "bookmark_empty_url" | "bookmark_invalid_url" | "bookmark_unsupported_scheme" | "catalog_item_empty_name" | "catalog_item_negative_price" | "client_empty_name" | "client_empty_contact_value" | "client_empty_address_street" | "client_empty_address_city" | "client_empty_address_postal_code" | "client_empty_address_country" | "client_duplicate_billing_address" | "client_duplicate_shipping_address" | "client_self_referral" | "client_future_date_of_birth" | "client_has_invoices" | "currency_unsupported" | "dto_convert" | "email_config_empty_host" | "email_config_invalid_port" | "email_config_empty_sender" | "email_config_invalid_sender" | "email_log_empty_recipient" | "email_log_empty_subject" | "email_template_empty_name" | "email_template_empty_subject" | "email_template_empty_body" | "email_template_no_default" | "email_template_is_default" | "invoice_no_line_items" | "invoice_not_draft" | "invoice_cannot_cancel_draft" | "invoice_already_cancelled" | "invoice_not_finalized" | "invoice_not_sendable" | "invoice_over_allocated" | "invoice_allocation_currency_mismatch" | "invoice_not_allocatable" | "invoice_missing_pdf" | "journal_entry_empty_content" | "line_item_empty_description" | "line_item_non_positive_quantity" | "line_item_negative_unit_price" | "money_unsupported_currency" | "money_currency_mismatch" | "money_overflow" | "notebook_duplicate_section" | "notebook_section_empty_name" | "payment_non_positive_amount" | "payment_non_positive_allocation" | "payment_allocations_exceed_payment" | "payment_currency_mismatch" | "payment_duplicate_allocation" | "smtp_password_missing" | "tax_empty_name" | "tax_negative_percentage" | "template_empty_name" | "template_invalid_accent_color" | "template_in_use";
+export type ErrorCode = "resource_not_found" | "no_active_org" | "org_not_found" | "org_code_already_exists" | "invalid_org_code" | "bookmark_empty_label" | "bookmark_empty_url" | "bookmark_invalid_url" | "bookmark_unsupported_scheme" | "catalog_item_empty_name" | "catalog_item_negative_price" | "catalog_item_duplicate_currency" | "client_empty_name" | "client_empty_contact_value" | "client_empty_address_street" | "client_empty_address_city" | "client_empty_address_postal_code" | "client_empty_address_country" | "client_duplicate_billing_address" | "client_duplicate_shipping_address" | "client_self_referral" | "client_future_date_of_birth" | "client_has_invoices" | "currency_unsupported" | "dto_convert" | "email_config_empty_host" | "email_config_invalid_port" | "email_config_empty_sender" | "email_config_invalid_sender" | "email_log_empty_recipient" | "email_log_empty_subject" | "email_template_empty_name" | "email_template_empty_subject" | "email_template_empty_body" | "email_template_no_default" | "email_template_is_default" | "invoice_no_line_items" | "invoice_not_draft" | "invoice_cannot_cancel_draft" | "invoice_already_cancelled" | "invoice_not_finalized" | "invoice_not_sendable" | "invoice_over_allocated" | "invoice_allocation_currency_mismatch" | "invoice_not_allocatable" | "invoice_missing_pdf" | "journal_entry_empty_content" | "line_item_empty_description" | "line_item_non_positive_quantity" | "line_item_negative_unit_price" | "money_unsupported_currency" | "money_currency_mismatch" | "money_overflow" | "notebook_duplicate_section" | "notebook_section_empty_name" | "payment_non_positive_amount" | "payment_non_positive_allocation" | "payment_allocations_exceed_payment" | "payment_currency_mismatch" | "payment_invoice_currency_mismatch" | "payment_duplicate_allocation" | "smtp_password_missing" | "tax_empty_name" | "tax_negative_percentage" | "template_empty_name" | "template_invalid_accent_color" | "template_in_use";
 
 export type FontChoiceDto = "Serif" | "SansSerif" | "Mono";
 
@@ -504,6 +526,12 @@ export type LanguageDto = "Fr" | "En";
 
 export type LineItemDto = {
 	id: string,
+	/**
+	 *  Optional FK back to the source catalog item. The line's unit_price
+	 *  is a snapshot — present here only so stats can count units sold per
+	 *  catalog item without re-reading the catalog's current price.
+	 */
+	catalog_item_id: string | null,
 	description: string,
 	quantity: string,
 	unit_price: MoneyDto,
@@ -531,13 +559,20 @@ export type ListPaymentsQueryDto = {
 };
 
 /**
- *  Wire format for a monetary amount. `amount_minor` is the integer count of
- *  the currency's smallest unit (cents for EUR, yen for JPY, etc.) — see the
- *  doc on [`crate::domain::money::Money`] for the full contract.
+ *  Wire format for a monetary amount.
+ * 
+ *  `amount` is the integer count of the currency's smallest unit (cents for
+ *  EUR, yen for JPY, etc.) — see the doc on [`crate::domain::money::Money`]
+ *  for the contract. The full [`CurrencyConfigDto`] travels with every value
+ *  so the frontend never has to re-lookup display metadata to render it.
+ * 
+ *  On the **input** side (forms / write commands) the frontend may build a
+ *  `MoneyDto` with a partially-populated `currency` — only `currency.code`
+ *  is read by [`TryFrom<&MoneyDto>`], everything else is derived server-side.
  */
 export type MoneyDto = {
-	amount_minor: number,
-	currency: string,
+	amount: number,
+	currency: CurrencyConfigDto,
 };
 
 export type NewBookmarkDto = {
@@ -548,7 +583,7 @@ export type NewBookmarkDto = {
 export type NewCatalogItemDto = {
 	name: string,
 	kind: CatalogItemKindDto,
-	default_price: MoneyDto,
+	prices: MoneyDto[],
 	unit: string | null,
 	reference: string | null,
 };
@@ -570,6 +605,11 @@ export type NewClientDto = {
 	pronouns: string | null,
 	occupation: string | null,
 	language: string | null,
+	/**
+	 *  ISO 4217 code. `None` lets the use case fall back to the org's
+	 *  currency at creation time.
+	 */
+	default_currency?: string | null,
 };
 
 export type NewEmailTemplateDto = {
@@ -614,6 +654,7 @@ export type NewJournalEntryDto = {
 };
 
 export type NewLineItemDto = {
+	catalog_item_id?: string | null,
 	description: string,
 	quantity: string,
 	unit_price: MoneyDto,
@@ -826,7 +867,7 @@ export type UpdateCatalogItemDto = {
 	id: string,
 	name: string,
 	kind: CatalogItemKindDto,
-	default_price: MoneyDto,
+	prices: MoneyDto[],
 	unit: string | null,
 	reference: string | null,
 };
@@ -849,6 +890,7 @@ export type UpdateClientDto = {
 	pronouns: string | null,
 	occupation: string | null,
 	language: string | null,
+	default_currency: string,
 };
 
 export type UpdateDraftInvoiceDto = {
@@ -856,6 +898,13 @@ export type UpdateDraftInvoiceDto = {
 	template_id: string | null,
 	date: string,
 	due_date: string | null,
+	/**
+	 *  ISO 4217 code for the invoice's currency. Mutable while the invoice
+	 *  is still a draft. When the user switches it the frontend must also
+	 *  resubmit every line item with `unit_price` re-expressed in the new
+	 *  currency (the domain rejects mismatches in `compute_totals`).
+	 */
+	currency: string,
 	line_items: NewLineItemDto[],
 	tax_ids: string[],
 	notes: string | null,

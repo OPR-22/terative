@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { translateError } from "../ipc/errorCatalog";
+
 export type ToastKind = "success" | "error" | "warn" | "info" | "neutral";
 
 export interface ToastAction {
@@ -89,18 +91,37 @@ function build(
   };
 }
 
-/// Imperative helper. Single-arg form (`toast.error("...")`) treats the
-/// argument as the title and works seamlessly for migrating existing
-/// `toast.error(String(e))` call sites.
+/// Coerce any caller-supplied title to a string. When the value isn't a
+/// string (e.g. an `IpcError`, an `Error`, or an unknown thrown value), we
+/// route it through `translateError` so legacy `toast.error(e)` and
+/// `toast.error(e)` call sites all produce localized text instead of a raw
+/// error code.
+function resolveTitle(title: unknown): string {
+  if (typeof title === "string") return title;
+  return translateError(title);
+}
+
+/// Imperative helper. Accepts a string title or any caught error value
+/// (`unknown`) — errors are auto-translated via the i18n catalog.
 export const toast = {
-  success: (title: string, description?: string, options?: ToastOptions) =>
-    useToastStore.getState().push(build("success", title, description, options)),
-  error: (title: string, description?: string, options?: ToastOptions) =>
-    useToastStore.getState().push(build("error", title, description, options)),
-  warn: (title: string, description?: string, options?: ToastOptions) =>
-    useToastStore.getState().push(build("warn", title, description, options)),
-  info: (title: string, description?: string, options?: ToastOptions) =>
-    useToastStore.getState().push(build("info", title, description, options)),
-  neutral: (title: string, description?: string, options?: ToastOptions) =>
-    useToastStore.getState().push(build("neutral", title, description, options)),
+  success: (title: unknown, description?: string, options?: ToastOptions) =>
+    useToastStore
+      .getState()
+      .push(build("success", resolveTitle(title), description, options)),
+  error: (title: unknown, description?: string, options?: ToastOptions) =>
+    useToastStore
+      .getState()
+      .push(build("error", resolveTitle(title), description, options)),
+  warn: (title: unknown, description?: string, options?: ToastOptions) =>
+    useToastStore
+      .getState()
+      .push(build("warn", resolveTitle(title), description, options)),
+  info: (title: unknown, description?: string, options?: ToastOptions) =>
+    useToastStore
+      .getState()
+      .push(build("info", resolveTitle(title), description, options)),
+  neutral: (title: unknown, description?: string, options?: ToastOptions) =>
+    useToastStore
+      .getState()
+      .push(build("neutral", resolveTitle(title), description, options)),
 };

@@ -1,6 +1,8 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
+use crate::domain::money::Currency;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ClientId(pub Uuid);
 
@@ -204,6 +206,10 @@ pub struct Client {
     /// "nl"). Free-form to accommodate languages outside the UI's two
     /// supported locales.
     pub language: Option<String>,
+    /// Pre-fills the currency on new invoices for this client. Does not
+    /// restrict — the user may invoice in any currency regardless of this
+    /// preference. Defaults to the org's currency at creation time.
+    pub default_currency: Currency,
     /// `None` = active client. `Some(timestamp)` = archived client; the
     /// timestamp records when the user clicked "archive". Lets the UI
     /// sort archived items by when they were retired and gives an audit
@@ -254,6 +260,10 @@ pub struct NewClient {
     pub pronouns: Option<String>,
     pub occupation: Option<String>,
     pub language: Option<String>,
+    /// The currency to use as the default on this client's new invoices.
+    /// Callers (the use case layer) pass the org's currency here when the
+    /// user hasn't explicitly picked one.
+    pub default_currency: Currency,
 }
 
 impl Client {
@@ -284,6 +294,7 @@ impl Client {
             pronouns: input.pronouns.and_then(non_empty),
             occupation: input.occupation.and_then(non_empty),
             language: input.language.and_then(non_empty),
+            default_currency: input.default_currency,
             archived_at: None,
             created_at: now,
         })
@@ -701,6 +712,36 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err, ClientError::FutureDateOfBirth);
+    }
+
+    #[test]
+    fn create_records_explicit_default_currency() {
+        let c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                default_currency: Currency::Usd,
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        assert_eq!(c.default_currency, Currency::Usd);
+    }
+
+    #[test]
+    fn create_falls_back_to_default_currency_when_unspecified() {
+        let c = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap();
+        // NewClient::default() picks Currency::default() — i.e. EUR. This is
+        // the "caller didn't care" case; the use case layer is expected to
+        // override with the org's actual currency.
+        assert_eq!(c.default_currency, Currency::Eur);
     }
 
     #[test]

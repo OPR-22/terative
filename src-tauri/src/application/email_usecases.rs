@@ -583,6 +583,7 @@ mod tests {
             due_date: NaiveDate::from_ymd_opt(2026, 5, 14),
             line_items: vec![LineItem {
                 id: LineItemId::new(),
+                catalog_item_id: None,
                 description: "Consulting".into(),
                 quantity: dec!(1),
                 unit_price: Money::new(100_000, currency),
@@ -757,7 +758,7 @@ mod tests {
         assert_eq!(e.subject, "Invoice 1001 for Acme Corp");
         assert!(e.body.contains("Acme Corp"));
         assert!(e.body.contains("Acme Freelance"));
-        assert!(e.body.contains("1210.00 €"));
+        assert!(e.body.contains("1210.00 EUR"));
         assert_eq!(e.attachment_name.as_deref(), Some("invoice-1001.pdf"));
         assert_eq!(e.attachment_bytes.as_deref(), Some(b"%PDF-1.4 fake" as &[u8]));
 

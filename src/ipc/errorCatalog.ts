@@ -1,6 +1,13 @@
-import type { TFunction } from "i18next";
+import i18n, { type TFunction } from "i18next";
+
 import type { AppError, ErrorCode } from "./bindings";
 import { IpcError } from "./index";
+
+/** Default to the global i18n singleton so non-component callers (toast
+ *  helpers, async handlers) don't need to thread a TFunction. */
+function defaultT(): TFunction {
+  return i18n.t.bind(i18n) as TFunction;
+}
 
 /**
  * Translate any thrown value into a localized string for the user.
@@ -15,7 +22,7 @@ import { IpcError } from "./index";
  * Missing keys fall back to a generic message so users always see SOMETHING
  * rather than `[object Object]`.
  */
-export function translateError(err: unknown, t: TFunction): string {
+export function translateError(err: unknown, t: TFunction = defaultT()): string {
   if (err instanceof IpcError) {
     return translateAppError(err.app, t);
   }
@@ -25,7 +32,10 @@ export function translateError(err: unknown, t: TFunction): string {
   return t("errors.status.unknown", { defaultValue: "Unexpected error" });
 }
 
-export function translateAppError(e: AppError, t: TFunction): string {
+export function translateAppError(
+  e: AppError,
+  t: TFunction = defaultT(),
+): string {
   switch (e.status) {
     case "InvalidArgument":
     case "NotFound":

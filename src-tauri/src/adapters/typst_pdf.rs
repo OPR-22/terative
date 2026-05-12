@@ -347,6 +347,7 @@ mod tests {
             line_items: vec![
                 LineItem {
                     id: LineItemId::new(),
+                    catalog_item_id: None,
                     description: "Consulting".into(),
                     quantity: dec!(2),
                     unit_price: Money::new(15000, currency),
@@ -354,6 +355,7 @@ mod tests {
                 },
                 LineItem {
                     id: LineItemId::new(),
+                    catalog_item_id: None,
                     description: "Implementation".into(),
                     quantity: dec!(1),
                     unit_price: Money::new(50000, currency),

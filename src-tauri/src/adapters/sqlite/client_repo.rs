@@ -41,7 +41,7 @@ fn parse_uuid(s: &str) -> rusqlite::Result<Uuid> {
 
 const CLIENT_COLUMNS: &str = "id, kind, name, contact_name, tax_id, registration_number, \
                               notes, referred_by, date_of_birth, sex, gender, pronouns, \
-                              occupation, language, archived_at, created_at";
+                              occupation, language, default_currency, archived_at, created_at";
 
 /// Reads the bare client row. Contact lists / addresses are loaded separately.
 fn row_to_bare_client(row: &Row<'_>) -> rusqlite::Result<Client> {
@@ -96,6 +96,16 @@ fn row_to_bare_client(row: &Row<'_>) -> rusqlite::Result<Client> {
         pronouns: row.get("pronouns")?,
         occupation: row.get("occupation")?,
         language: row.get("language")?,
+        default_currency: {
+            let code: String = row.get("default_currency")?;
+            crate::domain::money::Currency::new(&code).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())),
+                )
+            })?
+        },
         archived_at,
         created_at,
     })
@@ -289,8 +299,9 @@ impl ClientRepository for SqliteClientRepository {
         conn.execute(
             "INSERT INTO clients
              (id, kind, name, contact_name, tax_id, registration_number, notes, referred_by,
-              date_of_birth, sex, gender, pronouns, occupation, language, archived_at, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+              date_of_birth, sex, gender, pronouns, occupation, language, default_currency,
+              archived_at, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 c.id.to_string(),
                 c.kind.as_str(),
@@ -306,6 +317,7 @@ impl ClientRepository for SqliteClientRepository {
                 c.pronouns,
                 c.occupation,
                 c.language,
+                c.default_currency.code(),
                 c.archived_at.map(|d| d.to_rfc3339()),
                 c.created_at.to_rfc3339(),
             ],
@@ -326,7 +338,7 @@ impl ClientRepository for SqliteClientRepository {
                      registration_number = ?6, notes = ?7, referred_by = ?8,
                      date_of_birth = ?9, sex = ?10, gender = ?11,
                      pronouns = ?12, occupation = ?13, language = ?14,
-                     archived_at = ?15
+                     default_currency = ?15, archived_at = ?16
                  WHERE id = ?1",
                 params![
                     c.id.to_string(),
@@ -343,6 +355,7 @@ impl ClientRepository for SqliteClientRepository {
                     c.pronouns,
                     c.occupation,
                     c.language,
+                    c.default_currency.code(),
                     c.archived_at.map(|d| d.to_rfc3339()),
                 ],
             )

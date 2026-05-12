@@ -10,6 +10,7 @@ use crate::application::AppError;
 use crate::domain::client::{
     Client, ClientId, ClientKind, NewClient, NewClientAddress, NewContactEntry,
 };
+use crate::domain::money::Currency;
 
 #[derive(Clone)]
 pub struct CreateClient {
@@ -51,6 +52,7 @@ pub struct UpdateClientInput {
     pub pronouns: Option<String>,
     pub occupation: Option<String>,
     pub language: Option<String>,
+    pub default_currency: Currency,
 }
 
 impl UpdateClient {
@@ -85,6 +87,7 @@ impl UpdateClient {
         client.pronouns = normalize(input.pronouns);
         client.occupation = normalize(input.occupation);
         client.language = normalize(input.language);
+        client.default_currency = input.default_currency;
         self.repo.update(&client)?;
         Ok(client)
     }
@@ -315,6 +318,7 @@ mod tests {
                 pronouns: None,
                 occupation: None,
                 language: None,
+                default_currency: crate::domain::money::Currency::Eur,
             })
             .unwrap();
         assert_eq!(updated.name, "New Name");
@@ -343,6 +347,7 @@ mod tests {
                 pronouns: None,
                 occupation: None,
                 language: None,
+                default_currency: crate::domain::money::Currency::Eur,
             })
             .unwrap_err();
         assert!(err.is(ErrorCode::ResourceNotFound));
@@ -376,6 +381,7 @@ mod tests {
                 pronouns: None,
                 occupation: None,
                 language: None,
+                default_currency: crate::domain::money::Currency::Eur,
             })
             .unwrap_err();
         assert!(err.is(ErrorCode::ClientEmptyName));
@@ -409,6 +415,7 @@ mod tests {
                 pronouns: None,
                 occupation: None,
                 language: None,
+                default_currency: crate::domain::money::Currency::Eur,
             })
             .unwrap_err();
         assert!(err.is(ErrorCode::ClientSelfReferral));

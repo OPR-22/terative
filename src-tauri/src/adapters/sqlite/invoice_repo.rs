@@ -349,11 +349,12 @@ fn insert_items_and_taxes(tx: &rusqlite::Transaction<'_>, invoice: &Invoice) -> 
     for (idx, li) in invoice.line_items.iter().enumerate() {
         let qty_f64 = li.quantity.to_f64().unwrap_or(0.0);
         tx.execute(
-            "INSERT INTO invoice_line_items (id, invoice_id, description, quantity, unit_price, total, sort_order)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO invoice_line_items (id, invoice_id, catalog_item_id, description, quantity, unit_price, total, sort_order)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 li.id.to_string(),
                 invoice.id.to_string(),
+                li.catalog_item_id.map(|id| id.to_string()),
                 li.description,
                 qty_f64,
                 li.unit_price.minor_units(),
@@ -391,7 +392,8 @@ fn load_line_items(
 ) -> Result<Vec<LineItem>, RepoError> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, description, quantity, unit_price, total FROM invoice_line_items
+            "SELECT id, catalog_item_id, description, quantity, unit_price, total
+             FROM invoice_line_items
              WHERE invoice_id = ?1 ORDER BY sort_order ASC",
         )
         .map_err(map_err)?;
@@ -399,12 +401,18 @@ fn load_line_items(
         .query_map(params![id.to_string()], |row| {
             let id_str: String = row.get("id")?;
             let id: LineItemId = parse_uuid(&id_str, LineItemId)?;
+            let catalog_id_str: Option<String> = row.get("catalog_item_id")?;
+            let catalog_item_id = catalog_id_str
+                .as_deref()
+                .map(|s| parse_uuid(s, crate::domain::catalog_item::CatalogItemId))
+                .transpose()?;
             let qty_f64: f64 = row.get("quantity")?;
             let quantity = Decimal::from_f64(qty_f64).unwrap_or(Decimal::ZERO);
             let unit_price: i64 = row.get("unit_price")?;
             let total: i64 = row.get("total")?;
             Ok(LineItem {
                 id,
+                catalog_item_id,
                 description: row.get("description")?,
                 quantity,
                 unit_price: Money::new(unit_price, currency),
@@ -538,6 +546,7 @@ mod tests {
                 date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
                 due_date: None,
                 line_items: vec![NewLineItem {
+                    catalog_item_id: None,
                     description: "Widget".into(),
                     quantity: dec!(2),
                     unit_price: Money::new(1000, eur()),
@@ -572,6 +581,7 @@ mod tests {
                 date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
                 due_date: None,
                 line_items: vec![NewLineItem {
+                    catalog_item_id: None,
                     description: "Old".into(),
                     quantity: dec!(1),
                     unit_price: Money::new(500, eur()),
@@ -587,7 +597,9 @@ mod tests {
         repo.insert(&invoice).unwrap();
         invoice
             .update_draft(
+                eur(),
                 vec![NewLineItem {
+                    catalog_item_id: None,
                     description: "New".into(),
                     quantity: dec!(3),
                     unit_price: Money::new(1000, eur()),
@@ -619,6 +631,7 @@ mod tests {
                 date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
                 due_date: None,
                 line_items: vec![NewLineItem {
+                    catalog_item_id: None,
                     description: "A".into(),
                     quantity: dec!(1),
                     unit_price: Money::new(100, eur()),

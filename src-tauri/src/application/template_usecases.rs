@@ -505,6 +505,7 @@ fn sample_invoice(currency: Currency, client_id: ClientId, template_id: Template
     let line_items = vec![
         LineItem {
             id: LineItemId::new(),
+            catalog_item_id: None,
             description: "Consulting — sample service".into(),
             quantity: dec!(10),
             unit_price: Money::new(10000, currency),
@@ -512,6 +513,7 @@ fn sample_invoice(currency: Currency, client_id: ClientId, template_id: Template
         },
         LineItem {
             id: LineItemId::new(),
+            catalog_item_id: None,
             description: "Implementation".into(),
             quantity: dec!(1),
             unit_price: Money::new(50_000, currency),

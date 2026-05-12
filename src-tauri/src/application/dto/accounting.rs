@@ -6,7 +6,8 @@ use super::common::MoneyDto;
 use super::invoice::InvoiceStatusDto;
 use crate::application::accounting_usecases::{RevenueByClientInput, RevenueByPeriodInput};
 use crate::application::ports::{
-    AgingBucket, AgingRow, ClientBalance, DashboardSummary, DerivedPaymentStatus,
+    AgingBucket, AgingRow, ClientBalance, DashboardOutstandingRow, DashboardRevenueRow,
+    DashboardSummary, DerivedPaymentStatus,
     InvoicePaymentRow, RevenueBucket, RevenueByClient, RevenueGrouping,
 };
 
@@ -217,24 +218,74 @@ impl From<&AgingRow> for AgingRowDto {
 // ---- DashboardSummaryDto ----
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-pub struct DashboardSummaryDto {
-    pub revenue_this_year: MoneyDto,
-    pub outstanding_total: MoneyDto,
+pub struct DashboardRevenueRowDto {
+    pub amount: MoneyDto,
+    pub invoice_count: u64,
+}
+
+impl From<&DashboardRevenueRow> for DashboardRevenueRowDto {
+    fn from(r: &DashboardRevenueRow) -> Self {
+        Self {
+            amount: (&r.amount).into(),
+            invoice_count: r.invoice_count,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct DashboardOutstandingRowDto {
+    pub outstanding: MoneyDto,
+    pub overdue: MoneyDto,
+    pub open_count: u64,
     pub overdue_count: u64,
-    pub draft_count: u64,
-    pub finalized_count: u64,
-    pub sent_count: u64,
+}
+
+impl From<&DashboardOutstandingRow> for DashboardOutstandingRowDto {
+    fn from(r: &DashboardOutstandingRow) -> Self {
+        Self {
+            outstanding: (&r.outstanding).into(),
+            overdue: (&r.overdue).into(),
+            open_count: r.open_count,
+            overdue_count: r.overdue_count,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct DashboardSummaryDto {
+    pub revenue_this_year: Vec<DashboardRevenueRowDto>,
+    pub outstanding: Vec<DashboardOutstandingRowDto>,
+    pub overdue_count: u64,
+    pub overdue_max_days: u64,
+    pub avg_payment_delay_days: Option<f64>,
+    pub avg_payment_delay_target_days: u64,
+    pub active_clients_count: u64,
+    pub new_clients_this_year_count: u64,
+    pub finalized_this_year_count: u64,
+    pub drafts_this_year_count: u64,
 }
 
 impl From<&DashboardSummary> for DashboardSummaryDto {
     fn from(s: &DashboardSummary) -> Self {
         Self {
-            revenue_this_year: (&s.revenue_this_year).into(),
-            outstanding_total: (&s.outstanding_total).into(),
+            revenue_this_year: s
+                .revenue_this_year
+                .iter()
+                .map(DashboardRevenueRowDto::from)
+                .collect(),
+            outstanding: s
+                .outstanding
+                .iter()
+                .map(DashboardOutstandingRowDto::from)
+                .collect(),
             overdue_count: s.overdue_count,
-            draft_count: s.draft_count,
-            finalized_count: s.finalized_count,
-            sent_count: s.sent_count,
+            overdue_max_days: s.overdue_max_days,
+            avg_payment_delay_days: s.avg_payment_delay_days,
+            avg_payment_delay_target_days: s.avg_payment_delay_target_days,
+            active_clients_count: s.active_clients_count,
+            new_clients_this_year_count: s.new_clients_this_year_count,
+            finalized_this_year_count: s.finalized_this_year_count,
+            drafts_this_year_count: s.drafts_this_year_count,
         }
     }
 }
@@ -319,8 +370,8 @@ mod tests {
             outstanding: Money::new(7000, eur),
         };
         let dto: ClientBalanceDto = (&balance).into();
-        assert_eq!(dto.outstanding.amount_minor, 7000);
-        assert_eq!(dto.total_invoiced.amount_minor, 10000);
+        assert_eq!(dto.outstanding.amount, 7000);
+        assert_eq!(dto.total_invoiced.amount, 10000);
     }
 
     #[test]

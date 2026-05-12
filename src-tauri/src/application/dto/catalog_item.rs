@@ -27,8 +27,8 @@ impl From<CatalogItemKind> for CatalogItemKindDto {
 impl From<CatalogItemKindDto> for CatalogItemKind {
     fn from(dto: CatalogItemKindDto) -> Self {
         match dto {
-            CatalogItemKindDto::Product => Self::Product,
-            CatalogItemKindDto::Service => Self::Service,
+            CatalogItemKindDto::Product => CatalogItemKind::Product,
+            CatalogItemKindDto::Service => CatalogItemKind::Service,
         }
     }
 }
@@ -38,7 +38,8 @@ pub struct CatalogItemDto {
     pub id: Uuid,
     pub name: String,
     pub kind: CatalogItemKindDto,
-    pub default_price: MoneyDto,
+    /// One entry per currency the item is priced in. May be empty.
+    pub prices: Vec<MoneyDto>,
     pub unit: Option<String>,
     pub reference: Option<String>,
     pub archived_at: Option<DateTime<Utc>>,
@@ -50,7 +51,7 @@ impl From<&CatalogItem> for CatalogItemDto {
             id: s.id.0,
             name: s.name.clone(),
             kind: s.kind.into(),
-            default_price: (&s.default_price).into(),
+            prices: s.prices.iter().map(MoneyDto::from).collect(),
             unit: s.unit.clone(),
             reference: s.reference.clone(),
             archived_at: s.archived_at,
@@ -62,7 +63,7 @@ impl From<&CatalogItem> for CatalogItemDto {
 pub struct NewCatalogItemDto {
     pub name: String,
     pub kind: CatalogItemKindDto,
-    pub default_price: MoneyDto,
+    pub prices: Vec<MoneyDto>,
     pub unit: Option<String>,
     pub reference: Option<String>,
 }
@@ -70,10 +71,15 @@ pub struct NewCatalogItemDto {
 impl TryFrom<NewCatalogItemDto> for NewCatalogItem {
     type Error = DtoConvertError;
     fn try_from(dto: NewCatalogItemDto) -> Result<Self, Self::Error> {
+        let prices = dto
+            .prices
+            .iter()
+            .map(|m| m.try_into())
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(NewCatalogItem {
             name: dto.name,
             kind: dto.kind.into(),
-            default_price: (&dto.default_price).try_into()?,
+            prices,
             unit: dto.unit,
             reference: dto.reference,
         })
@@ -85,7 +91,7 @@ pub struct UpdateCatalogItemDto {
     pub id: Uuid,
     pub name: String,
     pub kind: CatalogItemKindDto,
-    pub default_price: MoneyDto,
+    pub prices: Vec<MoneyDto>,
     pub unit: Option<String>,
     pub reference: Option<String>,
 }
@@ -93,11 +99,16 @@ pub struct UpdateCatalogItemDto {
 impl TryFrom<UpdateCatalogItemDto> for UpdateCatalogItemInput {
     type Error = DtoConvertError;
     fn try_from(dto: UpdateCatalogItemDto) -> Result<Self, Self::Error> {
+        let prices = dto
+            .prices
+            .iter()
+            .map(|m| m.try_into())
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(UpdateCatalogItemInput {
             id: CatalogItemId(dto.id),
             name: dto.name,
             kind: dto.kind.into(),
-            default_price: (&dto.default_price).try_into()?,
+            prices,
             unit: dto.unit,
             reference: dto.reference,
         })
@@ -112,19 +123,22 @@ mod tests {
     #[test]
     fn catalog_item_round_trip() {
         let eur = Currency::new("EUR").unwrap();
+        let usd = Currency::new("USD").unwrap();
         let domain = CatalogItem {
             id: CatalogItemId::new(),
             name: "Consulting".into(),
             kind: CatalogItemKind::Service,
-            default_price: Money::new(15000, eur),
+            prices: vec![Money::new(15000, eur), Money::new(17000, usd)],
             unit: Some("hour".into()),
             reference: None,
             archived_at: None,
         };
         let dto: CatalogItemDto = (&domain).into();
         assert_eq!(dto.id, domain.id.0);
-        assert_eq!(dto.default_price.amount_minor, 15000);
-        assert_eq!(dto.default_price.currency, "EUR");
+        assert_eq!(dto.prices.len(), 2);
+        assert_eq!(dto.prices[0].amount, 15000);
+        assert_eq!(dto.prices[0].currency.code, "EUR");
+        assert_eq!(dto.prices[1].currency.code, "USD");
         assert_eq!(dto.unit.as_deref(), Some("hour"));
         assert!(matches!(dto.kind, CatalogItemKindDto::Service));
     }
@@ -134,16 +148,14 @@ mod tests {
         let dto = NewCatalogItemDto {
             name: "Coaching".into(),
             kind: CatalogItemKindDto::Service,
-            default_price: MoneyDto {
-                amount_minor: 20000,
-                currency: "EUR".into(),
-            },
+            prices: vec![MoneyDto::from(Money::from_minor(20000, Currency::Eur))],
             unit: Some("session".into()),
             reference: Some("COACH-1".into()),
         };
         let input: NewCatalogItem = dto.try_into().unwrap();
         assert_eq!(input.name, "Coaching");
-        assert_eq!(input.default_price.minor_units(), 20000);
+        assert_eq!(input.prices.len(), 1);
+        assert_eq!(input.prices[0].minor_units(), 20000);
         assert_eq!(input.unit.as_deref(), Some("session"));
         assert_eq!(input.reference.as_deref(), Some("COACH-1"));
     }
@@ -154,10 +166,18 @@ mod tests {
             id: Uuid::new_v4(),
             name: "X".into(),
             kind: CatalogItemKindDto::Product,
-            default_price: MoneyDto {
-                amount_minor: 100,
-                currency: "xx".into(),
-            },
+            prices: vec![MoneyDto {
+                amount: 100,
+                currency: crate::application::dto::CurrencyConfigDto {
+                    code: "xx".into(),
+                    name: String::new(),
+                    symbol: String::new(),
+                    symbol_before: false,
+                    fraction_digits: 2,
+                    main_unit_name: String::new(),
+                    sub_unit_name: None,
+                },
+            }],
             unit: None,
             reference: None,
         };

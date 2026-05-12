@@ -4,7 +4,7 @@ import { toast } from "../stores/toastStore";
 import { useNavigate } from "react-router-dom";
 import {
   AlertCircle,
-  ArrowUp,
+  ArrowRight,
   FileText,
   Plus,
   Send,
@@ -19,9 +19,18 @@ import { Button } from "../components/ui/Button";
 import { Card, CardHead } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
 import { Table, Td, Th, THead, Tr } from "../components/ui/Table";
-import { ipc, type DashboardSummaryDto, type InvoicePaymentRowDto } from "../ipc";
+import {
+  ipc,
+  type DashboardOutstandingRowDto,
+  type DashboardRevenueRowDto,
+  type DashboardSummaryDto,
+  type InvoicePaymentRowDto,
+  type MoneyDto,
+} from "../ipc";
 import { useMoneyFormat } from "../lib/money";
 import { useSettingsStore } from "../stores/settingsStore";
+
+type FormatAmount = (dto: MoneyDto) => string;
 
 function daysOverdue(dueDate: string | null): number | null {
   if (!dueDate) return null;
@@ -48,14 +57,15 @@ export function Dashboard() {
         setOverdue(o);
       })
       .catch((e) => {
-        if (!cancelled) toast.error(String(e));
+        if (!cancelled) toast.error(e);
       });
     return () => {
       cancelled = true;
     };
   }, [snapshot, load]);
 
-  const { format } = useMoneyFormat();
+  const { formatAmount } = useMoneyFormat();
+  const year = new Date().getFullYear();
 
   return (
     <Page
@@ -73,42 +83,23 @@ export function Dashboard() {
     >
       {summary ? (
         <>
-          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-            <Kpi
-              label={t("dashboard.revenue_this_year")}
-              value={format(summary.revenue_this_year)}
-              meta={
-                <span className="inline-flex items-center gap-1">
-                  <ArrowUp size={11} strokeWidth={1.5} className="text-ok" />
-                  {t("dashboard.kpi_revenue_meta")}
-                </span>
-              }
+          <div
+            className="grid grid-cols-1 gap-3.5 lg:grid-cols-[7fr_7fr_6fr]"
+          >
+            <RevenueCard
+              summary={summary}
+              year={year}
+              formatAmount={formatAmount}
             />
-            <Kpi
-              label={t("dashboard.outstanding")}
-              value={format(summary.outstanding_total)}
-              tone="warn"
-              meta={t("dashboard.kpi_outstanding_meta")}
+            <OutstandingCard
+              summary={summary}
+              formatAmount={formatAmount}
+              onFollowUp={() => navigate("/invoices")}
             />
-            <Kpi
-              label={t("dashboard.overdue_count")}
-              value={String(summary.overdue_count)}
-              tone="danger"
-              meta={
-                summary.overdue_count > 0 ? (
-                  <span className="inline-flex items-center gap-1">
-                    <AlertCircle size={11} strokeWidth={1.5} />
-                    {t("dashboard.kpi_overdue_meta_some")}
-                  </span>
-                ) : (
-                  t("dashboard.kpi_overdue_meta_none")
-                )
-              }
-            />
-            <Kpi
-              label={t("dashboard.draft_count")}
-              value={String(summary.draft_count)}
-              meta={t("dashboard.kpi_drafts_meta")}
+            <ActivityCard
+              summary={summary}
+              year={year}
+              onSeeMore={() => navigate("/invoices")}
             />
           </div>
 
@@ -141,6 +132,7 @@ export function Dashboard() {
                       <Th>{t("invoices.client")}</Th>
                       <Th>{t("invoices.due_date")}</Th>
                       <Th>{t("dashboard.overdue_days_label")}</Th>
+                      <Th>{t("accounting.currency")}</Th>
                       <Th numeric>{t("accounting.amount_due")}</Th>
                       <Th />
                     </Tr>
@@ -170,7 +162,8 @@ export function Dashboard() {
                               "—"
                             )}
                           </Td>
-                          <Td numeric>{format(row.amount_due)}</Td>
+                          <Td muted mono>{row.amount_due.currency.code}</Td>
+                          <Td numeric>{formatAmount(row.amount_due)}</Td>
                           <Td className="text-right">
                             <Button
                               size="sm"
@@ -251,36 +244,321 @@ export function Dashboard() {
   );
 }
 
-interface KpiProps {
-  label: string;
-  value: string;
-  meta?: React.ReactNode;
-  tone?: "neutral" | "warn" | "danger" | "ok";
+// ─── Card 1: Revenue this year ───────────────────────────────────────────
+
+function RevenueCard({
+  summary,
+  year,
+  formatAmount,
+}: {
+  summary: DashboardSummaryDto;
+  year: number;
+  formatAmount: FormatAmount;
+}) {
+  const { t } = useTranslation();
+  const totalInvoices = summary.revenue_this_year.reduce(
+    (s, r) => s + r.invoice_count,
+    0,
+  );
+  const totalCurrencies = summary.revenue_this_year.length;
+  return (
+    <DashboardCard
+      title={t("dashboard.card_revenue_title")}
+      meta={year}
+      footer={
+        summary.revenue_this_year.length === 0 ? null : (
+          <span className="text-ink-3">
+            {t("dashboard.card_revenue_footer_invoices", {
+              count: totalInvoices,
+            })}{" "}
+            ·{" "}
+            {t("dashboard.card_revenue_footer_currencies", {
+              count: totalCurrencies,
+            })}
+          </span>
+        )
+      }
+    >
+      {summary.revenue_this_year.length === 0 ? (
+        <EmptyRows label={t("dashboard.no_revenue_yet")} />
+      ) : (
+        <div className="max-h-48 overflow-y-auto overflow-x-hidden">
+          <table className="w-full border-collapse">
+            <tbody>
+              {summary.revenue_this_year.map((r) => (
+                <RevenueRow
+                  key={r.amount.currency.code}
+                  row={r}
+                  formatAmount={formatAmount}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </DashboardCard>
+  );
 }
 
-function Kpi({ label, value, meta, tone = "neutral" }: KpiProps) {
-  const valueColor = {
-    neutral: "text-ink",
-    warn: "text-warn",
-    danger: "text-danger",
-    ok: "text-ok",
-  }[tone];
+function RevenueRow({
+  row,
+  formatAmount,
+}: {
+  row: DashboardRevenueRowDto;
+  formatAmount: FormatAmount;
+}) {
   return (
-    <div className="rounded-card border border-line bg-paper p-4 flex flex-col gap-2 transition-colors hover:border-ink-4">
+    <tr className="border-t border-line-soft first:border-0 align-baseline">
+      <td className="py-1.5 w-10 whitespace-nowrap text-[11px] font-medium text-ink-3 tabular">
+        {row.amount.currency.code}
+      </td>
+      <td className="py-1.5 pl-5 whitespace-nowrap text-right font-medium text-[15px] font-mono tabular">
+        {formatAmount(row.amount)}
+      </td>
+      <td className="w-full" aria-hidden="true" />
+      <td className="py-1.5 pl-2 text-right whitespace-nowrap text-[12px] text-ink-3 font-mono tabular">
+        {row.invoice_count}
+      </td>
+    </tr>
+  );
+}
+
+// ─── Card 2: Outstanding ─────────────────────────────────────────────────
+
+function OutstandingCard({
+  summary,
+  formatAmount,
+  onFollowUp,
+}: {
+  summary: DashboardSummaryDto;
+  formatAmount: FormatAmount;
+  onFollowUp: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <DashboardCard
+      title={
+        <span className="inline-flex items-baseline gap-2">
+          {t("dashboard.card_outstanding_title")}
+          <span className="text-danger">
+            [{t("dashboard.card_outstanding_meta")}]
+          </span>
+        </span>
+      }
+      footer={
+        summary.overdue_count > 0 ? (
+          <div className="flex items-center justify-between gap-3">
+            <span className="inline-flex items-center gap-1.5 text-danger">
+              <AlertCircle size={11} strokeWidth={1.5} />
+              {t("dashboard.card_outstanding_footer", {
+                count: summary.overdue_count,
+                days: summary.overdue_max_days,
+              })}
+            </span>
+            <button
+              type="button"
+              className="text-ink-2 hover:text-ink inline-flex items-center gap-1"
+              onClick={onFollowUp}
+            >
+              {t("dashboard.follow_up_action")}
+              <ArrowRight size={11} strokeWidth={1.5} />
+            </button>
+          </div>
+        ) : (
+          <span className="text-ink-3">{t("dashboard.no_overdue")}</span>
+        )
+      }
+    >
+      {summary.outstanding.length === 0 ? (
+        <EmptyRows label={t("dashboard.no_outstanding")} />
+      ) : (
+        <div className="max-h-48 overflow-y-auto overflow-x-hidden">
+          <table className="w-full border-collapse">
+            <tbody>
+              {summary.outstanding.map((r) => (
+                <OutstandingRow
+                  key={r.outstanding.currency.code}
+                  row={r}
+                  formatAmount={formatAmount}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </DashboardCard>
+  );
+}
+
+function OutstandingRow({
+  row,
+  formatAmount,
+}: {
+  row: DashboardOutstandingRowDto;
+  formatAmount: FormatAmount;
+}) {
+  const hasOverdue = row.overdue_count > 0;
+  return (
+    <tr className="border-t border-line-soft first:border-0 align-baseline">
+      <td className="py-1.5 w-10 whitespace-nowrap text-[11px] font-medium text-ink-3 tabular">
+        {row.outstanding.currency.code}
+      </td>
+      <td className="py-1.5 pl-5 whitespace-nowrap text-right font-medium text-[15px] font-mono tabular">
+        {formatAmount(row.outstanding)}
+      </td>
+      <td className="py-1.5 pl-1 whitespace-nowrap text-left text-[12px] font-mono tabular text-danger">
+        {hasOverdue ? `[${formatAmount(row.overdue)}]` : ""}
+      </td>
+      <td className="w-full" aria-hidden="true" />
+      <td className="py-1.5 pl-2 text-right whitespace-nowrap text-[12px] text-ink-3 font-mono tabular">
+        {row.open_count}
+        {row.overdue_count > 0 ? (
+          <span className="text-danger"> ({row.overdue_count})</span>
+        ) : null}
+      </td>
+    </tr>
+  );
+}
+
+// ─── Card 3: Activity ────────────────────────────────────────────────────
+
+function ActivityCard({
+  summary,
+  year,
+  onSeeMore,
+}: {
+  summary: DashboardSummaryDto;
+  year: number;
+  onSeeMore: () => void;
+}) {
+  const { t } = useTranslation();
+  const delay =
+    summary.avg_payment_delay_days == null
+      ? null
+      : Math.round(summary.avg_payment_delay_days);
+  return (
+    <DashboardCard
+      title={t("dashboard.card_activity_title")}
+      footer={
+        <button
+          type="button"
+          className="text-ink-2 hover:text-ink inline-flex items-center gap-1"
+          onClick={onSeeMore}
+        >
+          {t("dashboard.card_activity_footer")}
+          <ArrowRight size={11} strokeWidth={1.5} />
+        </button>
+      }
+    >
+      <div className="grid grid-cols-2">
+        <div className="pr-5 pb-4 border-r border-b border-line-soft">
+          <Stat
+            label={t("dashboard.stat_avg_payment_delay")}
+            value={
+              delay == null ? (
+                "—"
+              ) : (
+                <span>
+                  {delay}{" "}
+                  <span className="text-[14px] text-ink-3 font-medium">
+                    {t("dashboard.days_short")}
+                  </span>
+                </span>
+              )
+            }
+            detail={t("dashboard.stat_avg_payment_delay_detail", {
+              target: summary.avg_payment_delay_target_days,
+            })}
+          />
+        </div>
+        <div className="pl-5 pb-4 border-b border-line-soft">
+          <Stat
+            label={t("dashboard.stat_active_clients")}
+            value={
+              <span>
+                {summary.active_clients_count}{" "}
+                <span className="text-[14px] text-ink-3 font-medium">
+                  {t("dashboard.stat_active_clients_unit")}
+                </span>
+              </span>
+            }
+            detail={t("dashboard.stat_active_clients_year", {
+              count: summary.new_clients_this_year_count,
+            })}
+          />
+        </div>
+        <div className="pr-5 pt-4 border-r border-line-soft">
+          <Stat
+            label={t("dashboard.stat_finalized_invoices")}
+            value={String(summary.finalized_this_year_count)}
+            detail={t("dashboard.stat_finalized_invoices_detail", { year })}
+          />
+        </div>
+        <div className="pl-5 pt-4">
+          <Stat
+            label={t("dashboard.stat_drafts")}
+            value={String(summary.drafts_this_year_count)}
+            detail={t("dashboard.stat_drafts_detail", { year })}
+          />
+        </div>
+      </div>
+    </DashboardCard>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: React.ReactNode;
+  detail: string;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
       <div className="text-[12px] font-medium text-ink-3">{label}</div>
-      <div
-        className={[
-          "text-[22px] font-semibold leading-none tabular tracking-[-0.01em]",
-          valueColor,
-        ].join(" ")}
-      >
+      <div className="text-[22px] font-semibold leading-none tabular tracking-[-0.01em]">
         {value}
       </div>
-      {meta ? (
-        <div className="text-[11px] text-ink-3 font-mono tabular flex items-center gap-1.5">
-          {meta}
+      <div className="text-[11px] text-ink-3 leading-snug">{detail}</div>
+    </div>
+  );
+}
+
+// ─── Shared layout primitives ────────────────────────────────────────────
+
+function DashboardCard({
+  title,
+  meta,
+  footer,
+  children,
+}: {
+  title: React.ReactNode;
+  meta?: React.ReactNode;
+  footer?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-card border border-line bg-paper p-4 flex flex-col gap-3 transition-colors hover:border-ink-4">
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="text-[12px] font-medium text-ink-3">{title}</div>
+        {meta ? <div className="text-[11px] text-ink-3">{meta}</div> : null}
+      </div>
+      <div className="flex-1 min-h-0">{children}</div>
+      {footer ? (
+        <div className="text-[11px] pt-2 border-t border-line-soft">
+          {footer}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function EmptyRows({ label }: { label: string }) {
+  return (
+    <div className="flex items-center justify-center text-[12px] text-ink-3 py-6">
+      {label}
     </div>
   );
 }

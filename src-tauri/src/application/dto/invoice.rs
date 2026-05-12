@@ -58,6 +58,10 @@ impl From<InvoiceStatusDto> for InvoiceStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct LineItemDto {
     pub id: Uuid,
+    /// Optional FK back to the source catalog item. The line's unit_price
+    /// is a snapshot — present here only so stats can count units sold per
+    /// catalog item without re-reading the catalog's current price.
+    pub catalog_item_id: Option<Uuid>,
     pub description: String,
     pub quantity: Decimal,
     pub unit_price: MoneyDto,
@@ -68,6 +72,7 @@ impl From<&LineItem> for LineItemDto {
     fn from(li: &LineItem) -> Self {
         Self {
             id: li.id.0,
+            catalog_item_id: li.catalog_item_id.map(|c| c.0),
             description: li.description.clone(),
             quantity: li.quantity,
             unit_price: (&li.unit_price).into(),
@@ -78,6 +83,8 @@ impl From<&LineItem> for LineItemDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct NewLineItemDto {
+    #[serde(default)]
+    pub catalog_item_id: Option<Uuid>,
     pub description: String,
     pub quantity: Decimal,
     pub unit_price: MoneyDto,
@@ -87,6 +94,9 @@ impl TryFrom<NewLineItemDto> for NewLineItem {
     type Error = DtoConvertError;
     fn try_from(dto: NewLineItemDto) -> Result<Self, Self::Error> {
         Ok(NewLineItem {
+            catalog_item_id: dto
+                .catalog_item_id
+                .map(crate::domain::catalog_item::CatalogItemId),
             description: dto.description,
             quantity: dto.quantity,
             unit_price: (&dto.unit_price).try_into()?,
@@ -290,6 +300,11 @@ pub struct UpdateDraftInvoiceDto {
     pub template_id: Option<Uuid>,
     pub date: NaiveDate,
     pub due_date: Option<NaiveDate>,
+    /// ISO 4217 code for the invoice's currency. Mutable while the invoice
+    /// is still a draft. When the user switches it the frontend must also
+    /// resubmit every line item with `unit_price` re-expressed in the new
+    /// currency (the domain rejects mismatches in `compute_totals`).
+    pub currency: String,
     pub line_items: Vec<NewLineItemDto>,
     pub tax_ids: Vec<Uuid>,
     pub notes: Option<String>,
@@ -298,6 +313,8 @@ pub struct UpdateDraftInvoiceDto {
 impl TryFrom<UpdateDraftInvoiceDto> for UpdateDraftInvoiceInput {
     type Error = DtoConvertError;
     fn try_from(dto: UpdateDraftInvoiceDto) -> Result<Self, Self::Error> {
+        let currency = Currency::parse(&dto.currency)
+            .ok_or_else(|| DtoConvertError::InvalidCurrency(dto.currency.clone()))?;
         let line_items = dto
             .line_items
             .into_iter()
@@ -308,6 +325,7 @@ impl TryFrom<UpdateDraftInvoiceDto> for UpdateDraftInvoiceInput {
             template_id: dto.template_id.map(TemplateId),
             date: dto.date,
             due_date: dto.due_date,
+            currency,
             line_items,
             tax_ids: dto.tax_ids.into_iter().map(TaxId).collect(),
             notes: dto.notes,
@@ -392,6 +410,7 @@ mod tests {
             due_date: NaiveDate::from_ymd_opt(2026, 5, 14),
             line_items: vec![LineItem {
                 id: LineItemId::new(),
+                catalog_item_id: None,
                 description: "Widget".into(),
                 quantity: dec!(2),
                 unit_price: Money::new(1000, eur()),
@@ -423,12 +442,12 @@ mod tests {
         assert_eq!(dto.id, domain.id.0);
         assert_eq!(dto.number, Some(42));
         assert_eq!(dto.line_items.len(), 1);
-        assert_eq!(dto.line_items[0].total.amount_minor, 2000);
+        assert_eq!(dto.line_items[0].total.amount, 2000);
         assert_eq!(dto.taxes_applied.len(), 1);
-        assert_eq!(dto.taxes_applied[0].computed_amount.amount_minor, 420);
+        assert_eq!(dto.taxes_applied[0].computed_amount.amount, 420);
         assert_eq!(dto.currency, "EUR");
         assert!(matches!(dto.status, InvoiceStatusDto::Finalized));
-        assert_eq!(dto.amount_paid.amount_minor, 0);
+        assert_eq!(dto.amount_paid.amount, 0);
         assert!(dto.payment_status.is_none());
     }
 
@@ -443,7 +462,7 @@ mod tests {
             Some("Acme Corp".into()),
             &[],
         );
-        assert_eq!(dto.amount_paid.amount_minor, 1000);
+        assert_eq!(dto.amount_paid.amount, 1000);
         assert_eq!(dto.client_name.as_deref(), Some("Acme Corp"));
         assert!(matches!(
             dto.payment_status,
@@ -473,12 +492,10 @@ mod tests {
             date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
             due_date: None,
             line_items: vec![NewLineItemDto {
+                catalog_item_id: None,
                 description: "Widget".into(),
                 quantity: dec!(2),
-                unit_price: MoneyDto {
-                    amount_minor: 1000,
-                    currency: "EUR".into(),
-                },
+                unit_price: MoneyDto::from(Money::from_minor(1000, Currency::Eur)),
             }],
             tax_ids: vec![],
             notes: None,

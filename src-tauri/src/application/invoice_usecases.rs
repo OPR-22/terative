@@ -10,7 +10,7 @@ use crate::application::ports::{
 use crate::application::{AppError, RepoError};
 #[cfg(test)] use crate::application::ErrorCode;
 use crate::domain::invoice::{Invoice, InvoiceId, InvoiceStatus, NewInvoice};
-use crate::domain::money::Money;
+use crate::domain::money::{Currency, Money};
 use crate::domain::line_item::NewLineItem;
 use crate::domain::tax::{TaxDefinition, TaxId};
 use crate::domain::template::TemplateId;
@@ -86,6 +86,10 @@ pub struct UpdateDraftInvoiceInput {
     pub template_id: Option<TemplateId>,
     pub date: NaiveDate,
     pub due_date: Option<NaiveDate>,
+    /// Currency the draft should be expressed in. Mutable while in Draft —
+    /// callers MUST re-submit every line item with `unit_price` in this
+    /// same currency, otherwise the domain rejects the update.
+    pub currency: Currency,
     pub line_items: Vec<NewLineItem>,
     pub tax_ids: Vec<TaxId>,
     pub notes: Option<String>,
@@ -104,6 +108,7 @@ impl UpdateDraftInvoice {
         let mut invoice = self.invoices.get(input.id)?.ok_or(AppError::resource_not_found())?;
         let taxes = load_taxes(self.taxes.as_ref(), &input.tax_ids)?;
         invoice.update_draft(
+            input.currency,
             input.line_items,
             &taxes,
             input.template_id,
@@ -205,6 +210,7 @@ impl DuplicateInvoice {
                 .iter()
                 .map(|li| crate::domain::line_item::LineItem {
                     id: crate::domain::line_item::LineItemId::new(),
+                    catalog_item_id: li.catalog_item_id,
                     description: li.description.clone(),
                     quantity: li.quantity,
                     unit_price: li.unit_price,
@@ -541,7 +547,9 @@ impl GetInvoice {
     ) -> Result<(Invoice, Money, Option<String>, Vec<crate::domain::email_log::EmailLog>), AppError>
     {
         let invoice = self.invoices.get(id)?.ok_or(AppError::resource_not_found())?;
-        let paid = self.payments.allocated_for_invoice(id)?;
+        let paid = self
+            .payments
+            .allocated_for_invoice(id, invoice.currency)?;
         let names = self.clients.names_for(&[invoice.client_id])?;
         let client_name = names.get(&invoice.client_id).cloned();
         let mut logs_by_invoice = self.email_logs.list_by_invoices(&[id])?;
@@ -642,8 +650,9 @@ mod tests {
         fn allocated_for_invoice(
             &self,
             _: InvoiceId,
+            invoice_currency: Currency,
         ) -> Result<Money, RepoError> {
-            Ok(Money::new(0, Currency::new("EUR").unwrap()))
+            Ok(Money::new(0, invoice_currency))
         }
         fn allocated_for_invoices(
             &self,
@@ -737,6 +746,7 @@ mod tests {
             date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
             due_date: None,
             line_items: vec![NewLineItem {
+                catalog_item_id: None,
                 description: "Widget".into(),
                 quantity: dec!(2),
                 unit_price: Money::new(1000, eur()),
@@ -773,12 +783,14 @@ mod tests {
                 date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
                 due_date: None,
                 line_items: vec![NewLineItem {
+                    catalog_item_id: None,
                     description: "Bigger".into(),
                     quantity: dec!(5),
                     unit_price: Money::new(1000, eur()),
                 }],
                 tax_ids: vec![tax.id],
                 notes: Some("updated".into()),
+                currency: eur(),
             })
             .unwrap();
         assert_eq!(updated.subtotal.minor_units(), 5000);
@@ -799,6 +811,7 @@ mod tests {
                 line_items: vec![],
                 tax_ids: vec![tax.id],
                 notes: None,
+                currency: eur(),
             })
             .unwrap_err();
         assert!(err.is(ErrorCode::ResourceNotFound));

@@ -5,6 +5,7 @@ import { Plus, Trash2 } from "lucide-react";
 
 import { OrgAvatar } from "../components/org/OrgAvatar";
 import { Button } from "../components/ui/Button";
+import { Card } from "../components/ui/Card";
 import { ConfirmModal } from "../components/ui/ConfirmModal";
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
@@ -69,80 +70,88 @@ export function OrgPicker() {
   }
 
   return (
-    <div className="min-h-screen bg-paper text-ink flex items-center justify-center p-8">
-      <div className="w-full max-w-md space-y-8">
-        <header className="text-center space-y-2">
-          <h1 className="text-2xl font-semibold">
-            {t("org_picker.title", { defaultValue: "Choose an organisation" })}
-          </h1>
-          <p className="text-sm text-ink-3">
-            {empty
-              ? t("org_picker.empty_subtitle", {
-                  defaultValue: "Create your first org to get started.",
-                })
-              : t("org_picker.subtitle", {
-                  defaultValue: "Open an existing org or create a new one.",
-                })}
-          </p>
-        </header>
+    <div className="min-h-screen bg-paper text-ink flex flex-col items-center px-8 pt-16 pb-8">
+      <header className="text-center space-y-2 mb-8">
+        <h1 className="text-2xl font-semibold">
+          {t("org_picker.title", { defaultValue: "Choose an organisation" })}
+        </h1>
+        <p className="text-sm text-ink-3">
+          {empty
+            ? t("org_picker.empty_subtitle", {
+                defaultValue: "Create your first org to get started.",
+              })
+            : t("org_picker.subtitle", {
+                defaultValue: "Open an existing org or create a new one.",
+              })}
+        </p>
+      </header>
+      <div className="flex-1 w-full max-w-md flex items-center justify-center">
+        <div className="w-full">
 
-        <ul className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        <ul className="flex flex-col gap-2.5">
           {orgs.map((org) => (
-            <li key={org.code} className="group relative">
-              <button
-                type="button"
-                onClick={() => handleOpen(org.code)}
-                className="w-full flex flex-col items-center gap-2 p-3 rounded-lg hover:bg-paper-2 transition cursor-pointer"
-              >
-                <OrgAvatar code={org.code} size="xl" />
-                <span className="text-[13px] font-medium text-ink truncate max-w-full">
-                  {org.code}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setConfirmDelete(org.code);
-                }}
-                aria-label={t("org_picker.delete_aria", {
-                  defaultValue: "Delete org",
-                })}
-                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-ink-3 hover:text-danger hover:bg-paper-3 transition cursor-pointer"
-              >
-                <Trash2 size={14} />
-              </button>
+            <li key={org.code}>
+              <Card className="group relative transition-colors hover:border-ink-4">
+                <button
+                  type="button"
+                  onClick={() => handleOpen(org.code)}
+                  className="w-full flex items-center gap-3 px-4 py-3 cursor-pointer"
+                >
+                  <OrgAvatar code={org.code} size="lg" />
+                  <span className="text-[14px] font-medium text-ink truncate">
+                    {org.code}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmDelete(org.code);
+                  }}
+                  aria-label={t("org_picker.delete_aria", {
+                    defaultValue: "Delete org",
+                  })}
+                  className="absolute top-1/2 -translate-y-1/2 right-3 opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-ink-3 hover:text-danger hover:bg-paper-2 transition cursor-pointer"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </Card>
             </li>
           ))}
           <li>
-            <button
-              type="button"
-              onClick={() => setCreateOpen(true)}
-              aria-label={
-                empty
-                  ? t("org_picker.create_first", {
-                      defaultValue: "Create your first org",
-                    })
-                  : t("org_picker.create_new", { defaultValue: "Create new org" })
-              }
-              className="w-full flex flex-col items-center gap-2 p-3 rounded-lg hover:bg-paper-2 transition cursor-pointer"
-            >
-              <span
-                className="grid place-items-center w-16 h-16 rounded-full border-2 border-dashed border-line text-ink-3 hover:text-accent-ink hover:border-accent transition"
-                aria-hidden
+            <Card className="group transition-colors hover:border-accent">
+              <button
+                type="button"
+                onClick={() => setCreateOpen(true)}
+                aria-label={
+                  empty
+                    ? t("org_picker.create_first", {
+                        defaultValue: "Create your first org",
+                      })
+                    : t("org_picker.create_new", { defaultValue: "Create new org" })
+                }
+                className="w-full flex items-center gap-3 px-4 py-3 text-ink-3 group-hover:text-accent-ink cursor-pointer"
               >
-                <Plus size={28} strokeWidth={1.5} />
-              </span>
-              <span className="text-[13px] font-medium text-ink-3 truncate max-w-full">
-                {empty
-                  ? t("org_picker.create_first", {
-                      defaultValue: "Create your first org",
-                    })
-                  : t("org_picker.create_new_short", { defaultValue: "New" })}
-              </span>
-            </button>
+                <span
+                  className="grid place-items-center w-10 h-10 rounded-full border-2 border-dashed border-line group-hover:border-accent transition shrink-0"
+                  aria-hidden
+                >
+                  <Plus size={18} strokeWidth={1.5} />
+                </span>
+                <span className="text-[14px] font-medium truncate">
+                  {empty
+                    ? t("org_picker.create_first", {
+                        defaultValue: "Create your first org",
+                      })
+                    : t("org_picker.create_new", {
+                        defaultValue: "Create new org",
+                      })}
+                </span>
+              </button>
+            </Card>
           </li>
         </ul>
+        </div>
       </div>
 
       <Modal

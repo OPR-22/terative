@@ -154,19 +154,41 @@ impl SeedDatabase {
 
     pub fn execute(&self, counts: SeedCounts) -> Result<SeedReport, AppError> {
         let mut report = SeedReport::default();
+        let mut rng = rand::thread_rng();
+
+        // Pick a per-run pool of 2–10 currencies from the supported set.
+        // Every downstream seed step draws from this pool so the produced
+        // data exercises the multi-currency UI (stacked dashboard rows,
+        // per-currency Accounting tabs, catalog items with prices in
+        // several currencies). Strict silos: every invoice/payment chain
+        // is single-currency, but the dataset as a whole spans the pool.
+        let pool: Vec<Currency> = {
+            let mut all: Vec<Currency> = Currency::all().to_vec();
+            all.shuffle(&mut rng);
+            let n = rng.gen_range(2..=10).min(all.len());
+            all.into_iter().take(n).collect()
+        };
 
         // FK order: clients first, then catalog/tax/bookmark independents,
         // then invoices (need clients + taxes), then payments (need
         // invoices), then journal entries (need clients).
-        let client_ids = self.seed_clients(counts.clients, &mut report)?;
-        self.seed_catalog_items(counts.catalog_items, &mut report)?;
+        let client_currencies =
+            self.seed_clients(counts.clients, &pool, &mut report)?;
+        self.seed_catalog_items(counts.catalog_items, &pool, &mut report)?;
         let tax_ids = self.seed_taxes(counts.taxes, &mut report)?;
-        let finalized = self.seed_invoices(counts.invoices, &client_ids, &tax_ids, &mut report)?;
+        let finalized = self.seed_invoices(
+            counts.invoices,
+            &client_currencies,
+            &tax_ids,
+            &mut report,
+        )?;
         self.seed_payments(&finalized, &mut report)?;
         // Emails depend on finalized invoices (they get marked Sent).
         // Run after payments so paid + sent combinations exist in the data.
         self.seed_emails(&finalized, &mut report)?;
         self.seed_bookmarks(counts.bookmarks, &mut report)?;
+        let client_ids: Vec<ClientId> =
+            client_currencies.iter().map(|(id, _)| *id).collect();
         self.seed_journal_entries(
             counts.journal_entries_per_client,
             &client_ids,
@@ -179,10 +201,11 @@ impl SeedDatabase {
     fn seed_clients(
         &self,
         n: u32,
+        currency_pool: &[Currency],
         report: &mut SeedReport,
-    ) -> Result<Vec<ClientId>, AppError> {
+    ) -> Result<Vec<(ClientId, Currency)>, AppError> {
         let mut rng = rand::thread_rng();
-        let mut ids = Vec::with_capacity(n as usize);
+        let mut ids: Vec<(ClientId, Currency)> = Vec::with_capacity(n as usize);
         let pronouns_pool = ["she/her", "he/him", "they/them"];
         let sex_pool = ["female", "male"];
         let gender_pool = ["femme", "homme", "non-binaire"];
@@ -202,6 +225,7 @@ impl SeedDatabase {
 
         for _ in 0..n {
             let phone_value: String = PhoneNumber().fake();
+            let default_currency = *currency_pool.choose(&mut rng).unwrap();
             let address = NewClientAddress {
                 label: Some("Principal".into()),
                 street: format!(
@@ -259,6 +283,7 @@ impl SeedDatabase {
                     pronouns: None,
                     occupation: None,
                     language: Some(language_pool.choose(&mut rng).unwrap().to_string()),
+                    default_currency,
                 }
             } else {
                 let first: String = FirstName().fake();
@@ -289,11 +314,12 @@ impl SeedDatabase {
                     pronouns: Some(pronouns_pool.choose(&mut rng).unwrap().to_string()),
                     occupation: Some(occupation_pool.choose(&mut rng).unwrap().to_string()),
                     language: Some(language_pool.choose(&mut rng).unwrap().to_string()),
+                    default_currency,
                 }
             };
 
             let client = self.create_client.execute(new_client)?;
-            ids.push(client.id);
+            ids.push((client.id, default_currency));
         }
         report.clients_added = n;
         Ok(ids)
@@ -302,6 +328,7 @@ impl SeedDatabase {
     fn seed_catalog_items(
         &self,
         n: u32,
+        currency_pool: &[Currency],
         report: &mut SeedReport,
     ) -> Result<(), AppError> {
         let mut rng = rand::thread_rng();
@@ -333,10 +360,39 @@ impl SeedDatabase {
                 CatalogItemKind::Product
             };
             let suffix: u32 = rng.gen_range(100..1000);
+            // Pricing variety:
+            //  - ~10% of items have no prices (exercises the manual-entry
+            //    path in the invoice editor's catalog picker).
+            //  - The rest get 1..=min(3, pool_size) prices in distinct
+            //    currencies drawn from the pool. The base item template's
+            //    `price` is used for the first currency; additional ones
+            //    nudge ±25% so values look plausible per-currency without
+            //    being a real conversion.
+            let prices: Vec<Money> = if rng.gen_bool(0.1) || currency_pool.is_empty() {
+                Vec::new()
+            } else {
+                let mut shuffled = currency_pool.to_vec();
+                shuffled.shuffle(&mut rng);
+                let count = rng.gen_range(1..=shuffled.len().min(3));
+                shuffled
+                    .into_iter()
+                    .take(count)
+                    .enumerate()
+                    .map(|(idx, c)| {
+                        let nudged = if idx == 0 {
+                            *price
+                        } else {
+                            let factor: f64 = rng.gen_range(0.75..=1.25);
+                            ((*price as f64) * factor).round() as i64
+                        };
+                        Money::new(nudged, c)
+                    })
+                    .collect()
+            };
             self.create_catalog_item.execute(NewCatalogItem {
                 name: format!("{name} {suffix}"),
                 kind,
-                default_price: Money::new(*price, Currency::Eur),
+                prices,
                 unit: Some((*unit).into()),
                 reference: Some(format!("REF-{suffix}")),
             })?;
@@ -376,11 +432,11 @@ impl SeedDatabase {
     fn seed_invoices(
         &self,
         n: u32,
-        client_ids: &[ClientId],
+        client_currencies: &[(ClientId, Currency)],
         tax_ids: &[TaxId],
         report: &mut SeedReport,
     ) -> Result<Vec<(ClientId, InvoiceId, Money)>, AppError> {
-        if client_ids.is_empty() {
+        if client_currencies.is_empty() {
             return Ok(Vec::new());
         }
         let mut rng = rand::thread_rng();
@@ -388,7 +444,7 @@ impl SeedDatabase {
         let today = Utc::now().date_naive();
 
         for _ in 0..n {
-            let client_id = *client_ids.choose(&mut rng).unwrap();
+            let &(client_id, currency) = client_currencies.choose(&mut rng).unwrap();
             // Issue date: random within the last 6 months.
             let days_ago: i64 = rng.gen_range(0..180);
             let date = today - Duration::days(days_ago);
@@ -397,12 +453,10 @@ impl SeedDatabase {
             let line_count = rng.gen_range(1..5);
             let line_items: Vec<NewLineItem> = (0..line_count)
                 .map(|_| NewLineItem {
+                    catalog_item_id: None,
                     description: Sentence(3..8).fake(),
                     quantity: Decimal::from(rng.gen_range(1..6)),
-                    unit_price: Money::new(
-                        rng.gen_range(2500..50_000),
-                        Currency::Eur,
-                    ),
+                    unit_price: Money::new(rng.gen_range(2500..50_000), currency),
                 })
                 .collect();
 
@@ -430,7 +484,7 @@ impl SeedDatabase {
                 line_items,
                 tax_ids: applied_taxes,
                 notes,
-                currency: Currency::Eur,
+                currency,
             })?;
             report.invoices_drafted += 1;
 
@@ -484,7 +538,8 @@ impl SeedDatabase {
                 let computed = ((total.minor_units() as f64) * factor) as i64;
                 computed.max(1).min(total.minor_units())
             };
-            let amount = Money::new(amount_cents, Currency::Eur);
+            // Strict-silos: payment currency must equal the invoice's.
+            let amount = Money::new(amount_cents, total.currency());
 
             self.record_payment.execute(NewPayment {
                 client_id: *client_id,

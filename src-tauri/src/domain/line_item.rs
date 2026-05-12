@@ -1,6 +1,7 @@
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
+use crate::domain::catalog_item::CatalogItemId;
 use crate::domain::money::{Money, MoneyError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -27,6 +28,12 @@ impl std::fmt::Display for LineItemId {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LineItem {
     pub id: LineItemId,
+    /// Optional link back to the catalog item this line was seeded from.
+    /// `unit_price` is a *snapshot* taken at creation time — the catalog's
+    /// current price is never read back here, so existing invoices stay
+    /// frozen if catalog prices later change. The link only powers
+    /// per-item stats ("100 units sold of item X").
+    pub catalog_item_id: Option<CatalogItemId>,
     pub description: String,
     pub quantity: Decimal,
     pub unit_price: Money,
@@ -47,6 +54,7 @@ pub enum LineItemError {
 
 #[derive(Debug, Clone)]
 pub struct NewLineItem {
+    pub catalog_item_id: Option<CatalogItemId>,
     pub description: String,
     pub quantity: Decimal,
     pub unit_price: Money,
@@ -67,6 +75,7 @@ impl LineItem {
         let total = compute_total(input.quantity, input.unit_price)?;
         Ok(Self {
             id: LineItemId::new(),
+            catalog_item_id: input.catalog_item_id,
             description,
             quantity: input.quantity,
             unit_price: input.unit_price,
@@ -92,60 +101,60 @@ mod tests {
         Currency::new("EUR").unwrap()
     }
 
+    fn new_li(unit_price: Money, qty: Decimal) -> NewLineItem {
+        NewLineItem {
+            catalog_item_id: None,
+            description: "Widget".into(),
+            quantity: qty,
+            unit_price,
+        }
+    }
+
     #[test]
     fn create_valid_line_item_computes_total() {
-        let li = LineItem::create(NewLineItem {
-            description: "Widget".into(),
-            quantity: dec!(3),
-            unit_price: Money::new(1000, eur()),
-        })
-        .unwrap();
+        let li = LineItem::create(new_li(Money::new(1000, eur()), dec!(3))).unwrap();
         assert_eq!(li.total.minor_units(), 3000);
+        assert_eq!(li.catalog_item_id, None);
     }
 
     #[test]
     fn create_fractional_quantity_rounds() {
-        let li = LineItem::create(NewLineItem {
-            description: "Hours".into(),
-            quantity: dec!(2.5),
-            unit_price: Money::new(10000, eur()),
-        })
-        .unwrap();
+        let li = LineItem::create(new_li(Money::new(10000, eur()), dec!(2.5))).unwrap();
         assert_eq!(li.total.minor_units(), 25000);
     }
 
     #[test]
-    fn create_rejects_empty_description() {
-        let err = LineItem::create(NewLineItem {
-            description: "  ".into(),
+    fn create_preserves_catalog_item_id() {
+        let cat_id = CatalogItemId::new();
+        let li = LineItem::create(NewLineItem {
+            catalog_item_id: Some(cat_id),
+            description: "From catalog".into(),
             quantity: dec!(1),
-            unit_price: Money::zero(eur()),
+            unit_price: Money::new(500, eur()),
         })
-        .unwrap_err();
+        .unwrap();
+        assert_eq!(li.catalog_item_id, Some(cat_id));
+    }
+
+    #[test]
+    fn create_rejects_empty_description() {
+        let mut li = new_li(Money::zero(eur()), dec!(1));
+        li.description = "  ".into();
+        let err = LineItem::create(li).unwrap_err();
         assert_eq!(err, LineItemError::EmptyDescription);
     }
 
     #[test]
     fn create_rejects_zero_or_negative_quantity() {
         for q in [dec!(0), dec!(-1)] {
-            let err = LineItem::create(NewLineItem {
-                description: "W".into(),
-                quantity: q,
-                unit_price: Money::zero(eur()),
-            })
-            .unwrap_err();
+            let err = LineItem::create(new_li(Money::zero(eur()), q)).unwrap_err();
             assert_eq!(err, LineItemError::NonPositiveQuantity);
         }
     }
 
     #[test]
     fn create_rejects_negative_unit_price() {
-        let err = LineItem::create(NewLineItem {
-            description: "W".into(),
-            quantity: dec!(1),
-            unit_price: Money::new(-1, eur()),
-        })
-        .unwrap_err();
+        let err = LineItem::create(new_li(Money::new(-1, eur()), dec!(1))).unwrap_err();
         assert_eq!(err, LineItemError::NegativeUnitPrice);
     }
 }

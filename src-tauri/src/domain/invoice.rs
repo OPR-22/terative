@@ -216,6 +216,7 @@ impl Invoice {
 
     pub fn update_draft(
         &mut self,
+        currency: Currency,
         line_items: Vec<NewLineItem>,
         taxes: &[TaxDefinition],
         template_id: Option<TemplateId>,
@@ -227,12 +228,17 @@ impl Invoice {
         if self.status != InvoiceStatus::Draft {
             return Err(InvoiceError::NotDraft);
         }
+        // Each line item's unit_price must already be in the target
+        // currency. `compute_totals` below validates this transitively
+        // (line.total inherits unit_price's currency and is compared to
+        // `currency`), so an explicit pre-check would be redundant.
         let items: Vec<LineItem> = line_items
             .into_iter()
             .map(LineItem::create)
             .collect::<Result<_, _>>()?;
         let (subtotal, tax_total, total, taxes_applied) =
-            compute_totals(&items, taxes, self.currency)?;
+            compute_totals(&items, taxes, currency)?;
+        self.currency = currency;
         self.line_items = items;
         self.taxes_applied = taxes_applied;
         self.subtotal = subtotal;
@@ -458,6 +464,7 @@ mod tests {
 
     fn line(desc: &str, qty: i64, price: i64) -> NewLineItem {
         NewLineItem {
+            catalog_item_id: None,
             description: desc.into(),
             quantity: Decimal::from(qty),
             unit_price: Money::new(price, eur()),
@@ -852,6 +859,7 @@ mod tests {
         )
         .unwrap();
         inv.update_draft(
+            eur(),
             vec![line("B", 2, 500)],
             &[tax],
             None,
@@ -885,7 +893,7 @@ mod tests {
         .unwrap();
         inv.finalize(InvoiceNumber(1), now()).unwrap();
         let err = inv
-            .update_draft(vec![line("A", 1, 1000)], &[], None, date(), None, None, now())
+            .update_draft(eur(), vec![line("A", 1, 1000)], &[], None, date(), None, None, now())
             .unwrap_err();
         assert!(matches!(err, InvoiceError::NotDraft));
     }

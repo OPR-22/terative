@@ -42,7 +42,7 @@ impl AccountingService {
         Ok(self.queries.revenue_by_client(input.start, input.end)?)
     }
 
-    pub fn client_balance(&self, client_id: ClientId) -> Result<ClientBalance, AppError> {
+    pub fn client_balance(&self, client_id: ClientId) -> Result<Vec<ClientBalance>, AppError> {
         Ok(self.queries.client_balance(client_id)?)
     }
 

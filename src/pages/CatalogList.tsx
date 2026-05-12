@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { Archive, ArchiveRestore, Edit, Plus } from "lucide-react";
@@ -9,11 +9,13 @@ import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { Checkbox } from "../components/ui/Checkbox";
 import { EmptyState } from "../components/ui/EmptyState";
+import { Select } from "../components/ui/Input";
 import { Pills } from "../components/ui/Pills";
 import { StatusDot } from "../components/ui/StatusDot";
 import { Table, Td, Th, THead, Tr } from "../components/ui/Table";
 import { useMoneyFormat } from "../lib/money";
 import { useCatalogStore } from "../stores/catalogStore";
+import { useSettingsStore } from "../stores/settingsStore";
 import type { CatalogItemKindDto } from "../ipc";
 
 type KindFilter = "All" | CatalogItemKindDto;
@@ -33,11 +35,39 @@ export function CatalogList() {
   } = useCatalogStore();
   const [kindFilter, setKindFilter] = useState<KindFilter>("All");
 
+  const { snapshot, load: loadSettings } = useSettingsStore();
+  const orgCurrencyCode = snapshot?.currency.code;
+
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    if (!snapshot) void loadSettings();
+  }, [refresh, snapshot, loadSettings]);
 
-  const { format } = useMoneyFormat();
+  const { formatAmount } = useMoneyFormat();
+
+  /**
+   * All ISO codes that appear at least once across the catalog. Powers the
+   * "show price in" dropdown — limiting the options to currencies actually
+   * in use avoids a 30-entry menu.
+   */
+  const availableCurrencies = useMemo(() => {
+    const set = new Set<string>();
+    for (const item of items) {
+      for (const price of item.prices) set.add(price.currency.code);
+    }
+    return Array.from(set).sort();
+  }, [items]);
+
+  const [displayCurrency, setDisplayCurrency] = useState<string>("");
+  useEffect(() => {
+    if (availableCurrencies.length === 0) return;
+    if (availableCurrencies.includes(displayCurrency)) return;
+    const fallback =
+      orgCurrencyCode && availableCurrencies.includes(orgCurrencyCode)
+        ? orgCurrencyCode
+        : availableCurrencies[0];
+    setDisplayCurrency(fallback);
+  }, [availableCurrencies, orgCurrencyCode, displayCurrency]);
 
   const visibleItems =
     kindFilter === "All" ? items : items.filter((i) => i.kind === kindFilter);
@@ -68,23 +98,38 @@ export function CatalogList() {
       }
     >
       <div className="mb-3.5 flex items-center justify-between gap-3">
-        <Pills<KindFilter>
-          value={kindFilter}
-          onChange={setKindFilter}
-          options={[
-            { id: "All", label: t("catalog.filter_all"), count: counts.All },
-            {
-              id: "Service",
-              label: t("catalog.kind_service_plural"),
-              count: counts.Service,
-            },
-            {
-              id: "Product",
-              label: t("catalog.kind_product_plural"),
-              count: counts.Product,
-            },
-          ]}
-        />
+        <div className="flex items-center gap-3">
+          <Pills<KindFilter>
+            value={kindFilter}
+            onChange={setKindFilter}
+            options={[
+              { id: "All", label: t("catalog.filter_all"), count: counts.All },
+              {
+                id: "Service",
+                label: t("catalog.kind_service_plural"),
+                count: counts.Service,
+              },
+              {
+                id: "Product",
+                label: t("catalog.kind_product_plural"),
+                count: counts.Product,
+              },
+            ]}
+          />
+          {availableCurrencies.length > 0 ? (
+            <Select
+              value={displayCurrency}
+              onChange={(e) => setDisplayCurrency(e.target.value)}
+              aria-label={t("catalog.show_price_in")}
+            >
+              {availableCurrencies.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </Select>
+          ) : null}
+        </div>
         <Checkbox checked={includeArchived} onChange={setIncludeArchived}>
           {t("common.include_archived")}
         </Checkbox>
@@ -101,29 +146,23 @@ export function CatalogList() {
           <Table>
             <THead>
               <Tr>
+                <Th>{t("common.status")}</Th>
                 <Th>{t("catalog.kind")}</Th>
                 <Th>{t("common.name")}</Th>
                 <Th>{t("catalog.reference")}</Th>
+                <Th>{t("accounting.currency")}</Th>
                 <Th numeric>{t("catalog.default_price")}</Th>
                 <Th>{t("catalog.unit")}</Th>
-                <Th>{t("common.status")}</Th>
                 <Th />
               </Tr>
             </THead>
             <tbody>
-              {visibleItems.map((s) => (
+              {visibleItems.map((s) => {
+                const priceInCurrency = s.prices.find(
+                  (p) => p.currency.code === displayCurrency,
+                );
+                return (
                 <Tr key={s.id}>
-                  <Td>
-                    <Badge kind={s.kind === "Product" ? "outline" : "info"}>
-                      {t(`catalog.kind_${s.kind.toLowerCase()}`)}
-                    </Badge>
-                  </Td>
-                  <Td className="font-medium">{s.name}</Td>
-                  <Td muted mono>
-                    {s.reference ?? "—"}
-                  </Td>
-                  <Td numeric>{format(s.default_price)}</Td>
-                  <Td muted>{s.unit ?? "—"}</Td>
                   <Td>
                     <span className="inline-flex items-center gap-1.5 text-[12px]">
                       {s.archived_at ? (
@@ -143,6 +182,30 @@ export function CatalogList() {
                       )}
                     </span>
                   </Td>
+                  <Td>
+                    <Badge kind={s.kind === "Product" ? "outline" : "info"}>
+                      {t(`catalog.kind_${s.kind.toLowerCase()}`)}
+                    </Badge>
+                  </Td>
+                  <Td className="font-medium">{s.name}</Td>
+                  <Td muted mono>
+                    {s.reference ?? "—"}
+                  </Td>
+                  <Td muted mono>
+                    {displayCurrency || "—"}
+                  </Td>
+                  <Td numeric>
+                    {priceInCurrency ? (
+                      formatAmount(priceInCurrency)
+                    ) : (
+                      <span className="text-[11px] text-ink-3 font-normal italic">
+                        {t("catalog.no_price_in_currency", {
+                          code: displayCurrency,
+                        })}
+                      </span>
+                    )}
+                  </Td>
+                  <Td muted>{s.unit ?? "—"}</Td>
                   <Td className="text-right whitespace-nowrap">
                     <div className="flex justify-end gap-1">
                       <Button
@@ -179,7 +242,8 @@ export function CatalogList() {
                     </div>
                   </Td>
                 </Tr>
-              ))}
+                );
+              })}
             </tbody>
           </Table>
         )}

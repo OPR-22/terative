@@ -26,6 +26,7 @@ import { useClientStore } from "../stores/clientStore";
 import { useCatalogStore } from "../stores/catalogStore";
 import { useTaxStore } from "../stores/taxStore";
 import { useTemplateStore } from "../stores/templateStore";
+import { useCurrencyCatalogStore } from "../stores/currencyCatalogStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import {
   ipc,
@@ -38,6 +39,9 @@ import {
 } from "../ipc";
 
 interface LineRow {
+  /** Optional source catalog item. The line carries a snapshot of the
+   *  price; we only keep the id for stats. */
+  catalog_item_id: string | null;
   description: string;
   quantity: string;
   unit_price_cents: number;
@@ -49,6 +53,8 @@ interface FormState {
   date: string;
   due_days: string;
   notes: string;
+  /** ISO 4217 code of the invoice's currency. Mutable while draft. */
+  currency: string;
   lines: LineRow[];
   tax_ids: string[];
 }
@@ -91,7 +97,10 @@ function daysBetween(issueDate: string, dueDate: string): string {
   return String(diff);
 }
 
-function initialForm(invoice: InvoiceDto | null): FormState {
+function initialForm(
+  invoice: InvoiceDto | null,
+  fallbackCurrency: string,
+): FormState {
   if (!invoice) {
     return {
       client_id: "",
@@ -99,7 +108,15 @@ function initialForm(invoice: InvoiceDto | null): FormState {
       date: today(),
       due_days: "",
       notes: "",
-      lines: [{ description: "", quantity: "1", unit_price_cents: 0 }],
+      currency: fallbackCurrency,
+      lines: [
+        {
+          catalog_item_id: null,
+          description: "",
+          quantity: "1",
+          unit_price_cents: 0,
+        },
+      ],
       tax_ids: [],
     };
   }
@@ -109,10 +126,12 @@ function initialForm(invoice: InvoiceDto | null): FormState {
     date: invoice.date,
     due_days: invoice.due_date ? daysBetween(invoice.date, invoice.due_date) : "",
     notes: invoice.notes ?? "",
+    currency: invoice.currency,
     lines: invoice.line_items.map((li) => ({
+      catalog_item_id: li.catalog_item_id,
       description: li.description,
       quantity: li.quantity,
-      unit_price_cents: li.unit_price.amount_minor,
+      unit_price_cents: li.unit_price.amount,
     })),
     tax_ids: invoice.taxes_applied
       .map((t) => t.tax_definition_id)
@@ -140,7 +159,7 @@ export function InvoiceEditor() {
   const { snapshot, load: loadSettings } = useSettingsStore();
 
   const [invoice, setInvoice] = useState<InvoiceDto | null>(null);
-  const [form, setForm] = useState<FormState>(() => initialForm(null));
+  const [form, setForm] = useState<FormState>(() => initialForm(null, "EUR"));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [markingPaid, setMarkingPaid] = useState(false);
@@ -156,7 +175,9 @@ export function InvoiceEditor() {
   useEffect(() => {
     if (!id) {
       setInvoice(null);
-      setForm(initialForm(null));
+      // For new drafts the currency seeds from the org's default — the
+      // client selection will overwrite it once we have a client.
+      setForm(initialForm(null, snapshot?.currency.code ?? "EUR"));
       return;
     }
     let cancelled = false;
@@ -164,15 +185,15 @@ export function InvoiceEditor() {
       .then((inv) => {
         if (cancelled) return;
         setInvoice(inv);
-        setForm(initialForm(inv));
+        setForm(initialForm(inv, inv.currency));
       })
       .catch((e) => {
-        if (!cancelled) toast.error(String(e));
+        if (!cancelled) toast.error(e);
       });
     return () => {
       cancelled = true;
     };
-  }, [id, getInvoice]);
+  }, [id, getInvoice, snapshot?.currency.code]);
 
   // Pull the list of payments allocated to this invoice once the
   // invoice loads. Drafts can't have payments, so skip the round-trip.
@@ -217,7 +238,7 @@ export function InvoiceEditor() {
         setPdfBytes(new Uint8Array(bytes));
       })
       .catch((e) => {
-        if (!cancelled) toast.error(String(e));
+        if (!cancelled) toast.error(e);
       })
       .finally(() => {
         if (!cancelled) setPdfLoading(false);
@@ -266,8 +287,38 @@ export function InvoiceEditor() {
     setForm((f) => (f.due_days ? f : { ...f, due_days: String(days) }));
   }, [invoice, snapshot]);
 
-  const currencyCode = snapshot?.currency.code ?? "EUR";
-  const appCurrency = snapshot?.currency;
+  // When a new draft picks (or changes) its client, default the invoice's
+  // currency to that client's default_currency. Only fires for new drafts
+  // (existing invoices keep whatever currency they were created with — the
+  // user changes it via the dedicated dropdown). Resets line prices to 0
+  // since they were quoted in the old currency.
+  const seededClientCurrencyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (invoice !== null) return;
+    if (!form.client_id) return;
+    if (seededClientCurrencyRef.current === form.client_id) return;
+    const client = clients.find((c) => c.id === form.client_id);
+    if (!client) return;
+    seededClientCurrencyRef.current = form.client_id;
+    if (client.default_currency === form.currency) return;
+    setForm((f) => ({
+      ...f,
+      currency: client.default_currency,
+      lines: f.lines.map((li) => ({
+        ...li,
+        catalog_item_id: null,
+        unit_price_cents: 0,
+      })),
+    }));
+  }, [invoice, form.client_id, form.currency, clients]);
+
+  const currencyCode = form.currency;
+  const { all: currencyCatalog, load: loadCurrencyCatalog, byCode } =
+    useCurrencyCatalogStore();
+  useEffect(() => {
+    if (currencyCatalog.length === 0) void loadCurrencyCatalog();
+  }, [currencyCatalog.length, loadCurrencyCatalog]);
+  const appCurrency = byCode(currencyCode);
   const { formatMinor } = useMoneyFormat();
   const readOnly = invoice !== null && invoice.status !== "Draft";
   const selectedClientName =
@@ -311,7 +362,12 @@ export function InvoiceEditor() {
       ...f,
       lines: [
         ...f.lines,
-        { description: "", quantity: "1", unit_price_cents: 0 },
+        {
+          catalog_item_id: null,
+          description: "",
+          quantity: "1",
+          unit_price_cents: 0,
+        },
       ],
     }));
 
@@ -329,14 +385,17 @@ export function InvoiceEditor() {
         : [...f.tax_ids, tid],
     }));
 
-  const buildLineItems = (): NewLineItemDto[] =>
-    form.lines
+  const buildLineItems = (): NewLineItemDto[] => {
+    if (!appCurrency) throw new Error(t("payments.err_currency_unknown"));
+    return form.lines
       .filter((li) => li.description.trim() !== "")
       .map((li) => ({
+        catalog_item_id: li.catalog_item_id,
         description: li.description,
         quantity: li.quantity || "1",
-        unit_price: { amount_minor: li.unit_price_cents, currency: currencyCode },
+        unit_price: { amount: li.unit_price_cents, currency: appCurrency },
       }));
+  };
 
   const persistDraft = async (): Promise<string> => {
     if (!form.client_id) {
@@ -349,6 +408,7 @@ export function InvoiceEditor() {
         template_id: form.template_id,
         date: form.date,
         due_date: dueDate,
+        currency: form.currency,
         line_items: buildLineItems(),
         tax_ids: form.tax_ids,
         notes: form.notes || null,
@@ -379,7 +439,7 @@ export function InvoiceEditor() {
       await persistDraft();
       goBack();
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setSubmitting(false);
     }
@@ -393,7 +453,7 @@ export function InvoiceEditor() {
       await finalize(newId);
       goBack();
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setSubmitting(false);
     }
@@ -406,7 +466,7 @@ export function InvoiceEditor() {
       await cancel(invoice.id);
       goBack();
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
       throw e;
     } finally {
       setSubmitting(false);
@@ -421,7 +481,7 @@ export function InvoiceEditor() {
       await send(invoice.id);
       goBack();
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setSubmitting(false);
     }
@@ -644,15 +704,51 @@ export function InvoiceEditor() {
             title={t("invoices.section_lines")}
             className="border-t border-line"
             actions={
-              !readOnly ? (
-                <Button
-                  size="sm"
-                  leadingIcon={<Plus size={11} strokeWidth={1.5} />}
-                  onClick={addLine}
-                >
-                  {t("invoices.add_line")}
-                </Button>
-              ) : null
+              <div className="flex items-center gap-2">
+                {!readOnly && currencyCatalog.length > 0 ? (
+                  <Select
+                    aria-label={t("invoices.currency") ?? ""}
+                    value={form.currency}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      if (next === form.currency) return;
+                      // Switching currency invalidates every existing
+                      // unit_price (quoted in the old currency), so reset
+                      // them to 0. Descriptions are kept; the catalog link
+                      // is dropped since the snapshot price no longer
+                      // applies. The user re-prices each line.
+                      setForm((f) => ({
+                        ...f,
+                        currency: next,
+                        lines: f.lines.map((li) => ({
+                          ...li,
+                          catalog_item_id: null,
+                          unit_price_cents: 0,
+                        })),
+                      }));
+                    }}
+                  >
+                    {currencyCatalog.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.code}
+                      </option>
+                    ))}
+                  </Select>
+                ) : readOnly ? (
+                  <span className="text-[12px] text-ink-3 font-mono tabular">
+                    {form.currency}
+                  </span>
+                ) : null}
+                {!readOnly ? (
+                  <Button
+                    size="sm"
+                    leadingIcon={<Plus size={11} strokeWidth={1.5} />}
+                    onClick={addLine}
+                  >
+                    {t("invoices.add_line")}
+                  </Button>
+                ) : null}
+              </div>
             }
           />
           <div>
@@ -682,9 +778,20 @@ export function InvoiceEditor() {
                         onChange={(e) => {
                           const item = catalogItems.find((c) => c.id === e.target.value);
                           if (!item) return;
+                          // Strict-silos: use the price in the invoice's
+                          // currency if the item has one. Otherwise leave
+                          // unit_price at 0 for manual entry — we cannot
+                          // convert across currencies.
+                          const priced = item.prices.find(
+                            (p) => p.currency.code === currencyCode,
+                          );
+                          // Snapshot the catalog price into the line so the
+                          // line stays frozen if catalog prices later
+                          // change. The id is kept only for stats.
                           updateLine(idx, {
+                            catalog_item_id: item.id,
                             description: item.name,
-                            unit_price_cents: item.default_price.amount_minor,
+                            unit_price_cents: priced?.amount ?? 0,
                           });
                         }}
                       >
@@ -697,13 +804,21 @@ export function InvoiceEditor() {
                               key={kind}
                               label={t(`catalog.kind_${kind.toLowerCase()}_plural`)}
                             >
-                              {group.map((c) => (
-                                <option key={c.id} value={c.id}>
-                                  {c.reference ? `[${c.reference}] ` : ""}
-                                  {c.name} · {formatMinor(c.default_price.amount_minor, c.default_price.currency)}
-                                  {c.unit ? ` / ${c.unit}` : ""}
-                                </option>
-                              ))}
+                              {group.map((c) => {
+                                const priced = c.prices.find(
+                                  (p) => p.currency.code === currencyCode,
+                                );
+                                const priceLabel = priced
+                                  ? formatMinor(priced.amount, priced.currency.code)
+                                  : t("invoices.catalog_item_no_price_in_currency");
+                                return (
+                                  <option key={c.id} value={c.id}>
+                                    {c.reference ? `[${c.reference}] ` : ""}
+                                    {c.name} · {priceLabel}
+                                    {c.unit ? ` / ${c.unit}` : ""}
+                                  </option>
+                                );
+                              })}
                             </optgroup>
                           );
                         })}
@@ -830,7 +945,7 @@ export function InvoiceEditor() {
                     onClick={() => {
                       if (!invoice.pdf_path) return;
                       void revealItemInDir(invoice.pdf_path).catch((e) =>
-                        toast.error(String(e)),
+                        toast.error(e),
                       );
                     }}
                   >
@@ -842,7 +957,7 @@ export function InvoiceEditor() {
                     onClick={() => {
                       void ipc
                         .invoiceOpenExternal(invoice.id)
-                        .catch((e) => toast.error(String(e)));
+                        .catch((e) => toast.error(e));
                     }}
                   >
                     {t("invoices.preview_open_externally")}
@@ -854,7 +969,7 @@ export function InvoiceEditor() {
                     onClick={() => {
                       void ipc
                         .invoicePrint(invoice.id)
-                        .catch((e) => toast.error(String(e)));
+                        .catch((e) => toast.error(e));
                     }}
                   >
                     {t("invoices.preview_print")}
@@ -884,7 +999,7 @@ export function InvoiceEditor() {
             actions={
               (() => {
                 const dueCents =
-                  invoice.total.amount_minor - invoice.amount_paid.amount_minor;
+                  invoice.total.amount - invoice.amount_paid.amount;
                 const fullyPaid = dueCents <= 0;
                 return (
                   <span className="inline-flex items-baseline gap-2 text-[12px]">
@@ -901,7 +1016,7 @@ export function InvoiceEditor() {
                     >
                       {formatMinor(
                         Math.max(0, dueCents),
-                        invoice.total.currency,
+                        invoice.total.currency.code,
                       )}
                     </span>
                   </span>
@@ -919,8 +1034,8 @@ export function InvoiceEditor() {
                 );
                 const amount = allocation
                   ? formatMinor(
-                      allocation.amount.amount_minor,
-                      allocation.amount.currency,
+                      allocation.amount.amount,
+                      allocation.amount.currency.code,
                     )
                   : null;
                 return (

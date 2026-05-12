@@ -44,6 +44,7 @@ pub enum ErrorCode {
     // ── Catalog item ──
     CatalogItemEmptyName,
     CatalogItemNegativePrice,
+    CatalogItemDuplicateCurrency,
 
     // ── Client ──
     ClientEmptyName,
@@ -115,6 +116,7 @@ pub enum ErrorCode {
     PaymentNonPositiveAllocation,
     PaymentAllocationsExceedPayment,
     PaymentCurrencyMismatch,
+    PaymentInvoiceCurrencyMismatch,
     PaymentDuplicateAllocation,
 
     // ── SMTP ──
@@ -331,6 +333,9 @@ impl From<CatalogItemError> for AppError {
             }
             CatalogItemError::NegativePrice => {
                 AppError::invalid_argument(ErrorCode::CatalogItemNegativePrice)
+            }
+            CatalogItemError::DuplicateCurrency => {
+                AppError::invalid_argument(ErrorCode::CatalogItemDuplicateCurrency)
             }
             CatalogItemError::Money(inner) => inner.into(),
         }

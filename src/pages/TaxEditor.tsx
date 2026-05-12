@@ -59,7 +59,7 @@ export function TaxEditor() {
       }
       navigate("/taxes");
     } catch (e) {
-      toast.error(String(e));
+      toast.error(e);
     } finally {
       setSubmitting(false);
     }

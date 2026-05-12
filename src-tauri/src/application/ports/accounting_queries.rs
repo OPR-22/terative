@@ -10,22 +10,33 @@ use crate::domain::money::Money;
 /// `v_client_balance`, `v_aging_report`) plus a few aggregate sums. Kept as a
 /// dedicated port so the use cases don't reach past the invoice/payment ports
 /// into raw SQL for reporting.
+///
+/// Strict-silos multi-currency: per-currency totals are never summed across
+/// currencies. Aggregate queries return `Vec` keyed by currency (and other
+/// dimensions); the UI is responsible for rendering one row/chart/table per
+/// currency.
 pub trait AccountingQueries: Send + Sync {
     fn list_outstanding_invoices(&self) -> Result<Vec<InvoicePaymentRow>, RepoError>;
     fn list_overdue_invoices(&self, today: NaiveDate)
         -> Result<Vec<InvoicePaymentRow>, RepoError>;
+    /// One row per (bucket, currency). A bucket with two currencies of activity
+    /// produces two rows that share the same `bucket_start`.
     fn revenue_by_period(
         &self,
         start: NaiveDate,
         end: NaiveDate,
         grouping: RevenueGrouping,
     ) -> Result<Vec<RevenueBucket>, RepoError>;
+    /// One row per (client, currency).
     fn revenue_by_client(
         &self,
         start: NaiveDate,
         end: NaiveDate,
     ) -> Result<Vec<RevenueByClient>, RepoError>;
-    fn client_balance(&self, client_id: ClientId) -> Result<ClientBalance, RepoError>;
+    /// One row per currency the client has activity in. Empty when there are
+    /// no invoices and no payments for the client (yet).
+    fn client_balance(&self, client_id: ClientId) -> Result<Vec<ClientBalance>, RepoError>;
+    /// One row per (client, currency). Clients with no activity are omitted.
     fn client_balances(&self) -> Result<Vec<ClientBalance>, RepoError>;
     fn aging_report(&self, today: NaiveDate) -> Result<Vec<AgingRow>, RepoError>;
     fn dashboard_summary(&self, today: NaiveDate) -> Result<DashboardSummary, RepoError>;
@@ -99,12 +110,58 @@ pub enum AgingBucket {
     Days91Plus,
 }
 
+/// One per-currency row for the dashboard "revenue" card.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DashboardSummary {
-    pub revenue_this_year: Money,
-    pub outstanding_total: Money,
+pub struct DashboardRevenueRow {
+    pub amount: Money,
+    /// Number of finalized/sent invoices in this currency this year.
+    pub invoice_count: u64,
+}
+
+/// One per-currency row for the dashboard "outstanding" card.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DashboardOutstandingRow {
+    /// Total still due (finalized/sent invoices, total - amount_paid > 0).
+    pub outstanding: Money,
+    /// Subset of `outstanding` that is past its due date today.
+    pub overdue: Money,
+    /// Number of open invoices in this currency.
+    pub open_count: u64,
+    /// Subset of `open_count` that is overdue.
     pub overdue_count: u64,
-    pub draft_count: u64,
-    pub finalized_count: u64,
-    pub sent_count: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DashboardSummary {
+    /// Per-currency rows for the revenue card. Empty when no finalized/sent
+    /// invoice exists this year.
+    pub revenue_this_year: Vec<DashboardRevenueRow>,
+
+    /// Per-currency rows for the outstanding card.
+    pub outstanding: Vec<DashboardOutstandingRow>,
+
+    /// Global overdue count across all currencies (footer of the
+    /// outstanding card).
+    pub overdue_count: u64,
+    /// Max days past due across overdue invoices. `0` when nothing is
+    /// overdue.
+    pub overdue_max_days: u64,
+
+    /// Average days between issue date and payment date for invoices paid
+    /// in the last 12 months. `None` when no payments were recorded in
+    /// that window.
+    pub avg_payment_delay_days: Option<f64>,
+    /// User-configured target for `avg_payment_delay_days`, read from
+    /// `app_preferences.default_invoice_due_days`.
+    pub avg_payment_delay_target_days: u64,
+
+    /// Clients with `archived_at IS NULL`.
+    pub active_clients_count: u64,
+    /// Clients with `created_at` in the current calendar year.
+    pub new_clients_this_year_count: u64,
+
+    /// Finalized or Sent invoices issued this year.
+    pub finalized_this_year_count: u64,
+    /// Drafts created this year (`created_at`, not `date`).
+    pub drafts_this_year_count: u64,
 }

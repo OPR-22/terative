@@ -202,21 +202,32 @@ fn non_empty(s: String) -> Option<String> {
     }
 }
 
-pub fn compute_allocated_for_invoice(payments: &[Payment], invoice_id: InvoiceId) -> Money {
+/// Sum every allocation that targets `invoice_id`, returning the result in
+/// `invoice_currency`. Callers must pass the invoice's own currency so the
+/// zero-allocations case (no matching payments yet) returns a correctly-
+/// typed `Money(0, invoice_currency)` rather than a misleading default.
+///
+/// Allocations that don't match `invoice_currency` are a programmer error —
+/// strict silos forbid them at the use-case layer
+/// ([`crate::application::payment_usecases::validate_cross_aggregate_allocations`])
+/// and at the domain layer ([`Payment::validate_allocations`]). If one
+/// slips through anyway, this function will detect the mismatch and return
+/// `Money(0, invoice_currency)` rather than silently summing across
+/// currencies.
+pub fn compute_allocated_for_invoice(
+    payments: &[Payment],
+    invoice_id: InvoiceId,
+    invoice_currency: Currency,
+) -> Money {
     let mut sum: i64 = 0;
-    let mut currency: Option<Currency> = None;
     for p in payments {
         for a in &p.allocations {
-            if a.invoice_id == invoice_id {
-                if currency.is_none() {
-                    currency = Some(a.amount.currency());
-                }
+            if a.invoice_id == invoice_id && a.amount.currency() == invoice_currency {
                 sum += a.amount.minor_units();
             }
         }
     }
-    let currency = currency.unwrap_or_else(|| Currency::new("EUR").unwrap());
-    Money::new(sum, currency)
+    Money::new(sum, invoice_currency)
 }
 
 #[cfg(test)]
@@ -404,7 +415,16 @@ mod tests {
         )
         .unwrap();
         let p2 = Payment::create(new_payment(1000, vec![alloc(invoice, 400)]), now()).unwrap();
-        let allocated = compute_allocated_for_invoice(&[p1, p2], invoice);
+        let allocated = compute_allocated_for_invoice(&[p1, p2], invoice, eur());
         assert_eq!(allocated.minor_units(), 700);
+        assert_eq!(allocated.currency(), eur());
+    }
+
+    #[test]
+    fn compute_allocated_returns_zero_in_invoice_currency_when_no_payments() {
+        let invoice = InvoiceId::new();
+        let allocated = compute_allocated_for_invoice(&[], invoice, eur());
+        assert_eq!(allocated.minor_units(), 0);
+        assert_eq!(allocated.currency(), eur());
     }
 }
