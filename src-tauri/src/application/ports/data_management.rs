@@ -63,7 +63,24 @@ pub trait DataManagement: Send + Sync {
     /// backup directory so the operation is reversible. Returns the snapshot
     /// path. The caller is responsible for restarting the app so the new
     /// file is opened.
-    fn restore_database(&self, source: &Path) -> Result<PathBuf, RepoError>;
+    ///
+    /// `source_password` is required iff the source file is SQLCipher-
+    /// encrypted; for plaintext sources it is ignored. The post-restore
+    /// live db will be encrypted under this password — the caller must
+    /// clear / refresh any cached unlock key (see
+    /// [`DataManagement::source_appears_encrypted`]).
+    fn restore_database(
+        &self,
+        source: &Path,
+        source_password: Option<&str>,
+    ) -> Result<PathBuf, RepoError>;
+
+    /// Cheap heuristic: looks at the file's leading bytes. True when the
+    /// file does not begin with `SQLite format 3\0`, meaning it's either
+    /// SQLCipher-encrypted, junk, or another format. Used by the restore
+    /// UI to decide whether to prompt for a password before calling
+    /// `restore_database`.
+    fn source_appears_encrypted(&self, source: &Path) -> Result<bool, RepoError>;
 
     /// Scans the configured backup directories and returns all Terative
     /// backup files found, sorted newest-first.

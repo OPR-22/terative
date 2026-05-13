@@ -5,10 +5,11 @@ use std::sync::Arc;
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use rusqlite::{Connection, OpenFlags};
 use rusqlite_migration::SchemaVersion;
+use zeroize::Zeroizing;
 
-use crate::adapters::sqlite::connection::{migrations, Db, APPLICATION_ID};
+use crate::adapters::sqlite::connection::{escape_key_for_sql, migrations, Db, APPLICATION_ID};
 use crate::application::ports::{BackupKind, BackupMetadata, DataManagement, SettingsRepository};
-use crate::application::RepoError;
+use crate::application::{RepoError, SecretKey};
 
 pub struct FilesystemDataManagement {
     db: Db,
@@ -16,6 +17,11 @@ pub struct FilesystemDataManagement {
     settings: Arc<dyn SettingsRepository>,
     default_user_backup_dir: PathBuf,
     system_backup_dir: PathBuf,
+    /// SQLCipher passphrase used to decrypt the live db. `None` means the
+    /// org is plaintext — backups go via `VACUUM INTO`. When set, backups
+    /// are produced under the same key via `sqlcipher_export`. Wrapped in
+    /// [`SecretKey`] so the bytes are zeroed on drop.
+    key: Option<SecretKey>,
 }
 
 impl FilesystemDataManagement {
@@ -25,6 +31,7 @@ impl FilesystemDataManagement {
         settings: Arc<dyn SettingsRepository>,
         default_user_backup_dir: PathBuf,
         system_backup_dir: PathBuf,
+        key: Option<SecretKey>,
     ) -> Self {
         Self {
             db,
@@ -32,6 +39,7 @@ impl FilesystemDataManagement {
             settings,
             default_user_backup_dir,
             system_backup_dir,
+            key,
         }
     }
 
@@ -48,17 +56,44 @@ impl FilesystemDataManagement {
         })
     }
 
-    /// Writes a WAL-safe consistent copy of the live database to `dest` using
-    /// SQLite's `VACUUM INTO`. This captures any commits still sitting in the
-    /// WAL that a raw `fs::copy` of the main file would miss. The target path
-    /// must not already exist.
-    fn vacuum_into(&self, dest: &Path) -> Result<(), RepoError> {
-        // `VACUUM INTO` does not accept bound parameters for the target path,
-        // so we interpolate and escape SQL single quotes by doubling them.
+    /// Writes a WAL-safe consistent copy of the live database to `dest`.
+    /// For plaintext orgs this is `VACUUM INTO`; for encrypted orgs it's
+    /// `sqlcipher_export` into an attached target carrying the same key.
+    /// In both cases the operation is read-through-the-live-connection so
+    /// WAL-only commits are captured. The target path must not already
+    /// exist.
+    fn snapshot_into(&self, dest: &Path) -> Result<(), RepoError> {
+        // Neither VACUUM INTO nor ATTACH DATABASE accept bound parameters
+        // for paths; escape single quotes by doubling.
         let dest_sql = dest.to_string_lossy().replace('\'', "''");
         let conn = self.db.lock();
-        conn.execute(&format!("VACUUM INTO '{dest_sql}'"), [])
-            .map_err(|e| storage(format!("vacuum into {}: {e}", dest.display())))?;
+        match self.key.as_ref() {
+            None => {
+                conn.execute(&format!("VACUUM INTO '{dest_sql}'"), [])
+                    .map_err(|e| storage(format!("vacuum into {}: {e}", dest.display())))?;
+            }
+            Some(k) => {
+                // sqlcipher_export skips file-format PRAGMAs, so we read
+                // `user_version` off the live db and re-stamp the target.
+                // `application_id` is stamped from the constant — by the
+                // time we're here the live db is unambiguously a Terative
+                // org under the cached key.
+                let user_version: i64 = conn
+                    .query_row("PRAGMA user_version", [], |r| r.get(0))
+                    .map_err(|e| storage(format!("read user_version: {e}")))?;
+                let key_escaped = escape_key_for_sql(k.expose());
+                let stmt = Zeroizing::new(format!(
+                    "ATTACH DATABASE '{dest_sql}' AS backup KEY '{}';\
+                     SELECT sqlcipher_export('backup');\
+                     PRAGMA backup.user_version = {user_version};\
+                     PRAGMA backup.application_id = {APPLICATION_ID};\
+                     DETACH DATABASE backup;",
+                    &*key_escaped,
+                ));
+                conn.execute_batch(&stmt)
+                    .map_err(|e| storage(format!("sqlcipher_export to {}: {e}", dest.display())))?;
+            }
+        }
         Ok(())
     }
 
@@ -71,7 +106,7 @@ impl FilesystemDataManagement {
     ) -> Result<PathBuf, RepoError> {
         fs::create_dir_all(dir).map_err(|e| storage(format!("create backup dir: {e}")))?;
         let path = dir.join(format_backup_filename(kind, Utc::now()));
-        self.vacuum_into(&path)?;
+        self.snapshot_into(&path)?;
         Ok(path)
     }
 }
@@ -146,27 +181,49 @@ fn storage(msg: impl Into<String>) -> RepoError {
 }
 
 /// SQLite's file format starts with the magic bytes "SQLite format 3\x00".
-fn validate_sqlite_magic(path: &Path) -> Result<(), RepoError> {
+/// SQLCipher-encrypted files start with the salt instead, so missing magic
+/// is the signal we use to route to the encrypted-source path.
+fn file_starts_with_sqlite_magic(path: &Path) -> Result<bool, RepoError> {
     let bytes = fs::read(path).map_err(|e| storage(format!("read source: {e}")))?;
     const MAGIC: &[u8] = b"SQLite format 3\0";
-    if bytes.len() < MAGIC.len() || &bytes[..MAGIC.len()] != MAGIC {
-        return Err(storage("source is not a valid SQLite database"));
-    }
-    Ok(())
+    Ok(bytes.len() >= MAGIC.len() && &bytes[..MAGIC.len()] == MAGIC)
 }
 
-/// Validates a candidate restore source: magic bytes, SQLite-level integrity,
-/// FK consistency, and a Terative-specific `application_id` stamped into the
-/// SQLite header by the initial migration.
-fn validate_restore_source(path: &Path) -> Result<(), RepoError> {
-    validate_sqlite_magic(path)?;
+/// Validates a candidate restore source: magic bytes (or decryption),
+/// `application_id`, schema version, integrity, FK consistency. When
+/// `source_password` is supplied, the connection runs `PRAGMA key`
+/// before any read; a wrong password surfaces as a friendly storage error.
+fn validate_restore_source(path: &Path, source_password: Option<&str>) -> Result<(), RepoError> {
+    let plaintext = file_starts_with_sqlite_magic(path)?;
+    match (plaintext, source_password) {
+        (true, _) => {} // plaintext source: existing flow
+        (false, None) => {
+            return Err(storage(
+                "source appears encrypted but no password was supplied",
+            ))
+        }
+        (false, Some(_)) => {} // encrypted, fall through; PRAGMA key below
+    }
 
+    // For encrypted sources, ATTACH needs a writable parent connection if
+    // sqlcipher_export is to follow, but here we only read — read-only is
+    // fine even with a key. PRAGMA key is connection-scoped, not file-write.
     let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|e| storage(format!("open source: {e}")))?;
 
+    if let Some(pw) = source_password.filter(|_| !plaintext) {
+        let escaped = escape_key_for_sql(pw);
+        let stmt = Zeroizing::new(format!("PRAGMA key = '{}'", &*escaped));
+        conn.execute_batch(&stmt)
+            .map_err(|e| storage(format!("set source key: {e}")))?;
+    }
+
     let app_id: i32 = conn
         .query_row("PRAGMA application_id", [], |r| r.get(0))
-        .map_err(|e| storage(format!("read application_id: {e}")))?;
+        .map_err(|e| match e.sqlite_error_code() {
+            Some(rusqlite::ErrorCode::NotADatabase) => RepoError::WrongPassword,
+            _ => storage(format!("read application_id: {e}")),
+        })?;
     if app_id != APPLICATION_ID {
         return Err(storage(
             "source is not a terative database (application_id mismatch)",
@@ -221,12 +278,13 @@ impl DataManagement for FilesystemDataManagement {
                 fs::create_dir_all(parent).map_err(|e| storage(e.to_string()))?;
             }
         }
-        // VACUUM INTO refuses to overwrite, so clear any existing target first.
+        // VACUUM INTO / sqlcipher_export refuse to overwrite; clear any
+        // existing target first.
         if destination.exists() {
             fs::remove_file(destination)
                 .map_err(|e| storage(format!("overwrite destination: {e}")))?;
         }
-        self.vacuum_into(destination)?;
+        self.snapshot_into(destination)?;
         Ok(destination.to_path_buf())
     }
 
@@ -235,8 +293,12 @@ impl DataManagement for FilesystemDataManagement {
         self.write_backup(BackupKind::Manual, &user_dir)
     }
 
-    fn restore_database(&self, source: &Path) -> Result<PathBuf, RepoError> {
-        validate_restore_source(source)?;
+    fn restore_database(
+        &self,
+        source: &Path,
+        source_password: Option<&str>,
+    ) -> Result<PathBuf, RepoError> {
+        validate_restore_source(source, source_password)?;
 
         // Snapshot the live db BEFORE touching it, so the restore is
         // reversible. If this fails, the live db is never modified.
@@ -273,6 +335,10 @@ impl DataManagement for FilesystemDataManagement {
         let _ = fs::remove_file(shm);
 
         Ok(snapshot)
+    }
+
+    fn source_appears_encrypted(&self, source: &Path) -> Result<bool, RepoError> {
+        Ok(!file_starts_with_sqlite_magic(source)?)
     }
 
     fn list_backups(&self) -> Result<Vec<BackupMetadata>, RepoError> {
@@ -428,6 +494,7 @@ mod tests {
             settings,
             user_dir.clone(),
             system_dir.clone(),
+            None,
         );
         (mgr, user_dir, system_dir)
     }
@@ -555,11 +622,53 @@ mod tests {
             settings,
             user_dir.clone(),
             system_dir,
+            None,
         );
 
         let path = mgr.create_backup().unwrap();
         assert!(path.exists());
         assert!(user_dir.exists());
+    }
+
+    /// Encrypted orgs use sqlcipher_export instead of VACUUM INTO so the
+    /// backup file is itself encrypted under the same key.
+    #[test]
+    fn create_backup_for_encrypted_org_produces_encrypted_backup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let live = tmp.path().join("live.sqlite");
+        let db = crate::adapters::sqlite::connection::open_with_key(&live, Some("hunter2"))
+            .expect("create encrypted db");
+
+        let user_dir = tmp.path().join("user");
+        let system_dir = tmp.path().join("system");
+        let settings = Arc::new(crate::adapters::sqlite::SqliteSettingsRepository::new(
+            db.clone(),
+        ));
+        let mgr = FilesystemDataManagement::new(
+            db,
+            live,
+            settings,
+            user_dir.clone(),
+            system_dir,
+            Some(SecretKey::new("hunter2")),
+        );
+
+        let path = mgr.create_backup().unwrap();
+        let bytes = fs::read(&path).unwrap();
+        assert!(
+            !bytes.starts_with(b"SQLite format 3\0"),
+            "backup of an encrypted org must itself be encrypted",
+        );
+
+        // Reopen with the same key — succeeds. With wrong key — fails.
+        let _ok = crate::adapters::sqlite::connection::open_with_key(&path, Some("hunter2"))
+            .expect("reopen encrypted backup");
+        let err =
+            crate::adapters::sqlite::connection::open_with_key(&path, Some("wrong")).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::adapters::sqlite::connection::OpenOrgError::WrongPassword
+        ));
     }
 
     /// Regression guard: with WAL mode on, a raw `fs::copy` of the main file
@@ -604,7 +713,7 @@ mod tests {
         }
 
         let (mgr, _, _) = build_mgr(tmp.path(), live.clone(), db);
-        mgr.restore_database(&source).unwrap();
+        mgr.restore_database(&source, None).unwrap();
 
         assert_eq!(client_count(&live, "from-source"), 1);
         assert_eq!(client_count(&live, "live-only"), 0);
@@ -622,7 +731,7 @@ mod tests {
         let source_bytes_before = fs::read(&source).unwrap();
 
         let (mgr, _, _) = build_mgr(tmp.path(), live, db);
-        mgr.restore_database(&source).unwrap();
+        mgr.restore_database(&source, None).unwrap();
 
         assert!(source.exists(), "source file must not be consumed");
         let source_bytes_after = fs::read(&source).unwrap();
@@ -645,7 +754,7 @@ mod tests {
         }
 
         let (mgr, _, system_dir) = build_mgr(tmp.path(), live, db);
-        let snapshot = mgr.restore_database(&source).unwrap();
+        let snapshot = mgr.restore_database(&source, None).unwrap();
 
         assert!(snapshot.exists(), "pre-restore snapshot must exist");
         assert!(
@@ -688,9 +797,10 @@ mod tests {
             settings,
             user_dir,
             blocked,
+            None,
         );
 
-        let err = mgr.restore_database(&source).unwrap_err();
+        let err = mgr.restore_database(&source, None).unwrap_err();
         assert!(matches!(err, RepoError::Storage(_)));
         assert_eq!(
             client_count(&live, "live-marker"),
@@ -708,12 +818,76 @@ mod tests {
         fs::write(&bad, b"this is not sqlite").unwrap();
 
         let (mgr, _, _) = build_mgr(tmp.path(), live.clone(), db);
-        let err = mgr.restore_database(&bad).unwrap_err();
+        let err = mgr.restore_database(&bad, None).unwrap_err();
         match err {
-            RepoError::Storage(msg) => assert!(msg.contains("SQLite"), "{msg}"),
+            // Without SQLite magic bytes, the validator treats it as either
+            // a non-SQLite file or an encrypted source missing a password.
+            RepoError::Storage(msg) => assert!(
+                msg.contains("SQLite") || msg.contains("encrypted") || msg.contains("password"),
+                "{msg}"
+            ),
             other => panic!("expected Storage error, got {other:?}"),
         }
         assert!(live.exists());
+    }
+
+    /// Encrypted source + correct password = restore succeeds; wrong
+    /// password is rejected before the live db is touched.
+    #[test]
+    fn restore_accepts_encrypted_source_with_correct_password() {
+        let tmp = tempfile::tempdir().unwrap();
+        let live = tmp.path().join("live.sqlite");
+        let db = seed_real_db(&live);
+
+        // Seed an encrypted source with the same schema.
+        let source = tmp.path().join("source.sqlite");
+        {
+            let src_db =
+                crate::adapters::sqlite::connection::open_with_key(&source, Some("backup-pw"))
+                    .expect("create encrypted source");
+            // Drop the connection so the file's not held open during restore.
+            drop(src_db);
+        }
+
+        let (mgr, _, _) = build_mgr(tmp.path(), live.clone(), db);
+
+        let err = mgr
+            .restore_database(&source, Some("wrong"))
+            .unwrap_err();
+        assert!(
+            matches!(err, RepoError::WrongPassword),
+            "expected WrongPassword, got {err:?}",
+        );
+
+        mgr.restore_database(&source, Some("backup-pw"))
+            .expect("restore with correct backup password");
+
+        // After restore, the live file is encrypted under "backup-pw" — it
+        // no longer opens as plaintext.
+        let bytes = fs::read(&live).unwrap();
+        assert!(!bytes.starts_with(b"SQLite format 3\0"));
+        let _ = crate::adapters::sqlite::connection::open_with_key(&live, Some("backup-pw"))
+            .expect("live opens under source's password");
+    }
+
+    #[test]
+    fn source_appears_encrypted_returns_true_for_sqlcipher_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let live = tmp.path().join("live.sqlite");
+        let db = seed_real_db(&live);
+        let (mgr, _, _) = build_mgr(tmp.path(), live, db);
+
+        let plain = tmp.path().join("plain.sqlite");
+        {
+            let _ = seed_real_db(&plain);
+        }
+        assert_eq!(mgr.source_appears_encrypted(&plain).unwrap(), false);
+
+        let encrypted = tmp.path().join("encrypted.sqlite");
+        let _enc =
+            crate::adapters::sqlite::connection::open_with_key(&encrypted, Some("pw")).unwrap();
+        drop(_enc);
+        assert_eq!(mgr.source_appears_encrypted(&encrypted).unwrap(), true);
     }
 
     #[test]
@@ -723,7 +897,7 @@ mod tests {
         let db = seed_real_db(&live);
         let missing = tmp.path().join("nowhere.sqlite");
         let (mgr, _, _) = build_mgr(tmp.path(), live, db);
-        let err = mgr.restore_database(&missing).unwrap_err();
+        let err = mgr.restore_database(&missing, None).unwrap_err();
         assert!(matches!(err, RepoError::Storage(_)));
     }
 
@@ -744,7 +918,7 @@ mod tests {
         fs::write(&corrupt, bytes).unwrap();
 
         let (mgr, _, _) = build_mgr(tmp.path(), live, db);
-        let err = mgr.restore_database(&corrupt).unwrap_err();
+        let err = mgr.restore_database(&corrupt, None).unwrap_err();
         match err {
             RepoError::Storage(msg) => {
                 let m = msg.to_lowercase();
@@ -771,7 +945,7 @@ mod tests {
         }
 
         let (mgr, _, _) = build_mgr(tmp.path(), live, db);
-        let err = mgr.restore_database(&foreign).unwrap_err();
+        let err = mgr.restore_database(&foreign, None).unwrap_err();
         match err {
             RepoError::Storage(msg) => assert!(
                 msg.to_lowercase().contains("terative"),
@@ -797,7 +971,7 @@ mod tests {
         }
 
         let (mgr, _, _) = build_mgr(tmp.path(), live, db);
-        let err = mgr.restore_database(&foreign).unwrap_err();
+        let err = mgr.restore_database(&foreign, None).unwrap_err();
         match err {
             RepoError::Storage(msg) => assert!(
                 msg.to_lowercase().contains("terative"),
@@ -823,7 +997,7 @@ mod tests {
         }
 
         let (mgr, _, _) = build_mgr(tmp.path(), live, db);
-        let err = mgr.restore_database(&future).unwrap_err();
+        let err = mgr.restore_database(&future, None).unwrap_err();
         match err {
             RepoError::Storage(msg) => {
                 let m = msg.to_lowercase();
@@ -857,7 +1031,7 @@ mod tests {
         }
 
         let (mgr, _, _) = build_mgr(tmp.path(), live, db);
-        let err = mgr.restore_database(&src).unwrap_err();
+        let err = mgr.restore_database(&src, None).unwrap_err();
         match err {
             RepoError::Storage(msg) => assert!(
                 msg.to_lowercase().contains("foreign key"),
@@ -1153,7 +1327,7 @@ mod tests {
             fs::write(&p, b"SQLite format 3\0").unwrap();
         }
 
-        mgr.restore_database(&source).unwrap();
+        mgr.restore_database(&source, None).unwrap();
 
         let prerestores = scan_backup_dir(&system_dir)
             .into_iter()

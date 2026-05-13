@@ -18,7 +18,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rusqlite = { version = "0.32", features = ["bundled", "chrono"] }
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl", "chrono"] }
 rusqlite_migration = "1"
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -41,6 +41,7 @@ fake = { version = "2", features = ["chrono"] }
 rand = "0.8"
 slug = "0.1"
 arc-swap = "1"
+zeroize = "1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"

@@ -1,15 +1,16 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { Plus, Trash2 } from "lucide-react";
+import { Lock, Plus, Trash2 } from "lucide-react";
 
 import { OrgAvatar } from "../components/org/OrgAvatar";
+import { OrgUnlockModal } from "../components/org/OrgUnlockModal";
 import { Button } from "../components/ui/Button";
 import { Card } from "../components/ui/Card";
 import { ConfirmModal } from "../components/ui/ConfirmModal";
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
-import { translateError } from "../ipc/errorCatalog";
+import { errorCodeOf, translateError } from "../ipc/errorCatalog";
 import { toast } from "../stores/toastStore";
 import { useOrgStore } from "../stores/orgStore";
 
@@ -24,8 +25,11 @@ export function OrgPicker() {
   const { orgs, refresh, open, delete: deleteOrg, create } = useOrgStore();
   const [createOpen, setCreateOpen] = useState(false);
   const [createCode, setCreateCode] = useState("");
+  const [createPassword, setCreatePassword] = useState("");
   const [creating, setCreating] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  /** Code of the org currently being unlocked via password prompt, or `null`. */
+  const [unlockCode, setUnlockCode] = useState<string | null>(null);
 
   useEffect(() => {
     void refresh();
@@ -34,12 +38,42 @@ export function OrgPicker() {
   const empty = orgs.length === 0;
 
   async function handleOpen(code: string) {
+    const summary = orgs.find((o) => o.code === code);
+    if (summary?.has_password) {
+      // Encrypted org: try keyring-cached unlock first (server-side). If
+      // that fails with PasswordRequired/WrongPassword, show the modal.
+      try {
+        await open(code);
+        navigate("/dashboard");
+      } catch (e) {
+        const ec = errorCodeOf(e);
+        if (ec === "org_password_required" || ec === "org_wrong_password") {
+          setUnlockCode(code);
+        } else {
+          toast.error(translateError(e, t));
+        }
+      }
+      return;
+    }
     try {
       await open(code);
       navigate("/dashboard");
     } catch (e) {
-      toast.error(translateError(e, t));
+      // A plaintext-looking org that actually requires a password (e.g.
+      // user encrypted it elsewhere) — surface the unlock modal too.
+      if (errorCodeOf(e) === "org_password_required") {
+        setUnlockCode(code);
+      } else {
+        toast.error(translateError(e, t));
+      }
     }
+  }
+
+  async function handleUnlock(password: string, remember: boolean) {
+    if (!unlockCode) return;
+    await open(unlockCode, password, remember);
+    setUnlockCode(null);
+    navigate("/dashboard");
   }
 
   async function handleCreate(ev: FormEvent) {
@@ -48,10 +82,12 @@ export function OrgPicker() {
     if (!code) return;
     setCreating(true);
     try {
-      const summary = await create(code);
+      const password = createPassword.length > 0 ? createPassword : undefined;
+      const summary = await create(code, password);
       setCreateOpen(false);
       setCreateCode("");
-      await open(summary.code);
+      setCreatePassword("");
+      await open(summary.code, password, false);
       navigate("/dashboard");
     } catch (e) {
       toast.error(translateError(e, t));
@@ -98,8 +134,19 @@ export function OrgPicker() {
                   className="w-full flex items-center gap-3 px-4 py-3 cursor-pointer"
                 >
                   <OrgAvatar code={org.code} size="lg" />
-                  <span className="text-[14px] font-medium text-ink truncate">
-                    {org.code}
+                  <span className="flex-1 flex items-center gap-2 min-w-0">
+                    <span className="text-[14px] font-medium text-ink truncate">
+                      {org.code}
+                    </span>
+                    {org.has_password ? (
+                      <Lock
+                        size={12}
+                        className="text-ink-3 shrink-0"
+                        aria-label={t("org_unlock.description", {
+                          defaultValue: "Encrypted",
+                        })}
+                      />
+                    ) : null}
                   </span>
                 </button>
                 <button
@@ -188,6 +235,27 @@ export function OrgPicker() {
               </p>
             </div>
           </div>
+          <div className="space-y-1.5">
+            <label htmlFor="org-password" className="text-sm font-medium text-ink">
+              {t("org_password.new_password_label", {
+                defaultValue: "Password (optional)",
+              })}
+            </label>
+            <Input
+              id="org-password"
+              type="password"
+              value={createPassword}
+              onChange={(e) => setCreatePassword(e.currentTarget.value)}
+              autoComplete="new-password"
+              placeholder=""
+            />
+            <p className="text-[11px] text-ink-3">
+              {t("org_password.description_unlocked", {
+                defaultValue:
+                  "Optional. Encrypts the database file at rest with SQLCipher.",
+              })}
+            </p>
+          </div>
           <div className="flex justify-end gap-2">
             <Button type="button" onClick={() => setCreateOpen(false)} variant="ghost">
               {t("common.cancel", { defaultValue: "Cancel" })}
@@ -204,6 +272,12 @@ export function OrgPicker() {
           </div>
         </form>
       </Modal>
+
+      <OrgUnlockModal
+        code={unlockCode}
+        onClose={() => setUnlockCode(null)}
+        onSubmit={handleUnlock}
+      />
 
       <ConfirmModal
         open={confirmDelete !== null}

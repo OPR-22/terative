@@ -4,9 +4,11 @@ import { toast } from "../stores/toastStore";
 
 import { open } from "@tauri-apps/plugin-dialog";
 
+import { OrgPasswordSection } from "../components/org/OrgPasswordSection";
 import { Page } from "../components/layout/Page";
 import { Button } from "../components/common/Button";
 import { ConfirmModal } from "../components/ui/ConfirmModal";
+import { Modal } from "../components/ui/Modal";
 import { ImageUploader } from "../components/common/ImageUploader";
 import { Input } from "../components/common/Input";
 import { Money } from "../lib/money";
@@ -14,6 +16,7 @@ import { useBookmarkStore } from "../stores/bookmarkStore";
 import { useCurrencyCatalogStore } from "../stores/currencyCatalogStore";
 import { useNotebookSectionStore } from "../stores/notebookSectionStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { errorCodeOf, translateError } from "../ipc/errorCatalog";
 import {
   ipc,
   type AppPreferencesDto,
@@ -89,6 +92,7 @@ export function Settings() {
           await i18n.changeLanguage(languageToI18n(p.language));
         }}
       />
+      <OrgPasswordSection />
       <DataSection />
       {import.meta.env.DEV ? <DeveloperSection /> : null}
       </div>
@@ -106,6 +110,8 @@ function DataSection() {
   const [busy, setBusy] = useState<"backup" | "restore" | "delete" | null>(null);
   const [backups, setBackups] = useState<BackupDto[]>([]);
   const [restoreTarget, setRestoreTarget] = useState<string | null>(null);
+  /** Path of the encrypted backup awaiting a password in the prompt modal. */
+  const [pendingPasswordFor, setPendingPasswordFor] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const flash = (kind: "ok" | "err", message: string) => {
@@ -144,16 +150,35 @@ function DataSection() {
     setRestoreTarget(source);
   };
 
-  const performRestore = async (source: string) => {
+  /** Called after the user has confirmed and (if needed) supplied a
+   *  password. The Tauri app restarts on success. */
+  const performRestore = async (source: string, sourcePassword: string | null) => {
     setBusy("restore");
     try {
-      await ipc.dataRestore(source);
+      await ipc.dataRestore(source, sourcePassword);
       // App restarts on success, so nothing else to do here.
     } catch (e) {
       flash("err", String(e));
       setBusy(null);
       throw e;
     }
+  };
+
+  /** Branches on whether the source is SQLCipher-encrypted: plaintext goes
+   *  straight to `performRestore`; encrypted opens a password modal first. */
+  const startRestore = async (source: string) => {
+    let encrypted = false;
+    try {
+      encrypted = await ipc.dataSourceAppearsEncrypted(source);
+    } catch {
+      // Fall through with `encrypted = false`; the restore adapter will
+      // surface a clean error if the file is unreadable.
+    }
+    if (encrypted) {
+      setPendingPasswordFor(source);
+      return;
+    }
+    await performRestore(source, null);
   };
 
   const runRestoreFromPicker = async () => {
@@ -225,9 +250,31 @@ function DataSection() {
         tone="danger"
         requireText={t("settings.confirm_restore_phrase")}
         onConfirm={async () => {
-          if (restoreTarget) await performRestore(restoreTarget);
+          if (restoreTarget) await startRestore(restoreTarget);
         }}
         onClose={() => setRestoreTarget(null)}
+      />
+
+      <BackupPasswordModal
+        source={pendingPasswordFor}
+        onClose={() => setPendingPasswordFor(null)}
+        onSubmit={async (password) => {
+          if (!pendingPasswordFor) return;
+          setBusy("restore");
+          try {
+            await ipc.dataRestore(pendingPasswordFor, password);
+            // App restarts on success — nothing more to do.
+          } catch (e) {
+            toast.error(translateError(e, t));
+            setBusy(null);
+            if (errorCodeOf(e) === "restore_wrong_password") {
+              // Re-throw so the modal stays open and clears the input.
+              throw e;
+            }
+            // Any other failure is not retry-able from this modal.
+            setPendingPasswordFor(null);
+          }
+        }}
       />
 
       <ConfirmModal
@@ -243,6 +290,87 @@ function DataSection() {
         onClose={() => setDeleteTarget(null)}
       />
     </section>
+  );
+}
+
+interface BackupPasswordModalProps {
+  /** Path of the encrypted backup to unlock; modal is hidden when `null`. */
+  source: string | null;
+  onClose: () => void;
+  onSubmit: (password: string) => void | Promise<void>;
+}
+
+function BackupPasswordModal({ source, onClose, onSubmit }: BackupPasswordModalProps) {
+  const { t } = useTranslation();
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (source === null) {
+      setPassword("");
+      setSubmitting(false);
+    }
+  }, [source]);
+
+  if (source === null) return null;
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={t("settings.restore_password_title", {
+        defaultValue: "Unlock backup",
+      })}
+    >
+      <form
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!password) return;
+          setSubmitting(true);
+          try {
+            await onSubmit(password);
+          } catch {
+            // Parent already toasted; we just clear the field so the user
+            // can retry without re-opening the modal.
+            setPassword("");
+          } finally {
+            setSubmitting(false);
+          }
+        }}
+        className="space-y-4"
+      >
+        <p className="text-sm text-fg-muted">
+          {t("settings.restore_password_help", {
+            defaultValue:
+              "This backup is encrypted. Enter the password it was created with.",
+          })}
+        </p>
+        <div className="space-y-1.5">
+          <label htmlFor="backup-password" className="text-sm font-medium">
+            {t("org_unlock.password_label", { defaultValue: "Password" })}
+          </label>
+          <Input
+            id="backup-password"
+            type="password"
+            autoFocus
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.currentTarget.value)}
+            required
+          />
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            {t("common.cancel", { defaultValue: "Cancel" })}
+          </Button>
+          <Button type="submit" disabled={submitting || !password}>
+            {submitting
+              ? t("org_unlock.submitting", { defaultValue: "Unlocking…" })
+              : t("settings.data_restore", { defaultValue: "Restore" })}
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 

@@ -12,6 +12,7 @@ pub mod notebook_usecases;
 pub mod org_registry;
 pub mod payment_usecases;
 pub mod ports;
+pub mod secret_key;
 #[cfg(debug_assertions)]
 pub mod seed_usecases;
 pub mod settings_usecases;
@@ -19,3 +20,4 @@ pub mod tax_usecases;
 pub mod template_usecases;
 
 pub use errors::{AppError, ErrorCode, RepoError};
+pub use secret_key::SecretKey;

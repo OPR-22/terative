@@ -34,6 +34,9 @@ pub enum ErrorCode {
     OrgNotFound,
     OrgCodeAlreadyExists,
     InvalidOrgCode,
+    OrgPasswordRequired,
+    OrgWrongPassword,
+    RestoreWrongPassword,
 
     // ── Bookmark ──
     BookmarkEmptyLabel,
@@ -258,6 +261,22 @@ impl AppError {
         AppError::invalid_argument(ErrorCode::InvalidOrgCode).with_params(p)
     }
 
+    pub fn org_password_required(code: impl Into<String>) -> Self {
+        let mut p = HashMap::new();
+        p.insert("code".into(), code.into());
+        AppError::failed_precondition(ErrorCode::OrgPasswordRequired).with_params(p)
+    }
+
+    pub fn org_wrong_password(code: impl Into<String>) -> Self {
+        let mut p = HashMap::new();
+        p.insert("code".into(), code.into());
+        AppError::failed_precondition(ErrorCode::OrgWrongPassword).with_params(p)
+    }
+
+    pub fn restore_wrong_password() -> Self {
+        AppError::failed_precondition(ErrorCode::RestoreWrongPassword)
+    }
+
     pub fn internal(detail: impl Into<String>) -> Self {
         AppError::Internal {
             detail: detail.into(),
@@ -297,6 +316,11 @@ pub enum RepoError {
     Conflict(String),
     #[error("storage error: {0}")]
     Storage(String),
+    /// Signals that a SQLCipher passphrase failed to decrypt a file we
+    /// were asked to read (e.g. a backup during restore). Lifted to
+    /// `AppError::RestoreWrongPassword` so the frontend can re-prompt.
+    #[error("wrong password")]
+    WrongPassword,
 }
 
 impl From<RepoError> for AppError {
@@ -305,6 +329,7 @@ impl From<RepoError> for AppError {
             RepoError::NotFound => AppError::resource_not_found(),
             RepoError::Conflict(detail) => AppError::Internal { detail },
             RepoError::Storage(detail) => AppError::Internal { detail },
+            RepoError::WrongPassword => AppError::restore_wrong_password(),
         }
     }
 }

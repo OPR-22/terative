@@ -1,13 +1,14 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { ChevronsUpDown, ListChecks } from "lucide-react";
+import { ChevronsUpDown, ListChecks, Lock } from "lucide-react";
 
 import { DropdownMenu, type DropdownMenuItem } from "../ui/DropdownMenu";
-import { translateError } from "../../ipc/errorCatalog";
+import { errorCodeOf, translateError } from "../../ipc/errorCatalog";
 import { toast } from "../../stores/toastStore";
 import { useOrgStore } from "../../stores/orgStore";
 import { OrgAvatar } from "./OrgAvatar";
+import { OrgUnlockModal } from "./OrgUnlockModal";
 
 interface Props {
   collapsed: boolean;
@@ -22,6 +23,7 @@ export function OrgSwitcher({ collapsed }: Props) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { activeOrg, orgs, refresh, open } = useOrgStore();
+  const [unlockCode, setUnlockCode] = useState<string | null>(null);
 
   useEffect(() => {
     void refresh();
@@ -35,13 +37,23 @@ export function OrgSwitcher({ collapsed }: Props) {
     ...others.map<DropdownMenuItem>((o) => ({
       id: o.code,
       label: o.code,
-      icon: <OrgAvatar code={o.code} size="sm" />,
+      icon: (
+        <span className="flex items-center gap-1.5">
+          <OrgAvatar code={o.code} size="sm" />
+          {o.has_password ? <Lock size={10} className="text-ink-3" /> : null}
+        </span>
+      ),
       onSelect: async () => {
         try {
           await open(o.code);
           // Shell remounts via key={activeOrg.code}; route stays the same.
         } catch (e) {
-          toast.error(translateError(e, t));
+          const ec = errorCodeOf(e);
+          if (ec === "org_password_required" || ec === "org_wrong_password") {
+            setUnlockCode(o.code);
+          } else {
+            toast.error(translateError(e, t));
+          }
         }
       },
     })),
@@ -54,7 +66,19 @@ export function OrgSwitcher({ collapsed }: Props) {
     },
   ];
 
+  async function handleUnlock(password: string, remember: boolean) {
+    if (!unlockCode) return;
+    await open(unlockCode, password, remember);
+    setUnlockCode(null);
+  }
+
   return (
+    <>
+    <OrgUnlockModal
+      code={unlockCode}
+      onClose={() => setUnlockCode(null)}
+      onSubmit={handleUnlock}
+    />
     <DropdownMenu
       align="left"
       placement="up"
@@ -91,5 +115,6 @@ export function OrgSwitcher({ collapsed }: Props) {
         </button>
       }
     />
+    </>
   );
 }

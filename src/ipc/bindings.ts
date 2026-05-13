@@ -107,7 +107,22 @@ export const commands = {
 	accountingDashboardSummary: () => typedError<DashboardSummaryDto, AppError>(__TAURI_INVOKE("accounting_dashboard_summary")),
 	dataExport: (destination: string) => typedError<string, AppError>(__TAURI_INVOKE("data_export", { destination })),
 	dataBackup: () => typedError<string, AppError>(__TAURI_INVOKE("data_backup")),
-	dataRestore: (source: string) => typedError<null, AppError>(__TAURI_INVOKE("data_restore", { source })),
+	/**
+	 *  Restore the live db from a backup file. `source_password` is required
+	 *  iff the source is SQLCipher-encrypted (see `data_source_appears_encrypted`).
+	 * 
+	 *  The keyring entry for the active org is cleared *before* the swap so the
+	 *  next launch always re-prompts: if we cleared after, a failing
+	 *  `keystore.delete` would leave a stale cached key that no longer matches
+	 *  the restored db, surfacing as `OrgWrongPassword` on the next open.
+	 */
+	dataRestore: (source: string, sourcePassword: string | null) => typedError<null, AppError>(__TAURI_INVOKE("data_restore", { source, sourcePassword })),
+	/**
+	 *  Cheap probe: returns true when the file does not begin with the
+	 *  SQLite plaintext magic. The frontend uses this to decide whether to
+	 *  prompt for a password before calling `data_restore`.
+	 */
+	dataSourceAppearsEncrypted: (source: string) => typedError<boolean, AppError>(__TAURI_INVOKE("data_source_appears_encrypted", { source })),
 	dataListBackups: () => typedError<BackupDto[], AppError>(__TAURI_INVOKE("data_list_backups")),
 	dataDeleteBackup: (path: string) => typedError<null, AppError>(__TAURI_INVOKE("data_delete_backup", { path })),
 	dataUserBackupDir: () => typedError<string, AppError>(__TAURI_INVOKE("data_user_backup_dir")),
@@ -160,13 +175,38 @@ export const commands = {
 	journalListForClient: (clientId: string) => typedError<ClientJournalEntryDto[], AppError>(__TAURI_INVOKE("journal_list_for_client", { clientId })),
 	journalEntryGet: (id: string) => typedError<ClientJournalEntryDto, AppError>(__TAURI_INVOKE("journal_entry_get", { id })),
 	orgList: () => typedError<OrgSummaryDto[], AppError>(__TAURI_INVOKE("org_list")),
-	orgCreate: (code: string) => typedError<OrgSummaryDto, AppError>(__TAURI_INVOKE("org_create", { code })),
-	orgOpen: (code: string, password: string | null) => typedError<OrgInfoDto, AppError>(__TAURI_INVOKE("org_open", { code, password })),
+	orgCreate: (code: string, password: string | null) => typedError<OrgSummaryDto, AppError>(__TAURI_INVOKE("org_create", { code, password })),
+	/**
+	 *  Open an org. For encrypted orgs the key is resolved as: `password`
+	 *  argument → OS keyring entry → `OrgPasswordRequired` error.
+	 * 
+	 *  `remember` (default `true`) only takes effect when the caller supplies
+	 *  `password`: it stores the new key in the keyring (or, when `false`,
+	 *  clears any existing entry — opt-out). Ignored for plaintext orgs.
+	 */
+	orgOpen: (code: string, password: string | null, remember: boolean | null) => typedError<OrgInfoDto, AppError>(__TAURI_INVOKE("org_open", { code, password, remember })),
 	orgClose: () => typedError<null, AppError>(__TAURI_INVOKE("org_close")),
 	orgDelete: (code: string) => typedError<null, AppError>(__TAURI_INVOKE("org_delete", { code })),
 	orgGetActive: () => typedError<{
 	code: string,
 } | null, AppError>(__TAURI_INVOKE("org_get_active")),
+	/**
+	 *  Set or change the password on an org's database.
+	 * 
+	 *  Resolves the current key from the caller-supplied `current_password`
+	 *  argument first, then the OS keyring entry. The new key is written via
+	 *  `change_org_db_key`. On success, the keyring entry is updated to the
+	 *  new password unless `remember == Some(false)`.
+	 * 
+	 *  The org must be closed before rekeying — if `code` matches the active
+	 *  org, this command closes it first.
+	 */
+	orgSetPassword: (code: string, currentPassword: string | null, newPassword: string, remember: boolean | null) => typedError<null, AppError>(__TAURI_INVOKE("org_set_password", { code, currentPassword, newPassword, remember })),
+	/**
+	 *  Remove the password from an org, leaving the database plaintext on
+	 *  disk. Clears the keyring entry.
+	 */
+	orgRemovePassword: (code: string, currentPassword: string | null) => typedError<null, AppError>(__TAURI_INVOKE("org_remove_password", { code, currentPassword })),
 	seedDatabase: (counts: {
 	clients: number | null,
 	catalog_items: number | null,
@@ -457,7 +497,7 @@ export type EmailTemplateTypeDto = "InitialContact" | "FollowUp";
  *  `AlreadyExists` / `FailedPrecondition`. They are the i18n keys used by
  *  the frontend's `errorCatalog`.
  */
-export type ErrorCode = "resource_not_found" | "no_active_org" | "org_not_found" | "org_code_already_exists" | "invalid_org_code" | "bookmark_empty_label" | "bookmark_empty_url" | "bookmark_invalid_url" | "bookmark_unsupported_scheme" | "catalog_item_empty_name" | "catalog_item_negative_price" | "catalog_item_duplicate_currency" | "client_empty_name" | "client_empty_contact_value" | "client_empty_address_street" | "client_empty_address_city" | "client_empty_address_postal_code" | "client_empty_address_country" | "client_duplicate_billing_address" | "client_duplicate_shipping_address" | "client_self_referral" | "client_future_date_of_birth" | "client_has_invoices" | "currency_unsupported" | "dto_convert" | "email_config_empty_host" | "email_config_invalid_port" | "email_config_empty_sender" | "email_config_invalid_sender" | "email_log_empty_recipient" | "email_log_empty_subject" | "email_template_empty_name" | "email_template_empty_subject" | "email_template_empty_body" | "email_template_no_default" | "email_template_is_default" | "invoice_no_line_items" | "invoice_not_draft" | "invoice_cannot_cancel_draft" | "invoice_already_cancelled" | "invoice_not_finalized" | "invoice_not_sendable" | "invoice_over_allocated" | "invoice_allocation_currency_mismatch" | "invoice_not_allocatable" | "invoice_missing_pdf" | "journal_entry_empty_content" | "line_item_empty_description" | "line_item_non_positive_quantity" | "line_item_negative_unit_price" | "money_unsupported_currency" | "money_currency_mismatch" | "money_overflow" | "notebook_duplicate_section" | "notebook_section_empty_name" | "payment_non_positive_amount" | "payment_non_positive_allocation" | "payment_allocations_exceed_payment" | "payment_currency_mismatch" | "payment_invoice_currency_mismatch" | "payment_duplicate_allocation" | "smtp_password_missing" | "tax_empty_name" | "tax_negative_percentage" | "template_empty_name" | "template_invalid_accent_color" | "template_in_use";
+export type ErrorCode = "resource_not_found" | "no_active_org" | "org_not_found" | "org_code_already_exists" | "invalid_org_code" | "org_password_required" | "org_wrong_password" | "restore_wrong_password" | "bookmark_empty_label" | "bookmark_empty_url" | "bookmark_invalid_url" | "bookmark_unsupported_scheme" | "catalog_item_empty_name" | "catalog_item_negative_price" | "catalog_item_duplicate_currency" | "client_empty_name" | "client_empty_contact_value" | "client_empty_address_street" | "client_empty_address_city" | "client_empty_address_postal_code" | "client_empty_address_country" | "client_duplicate_billing_address" | "client_duplicate_shipping_address" | "client_self_referral" | "client_future_date_of_birth" | "client_has_invoices" | "currency_unsupported" | "dto_convert" | "email_config_empty_host" | "email_config_invalid_port" | "email_config_empty_sender" | "email_config_invalid_sender" | "email_log_empty_recipient" | "email_log_empty_subject" | "email_template_empty_name" | "email_template_empty_subject" | "email_template_empty_body" | "email_template_no_default" | "email_template_is_default" | "invoice_no_line_items" | "invoice_not_draft" | "invoice_cannot_cancel_draft" | "invoice_already_cancelled" | "invoice_not_finalized" | "invoice_not_sendable" | "invoice_over_allocated" | "invoice_allocation_currency_mismatch" | "invoice_not_allocatable" | "invoice_missing_pdf" | "journal_entry_empty_content" | "line_item_empty_description" | "line_item_non_positive_quantity" | "line_item_negative_unit_price" | "money_unsupported_currency" | "money_currency_mismatch" | "money_overflow" | "notebook_duplicate_section" | "notebook_section_empty_name" | "payment_non_positive_amount" | "payment_non_positive_allocation" | "payment_allocations_exceed_payment" | "payment_currency_mismatch" | "payment_invoice_currency_mismatch" | "payment_duplicate_allocation" | "smtp_password_missing" | "tax_empty_name" | "tax_negative_percentage" | "template_empty_name" | "template_invalid_accent_color" | "template_in_use";
 
 export type FontChoiceDto = "Serif" | "SansSerif" | "Mono";
 
@@ -702,7 +742,6 @@ export type OrgSummaryDto = {
 	 *  label. Validated to `[a-z0-9_-]+` at creation.
 	 */
 	code: string,
-	// `true` once T03 lands and this org is encrypted. Always `false` in T01.
 	has_password: boolean,
 	last_modified_at: string | null,
 	file_size_bytes: number,

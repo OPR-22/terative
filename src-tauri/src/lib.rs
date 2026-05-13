@@ -24,6 +24,7 @@ use commands::{
     },
     data_commands::{
         data_backup, data_delete_backup, data_export, data_list_backups, data_restore,
+        data_source_appears_encrypted,
         data_user_backup_dir,
     },
     email_commands::{
@@ -39,7 +40,10 @@ use commands::{
         invoice_list, invoice_open_external, invoice_pdf_bytes, invoice_print,
         invoice_update_draft,
     },
-    org_commands::{org_close, org_create, org_delete, org_get_active, org_list, org_open},
+    org_commands::{
+        org_close, org_create, org_delete, org_get_active, org_list, org_open,
+        org_remove_password, org_set_password,
+    },
     notebook_commands::{
         client_notebook_get, client_notebook_save, journal_entry_create, journal_entry_delete,
         journal_entry_get, journal_entry_update, journal_list_for_client,
@@ -220,6 +224,7 @@ fn build_specta() -> Builder<tauri::Wry> {
                 data_export,
                 data_backup,
                 data_restore,
+                data_source_appears_encrypted,
                 data_list_backups,
                 data_delete_backup,
                 data_user_backup_dir,
@@ -255,7 +260,9 @@ fn build_specta() -> Builder<tauri::Wry> {
                 org_open,
                 org_close,
                 org_delete,
-                org_get_active
+                org_get_active,
+                org_set_password,
+                org_remove_password
                 $($tail)*
             ]
         };
@@ -294,7 +301,9 @@ pub fn run() {
             let registry = std::sync::Arc::new(
                 application::org_registry::OrgRegistry::new(orgs_root),
             );
-            app.manage(AppState::new(registry));
+            let keystore: std::sync::Arc<dyn application::ports::OrgKeyStore> =
+                std::sync::Arc::new(adapters::KeyringOrgKeyStore::new());
+            app.manage(AppState::new(registry, keystore));
             builder.mount_events(app);
             spawn_auto_backup_ticker(app.handle().clone());
             #[cfg(target_os = "linux")]

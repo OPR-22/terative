@@ -15,8 +15,8 @@ interface OrgState {
   /** Run once on app mount to determine whether to show picker or shell. */
   bootstrap: () => Promise<void>;
   refresh: () => Promise<void>;
-  create: (code: string) => Promise<OrgSummaryDto>;
-  open: (code: string, password?: string) => Promise<void>;
+  create: (code: string, password?: string) => Promise<OrgSummaryDto>;
+  open: (code: string, password?: string, remember?: boolean) => Promise<void>;
   close: () => Promise<void>;
   delete: (code: string) => Promise<void>;
 }
@@ -49,14 +49,18 @@ export const useOrgStore = create<OrgState>((set, get) => ({
     }
   },
 
-  create: async (code: string) => {
-    const summary = await ipc.orgCreate(code);
+  create: async (code: string, password?: string) => {
+    const summary = await ipc.orgCreate(code, password ?? null);
     set({ orgs: [...get().orgs, summary] });
     return summary;
   },
 
-  open: async (code: string, password?: string) => {
-    const info = await ipc.orgOpen(code, password ?? null);
+  open: async (code: string, password?: string, remember?: boolean) => {
+    const info = await ipc.orgOpen(
+      code,
+      password ?? null,
+      remember === undefined ? null : remember,
+    );
     // Wipe every per-org store BEFORE flipping activeOrg so React mounts
     // don't briefly read stale data from the previous org while the new
     // org's `load()` calls are still in flight.

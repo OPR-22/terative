@@ -15,9 +15,7 @@
 
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, OpenFlags};
-
-use crate::adapters::sqlite::connection::APPLICATION_ID;
+use crate::adapters::sqlite::connection::{probe_org_file, OrgFileKind};
 use crate::application::AppError;
 use crate::domain::org::OrgCode;
 
@@ -28,6 +26,10 @@ pub struct OrgSummary {
     pub code: OrgCode,
     pub last_modified: Option<chrono::DateTime<chrono::Utc>>,
     pub file_size_bytes: u64,
+    /// `true` when the on-disk file is SQLCipher-encrypted (header bytes
+    /// don't read as SQLite). The picker uses this to show a lock icon
+    /// and route through the unlock modal.
+    pub encrypted: bool,
 }
 
 pub struct OrgRegistry {
@@ -105,19 +107,22 @@ impl OrgRegistry {
             if !db_path.exists() {
                 continue;
             }
-            let id = match read_application_id(&db_path) {
-                Ok(id) => id,
+            let kind = match probe_org_file(&db_path) {
+                Ok(k) => k,
                 Err(_) => continue,
             };
-            if id != APPLICATION_ID {
-                continue;
-            }
+            let encrypted = match kind {
+                OrgFileKind::Plaintext | OrgFileKind::Empty => false,
+                OrgFileKind::Encrypted => true,
+                OrgFileKind::Foreign => continue,
+            };
             let meta = std::fs::metadata(&db_path).map_err(AppError::from)?;
             let last_modified = meta.modified().ok().map(|t| t.into());
             out.push(OrgSummary {
                 code,
                 last_modified,
                 file_size_bytes: meta.len(),
+                encrypted,
             });
         }
         out.sort_by(|a, b| {
@@ -129,9 +134,11 @@ impl OrgRegistry {
         Ok(out)
     }
 
-    /// Create a new org using the user-supplied `code`. Errors with
-    /// `OrgCodeAlreadyExists` if the folder is taken.
-    pub fn create(&self, code: OrgCode) -> Result<OrgCode, AppError> {
+    /// Create a new org using the user-supplied `code`. When `password`
+    /// is `Some`, the freshly-created `<code>.sqlite` is encrypted under
+    /// that key. Errors with `OrgCodeAlreadyExists` if the folder is
+    /// already taken.
+    pub fn create(&self, code: OrgCode, password: Option<&str>) -> Result<OrgCode, AppError> {
         std::fs::create_dir_all(&self.root).map_err(AppError::from)?;
 
         if self.code_taken_on_disk(code.as_str()) {
@@ -147,7 +154,7 @@ impl OrgRegistry {
             std::fs::create_dir_all(self.invoices_dir(&code)).map_err(AppError::from)?;
 
             let db_path = self.db_path(&code);
-            let _db = crate::adapters::sqlite::connection::create_org_db(&db_path)
+            let _db = crate::adapters::sqlite::connection::create_org_db(&db_path, password)
                 .map_err(|e| AppError::internal(e.to_string()))?;
             // _db drops here — connection closed. Re-opened by org_open.
             Ok(())
@@ -176,11 +183,6 @@ impl OrgRegistry {
     }
 }
 
-fn read_application_id(path: &Path) -> rusqlite::Result<i32> {
-    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    conn.query_row("PRAGMA application_id", [], |r| r.get(0))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,7 +209,7 @@ mod tests {
     #[test]
     fn create_produces_full_folder_layout() {
         let (_t, reg) = registry();
-        let c = reg.create(code("acme_corp")).unwrap();
+        let c = reg.create(code("acme_corp"), None).unwrap();
         assert_eq!(c.as_str(), "acme_corp");
 
         let folder = reg.dir_for(&c);
@@ -221,16 +223,46 @@ mod tests {
     #[test]
     fn create_sets_application_id_on_sqlite_file() {
         let (_t, reg) = registry();
-        let c = reg.create(code("acme")).unwrap();
-        let id = read_application_id(&reg.db_path(&c)).unwrap();
-        assert_eq!(id, APPLICATION_ID);
+        let c = reg.create(code("acme"), None).unwrap();
+        assert_eq!(
+            probe_org_file(&reg.db_path(&c)).unwrap(),
+            OrgFileKind::Plaintext,
+        );
+    }
+
+    #[test]
+    fn create_with_password_produces_encrypted_file() {
+        let (_t, reg) = registry();
+        let c = reg.create(code("locked"), Some("hunter2")).unwrap();
+        assert_eq!(
+            probe_org_file(&reg.db_path(&c)).unwrap(),
+            OrgFileKind::Encrypted,
+        );
+        // The on-disk file must not begin with the SQLite plaintext magic.
+        let bytes = std::fs::read(reg.db_path(&c)).unwrap();
+        assert!(!bytes.starts_with(b"SQLite format 3\0"));
+    }
+
+    #[test]
+    fn list_reports_encrypted_flag_per_org() {
+        let (_t, reg) = registry();
+        reg.create(code("plain"), None).unwrap();
+        reg.create(code("locked"), Some("hunter2")).unwrap();
+
+        let result = reg.list().unwrap();
+        let by_code: std::collections::HashMap<&str, bool> = result
+            .iter()
+            .map(|s| (s.code.as_str(), s.encrypted))
+            .collect();
+        assert_eq!(by_code.get("plain"), Some(&false));
+        assert_eq!(by_code.get("locked"), Some(&true));
     }
 
     #[test]
     fn create_rejects_existing_code() {
         let (_t, reg) = registry();
-        reg.create(code("acme")).unwrap();
-        let err = reg.create(code("acme")).unwrap_err();
+        reg.create(code("acme"), None).unwrap();
+        let err = reg.create(code("acme"), None).unwrap_err();
         assert!(err.is(ErrorCode::OrgCodeAlreadyExists));
     }
 
@@ -238,10 +270,10 @@ mod tests {
     #[test]
     fn list_returns_created_orgs_sorted_case_insensitive() {
         let (_t, reg) = registry();
-        reg.create(code("Zeta")).unwrap();
-        reg.create(code("alpha")).unwrap();
-        reg.create(code("Mu")).unwrap();
-        reg.create(code("beta")).unwrap();
+        reg.create(code("Zeta"), None).unwrap();
+        reg.create(code("alpha"), None).unwrap();
+        reg.create(code("Mu"), None).unwrap();
+        reg.create(code("beta"), None).unwrap();
 
         let result = reg.list().unwrap();
         let codes: Vec<&str> = result.iter().map(|s| s.code.as_str()).collect();
@@ -251,7 +283,7 @@ mod tests {
     #[test]
     fn list_filters_out_foreign_sqlite_files() {
         let (_t, reg) = registry();
-        reg.create(code("real_org")).unwrap();
+        reg.create(code("real_org"), None).unwrap();
 
         let foreign_dir = reg.root.join("foreign");
         std::fs::create_dir_all(&foreign_dir).unwrap();
@@ -268,7 +300,7 @@ mod tests {
     #[test]
     fn list_skips_non_sqlite_folders() {
         let (_t, reg) = registry();
-        reg.create(code("real")).unwrap();
+        reg.create(code("real"), None).unwrap();
         std::fs::create_dir_all(reg.root.join("noise")).unwrap();
 
         let result = reg.list().unwrap();
@@ -288,7 +320,7 @@ mod tests {
     #[test]
     fn delete_removes_folder_recursively() {
         let (_t, reg) = registry();
-        let c = reg.create(code("acme")).unwrap();
+        let c = reg.create(code("acme"), None).unwrap();
         let folder = reg.dir_for(&c);
         assert!(folder.exists());
 

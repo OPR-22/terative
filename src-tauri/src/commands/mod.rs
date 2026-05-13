@@ -65,7 +65,7 @@ use crate::application::org_registry::OrgRegistry;
 use crate::application::payment_usecases::{
     DeletePayment, GetPayment, ListPayments, RecordPayment, UpdatePayment,
 };
-use crate::application::ports::DataManagement;
+use crate::application::ports::{DataManagement, OrgKeyStore};
 #[cfg(debug_assertions)]
 use crate::application::seed_usecases::SeedDatabase;
 use crate::application::settings_usecases::{
@@ -76,7 +76,7 @@ use crate::application::template_usecases::{
     CreateTemplate, DeleteTemplate, DuplicateTemplate, ListTemplates, PreviewTemplate,
     SetDefaultTemplate, UpdateTemplate,
 };
-use crate::application::AppError;
+use crate::application::{AppError, SecretKey};
 use crate::domain::org::OrgCode;
 
 /// Per-org service bundle: the use cases and Arc-shared adapters that live
@@ -189,6 +189,7 @@ impl OrgServices {
         default_pdf_dir: PathBuf,
         user_backup_dir: PathBuf,
         system_backup_dir: PathBuf,
+        key: Option<SecretKey>,
     ) -> Self {
         let client_repo = Arc::new(SqliteClientRepository::new(db.clone()));
         let catalog_item_repo = Arc::new(SqliteCatalogItemRepository::new(db.clone()));
@@ -224,6 +225,7 @@ impl OrgServices {
             settings_repo.clone(),
             user_backup_dir.clone(),
             system_backup_dir.clone(),
+            key,
         ));
 
         #[cfg(debug_assertions)]
@@ -403,17 +405,23 @@ impl OrgServices {
 }
 
 /// Permanent app context, registered once at startup. Holds the always-
-/// available `OrgRegistry` and a swappable `OrgServices` for the active
-/// org. Commands access org-scoped use cases via `state.org()?`.
+/// available `OrgRegistry`, the `OrgKeyStore` (OS keyring adapter), and a
+/// swappable `OrgServices` for the active org. Commands access org-scoped
+/// use cases via `state.org()?`.
 pub struct AppState {
     pub org_registry: Arc<OrgRegistry>,
+    pub org_key_store: Arc<dyn OrgKeyStore>,
     active: ArcSwap<Option<Arc<OrgServices>>>,
 }
 
 impl AppState {
-    pub fn new(org_registry: Arc<OrgRegistry>) -> Self {
+    pub fn new(
+        org_registry: Arc<OrgRegistry>,
+        org_key_store: Arc<dyn OrgKeyStore>,
+    ) -> Self {
         Self {
             org_registry,
+            org_key_store,
             active: ArcSwap::new(Arc::new(None)),
         }
     }
