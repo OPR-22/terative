@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
+  Activity as ActivityIcon,
   BookOpen,
   Bookmark,
   FileText,
@@ -110,6 +111,11 @@ export function Sidebar() {
         <div className="px-2.5 pt-2 pb-1.5">
           <NavList
             items={[
+              {
+                to: "/activity",
+                label: t("nav.activity"),
+                icon: ActivityIcon,
+              },
               {
                 to: "/settings",
                 label: t("nav.settings"),

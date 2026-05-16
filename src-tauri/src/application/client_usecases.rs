@@ -3,34 +3,51 @@ use std::sync::Arc;
 use chrono::{NaiveDate, Utc};
 
 use crate::application::ports::{
-    ClientAttributeValues, ClientRepository, ListClientsQuery, Page,
+    ClientAttributeValues, ClientRepository, CommitEvents, EventBus, ListClientsQuery,
+    NoopEventBus, Page,
 };
 use crate::application::AppError;
 #[cfg(test)] use crate::application::ErrorCode;
+use crate::domain::aggregate_root::AggregateRoot;
 use crate::domain::client::{
     Client, ClientId, ClientKind, NewClient, NewClientAddress, NewContactEntry,
 };
+use crate::domain::events::client_events::ClientUpdated;
 use crate::domain::money::Currency;
 
 #[derive(Clone)]
 pub struct CreateClient {
     repo: Arc<dyn ClientRepository>,
+    events: Arc<dyn EventBus>,
 }
 
 impl CreateClient {
     pub fn new(repo: Arc<dyn ClientRepository>) -> Self {
-        Self { repo }
+        Self {
+            repo,
+            events: Arc::new(NoopEventBus),
+        }
+    }
+
+    /// Inject the real event bus. Production wiring (`OrgServices::new`) calls
+    /// this; tests that don't assert on events can skip it and keep the
+    /// no-op default.
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
     }
 
     pub fn execute(&self, input: NewClient) -> Result<Client, AppError> {
-        let client = Client::create(input, Utc::now())?;
+        let mut client = Client::create(input, Utc::now())?;
         self.repo.insert(&client)?;
+        client.commit(self.events.as_ref());
         Ok(client)
     }
 }
 
 pub struct UpdateClient {
     repo: Arc<dyn ClientRepository>,
+    events: Arc<dyn EventBus>,
 }
 
 #[derive(Debug, Clone)]
@@ -57,7 +74,15 @@ pub struct UpdateClientInput {
 
 impl UpdateClient {
     pub fn new(repo: Arc<dyn ClientRepository>) -> Self {
-        Self { repo }
+        Self {
+            repo,
+            events: Arc::new(NoopEventBus),
+        }
+    }
+
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
     }
 
     pub fn execute(&self, input: UpdateClientInput) -> Result<Client, AppError> {
@@ -71,6 +96,8 @@ impl UpdateClient {
                 return Err(crate::domain::client::ClientError::FutureDateOfBirth.into());
             }
         }
+        // Snapshot prior state so the audit row can carry a per-field diff.
+        let before = client.clone();
         client.kind = input.kind;
         client.name = name;
         client.contact_name = normalize(input.contact_name);
@@ -89,40 +116,69 @@ impl UpdateClient {
         client.language = normalize(input.language);
         client.default_currency = input.default_currency;
         self.repo.update(&client)?;
+        // `Client` has no single `update` method — the field mutations above
+        // live in this use case — so the use case is what records the event.
+        let changes = client.diff_against(&before);
+        client.apply(ClientUpdated {
+            id: client.id,
+            changes,
+            at: Utc::now(),
+        });
+        client.commit(self.events.as_ref());
         Ok(client)
     }
 }
 
 pub struct ArchiveClient {
     repo: Arc<dyn ClientRepository>,
+    events: Arc<dyn EventBus>,
 }
 
 impl ArchiveClient {
     pub fn new(repo: Arc<dyn ClientRepository>) -> Self {
-        Self { repo }
+        Self {
+            repo,
+            events: Arc::new(NoopEventBus),
+        }
+    }
+
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
     }
 
     pub fn execute(&self, id: ClientId) -> Result<(), AppError> {
         let mut client = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
         client.archive(Utc::now());
         self.repo.update(&client)?;
+        client.commit(self.events.as_ref());
         Ok(())
     }
 }
 
 pub struct UnarchiveClient {
     repo: Arc<dyn ClientRepository>,
+    events: Arc<dyn EventBus>,
 }
 
 impl UnarchiveClient {
     pub fn new(repo: Arc<dyn ClientRepository>) -> Self {
-        Self { repo }
+        Self {
+            repo,
+            events: Arc::new(NoopEventBus),
+        }
+    }
+
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
     }
 
     pub fn execute(&self, id: ClientId) -> Result<(), AppError> {
         let mut client = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
-        client.unarchive();
+        client.unarchive(Utc::now());
         self.repo.update(&client)?;
+        client.commit(self.events.as_ref());
         Ok(())
     }
 }
@@ -231,7 +287,7 @@ mod tests {
             let total = v.len() as u64;
             Ok(Page::new(v, total, &PaginationParams::default()))
         }
-        fn names_for(
+        fn labels_for(
             &self,
             ids: &[ClientId],
         ) -> Result<HashMap<ClientId, String>, RepoError> {
@@ -556,5 +612,74 @@ mod tests {
         assert_eq!(values.pronouns, vec!["she/her"]);
         assert_eq!(values.gender, vec!["man", "woman"]);
         assert_eq!(values.occupation, vec!["Architect"]);
+    }
+
+    // === Domain event emission ===
+
+    use crate::application::ports::event_bus::test_support::CollectingEventBus;
+
+    fn named(name: &str) -> NewClient {
+        NewClient {
+            name: name.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn create_client_publishes_client_created() {
+        let repo = make_repo();
+        let bus = Arc::new(CollectingEventBus::default());
+        CreateClient::new(repo)
+            .with_events(bus.clone())
+            .execute(named("Acme"))
+            .unwrap();
+        assert_eq!(bus.names(), ["client.created"]);
+    }
+
+    #[test]
+    fn update_client_publishes_client_updated() {
+        let repo = make_repo();
+        let created = CreateClient::new(repo.clone()).execute(named("Old")).unwrap();
+        let bus = Arc::new(CollectingEventBus::default());
+        UpdateClient::new(repo)
+            .with_events(bus.clone())
+            .execute(UpdateClientInput {
+                id: created.id,
+                name: "New".into(),
+                kind: ClientKind::Individual,
+                contact_name: None,
+                tax_id: None,
+                registration_number: None,
+                emails: vec![],
+                phones: vec![],
+                addresses: vec![],
+                notes: None,
+                referred_by: None,
+                date_of_birth: None,
+                sex: None,
+                gender: None,
+                pronouns: None,
+                occupation: None,
+                language: None,
+                default_currency: crate::domain::money::Currency::Eur,
+            })
+            .unwrap();
+        assert_eq!(bus.names(), ["client.updated"]);
+    }
+
+    #[test]
+    fn archive_then_unarchive_publishes_both_events() {
+        let repo = make_repo();
+        let created = CreateClient::new(repo.clone()).execute(named("Acme")).unwrap();
+        let bus = Arc::new(CollectingEventBus::default());
+        ArchiveClient::new(repo.clone())
+            .with_events(bus.clone())
+            .execute(created.id)
+            .unwrap();
+        UnarchiveClient::new(repo)
+            .with_events(bus.clone())
+            .execute(created.id)
+            .unwrap();
+        assert_eq!(bus.names(), ["client.archived", "client.unarchived"]);
     }
 }

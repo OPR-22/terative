@@ -1,8 +1,12 @@
+pub mod audit;
+pub mod aggregate_root;
 pub mod bookmark;
 pub mod catalog_item;
 pub mod client;
 pub mod email_log;
 pub mod email_template;
+pub mod events;
+pub mod field_change;
 pub mod invoice;
 pub mod line_item;
 pub mod money;

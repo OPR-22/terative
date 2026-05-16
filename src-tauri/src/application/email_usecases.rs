@@ -4,12 +4,15 @@ use std::sync::Arc;
 use chrono::Utc;
 
 use crate::application::ports::{
-    ClientRepository, CredentialStore, EmailAttachment, EmailLogRepository, EmailSender,
-    EmailTemplateRepository, InvoiceRepository, OutboundEmail, SettingsRepository,
+    ClientRepository, CommitEvents, CredentialStore, EmailAttachment, EmailLogRepository,
+    EmailSender, EmailTemplateRepository, EventBus, InvoiceRepository, NoopEventBus,
+    OutboundEmail, SettingsRepository,
 };
 use crate::application::{AppError, ErrorCode};
+use crate::domain::aggregate_root::AggregateRoot;
 use crate::domain::email_log::{EmailLog, NewEmailLog};
 use crate::domain::email_template::EmailTemplateType;
+use crate::domain::events::invoice_events::InvoiceSent;
 use crate::domain::invoice::{Invoice, InvoiceId, InvoiceStatus};
 use crate::domain::settings::{CurrencyConfig, SellerProfile};
 
@@ -91,9 +94,11 @@ pub struct SendInvoice {
     email: Arc<dyn EmailSender>,
     email_templates: Arc<dyn EmailTemplateRepository>,
     email_logs: Arc<dyn EmailLogRepository>,
+    events: Arc<dyn EventBus>,
 }
 
 impl SendInvoice {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         invoices: Arc<dyn InvoiceRepository>,
         clients: Arc<dyn ClientRepository>,
@@ -111,7 +116,13 @@ impl SendInvoice {
             email,
             email_templates,
             email_logs,
+            events: Arc::new(NoopEventBus),
         }
+    }
+
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
     }
 
     /// Sends the invoice email and returns the updated invoice along with
@@ -206,6 +217,18 @@ impl SendInvoice {
             sent_at: now,
         })?;
         self.email_logs.insert(&log)?;
+
+        // Email is out, invoice is Sent, audit row is written — only now
+        // record the audit event.
+        invoice.apply(InvoiceSent {
+            id: invoice.id,
+            client_id: invoice.client_id,
+            number: invoice.number,
+            to_address: to_address.clone(),
+            at: now,
+        });
+        invoice.commit(self.events.as_ref());
+
         let mut logs = self
             .email_logs
             .list_by_invoices(&[invoice.id])?
@@ -293,6 +316,25 @@ mod tests {
         fn delete(&self, _: InvoiceId) -> Result<(), RepoError> {
             Ok(())
         }
+        fn labels_for(
+            &self,
+            ids: &[InvoiceId],
+        ) -> Result<std::collections::HashMap<InvoiceId, String>, RepoError> {
+            let g = self.0.lock();
+            Ok(ids
+                .iter()
+                .filter_map(|id| {
+                    g.get(id).map(|i| {
+                        (
+                            *id,
+                            i.number
+                                .map(|n| format!("#{}", n.0))
+                                .unwrap_or_else(|| String::new()),
+                        )
+                    })
+                })
+                .collect())
+        }
     }
 
     #[derive(Default)]
@@ -315,7 +357,7 @@ mod tests {
         ) -> Result<Page<Client>, RepoError> {
             Ok(Page::new(vec![], 0, &PaginationParams::default()))
         }
-        fn names_for(
+        fn labels_for(
             &self,
             ids: &[ClientId],
         ) -> Result<std::collections::HashMap<ClientId, String>, RepoError> {
@@ -605,6 +647,7 @@ mod tests {
             notes: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            pending_events: crate::domain::events::EventBuffer::default(),
         }
     }
 

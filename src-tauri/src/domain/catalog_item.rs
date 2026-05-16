@@ -1,6 +1,10 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
+use crate::domain::aggregate_root::AggregateRoot;
+use crate::domain::events::catalog_item_events::CatalogItemCreated;
+use crate::domain::events::EventBuffer;
+use crate::domain::field_change::{money_to_value, FieldChange};
 use crate::domain::money::{Currency, Money, MoneyError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -60,6 +64,40 @@ pub struct CatalogItem {
     pub unit: Option<String>,
     pub reference: Option<String>,
     pub archived_at: Option<DateTime<Utc>>,
+    /// Domain events buffered by mutating methods, drained by the use case
+    /// after persistence. Not persisted; a row loaded from SQLite always has
+    /// this empty.
+    pub pending_events: EventBuffer,
+}
+
+impl AggregateRoot for CatalogItem {
+    fn pending_events_mut(&mut self) -> &mut EventBuffer {
+        &mut self.pending_events
+    }
+
+    fn diff_against(&self, before: &Self) -> Vec<FieldChange> {
+        [
+            FieldChange::scalar("name", &before.name, &self.name),
+            // `kind` is an enum; compare via its dotted code so the audit
+            // row carries `"Service"` / `"Product"` rather than a Debug repr.
+            FieldChange::scalar("kind", before.kind.as_str(), self.kind.as_str()),
+            FieldChange::opt("unit", &before.unit, &self.unit),
+            FieldChange::opt("reference", &before.reference, &self.reference),
+            // Per-currency price list — element-level diff keyed by currency
+            // (each price has a unique currency by domain invariant). The
+            // audit row gets "EUR: 100 → 120; USD added; JPY removed".
+            FieldChange::indexed_collection(
+                "prices",
+                &before.prices,
+                &self.prices,
+                |m: &Money| m.currency().code(),
+                money_to_value,
+            ),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -90,7 +128,7 @@ impl CatalogItem {
             return Err(CatalogItemError::EmptyName);
         }
         let prices = validate_prices(input.prices)?;
-        Ok(Self {
+        let mut item = Self {
             id: CatalogItemId::new(),
             name,
             kind: input.kind,
@@ -98,7 +136,14 @@ impl CatalogItem {
             unit: input.unit.and_then(non_empty),
             reference: input.reference.and_then(non_empty),
             archived_at: None,
-        })
+            pending_events: EventBuffer::default(),
+        };
+        item.apply(CatalogItemCreated {
+            id: item.id,
+            name: item.name.clone(),
+            at: Utc::now(),
+        });
+        Ok(item)
     }
 
     /// Returns the stored price for `currency`, or `None` if this item has
@@ -354,5 +399,93 @@ mod tests {
             assert_eq!(CatalogItemKind::parse(kind.as_str()), Some(kind));
         }
         assert_eq!(CatalogItemKind::parse("unknown"), None);
+    }
+
+    // === diff_against ===
+
+    #[test]
+    fn diff_against_identical_returns_empty() {
+        let a = CatalogItem::create(new_service("Consulting")).unwrap();
+        let b = a.clone();
+        assert!(b.diff_against(&a).is_empty());
+    }
+
+    #[test]
+    fn diff_against_reports_each_changed_scalar_and_indexed_prices() {
+        let before = CatalogItem::create(NewCatalogItem {
+            name: "Consulting".into(),
+            kind: CatalogItemKind::Service,
+            prices: vec![Money::new(10_000, eur())],
+            unit: Some("hour".into()),
+            reference: None,
+        })
+        .unwrap();
+        let mut after = before.clone();
+        after.name = "Senior consulting".into();           // changed
+        after.kind = CatalogItemKind::Product;             // changed
+        after.unit = None;                                 // changed (Some → None)
+        after.reference = Some("REF-123".into());          // changed (None → Some)
+        after.prices = vec![
+            Money::new(12_000, eur()),    // EUR: changed (10_000 → 12_000)
+            Money::new(15_000, usd()),    // USD: added
+        ];
+
+        let changes = after.diff_against(&before);
+        let fields: Vec<&str> = changes.iter().map(FieldChange::field).collect();
+        assert_eq!(fields, ["name", "kind", "unit", "reference", "prices"]);
+
+        // Prices: one changed (EUR), one added (USD), zero removed.
+        let prices = changes.iter().find(|c| c.field() == "prices").unwrap();
+        match prices {
+            FieldChange::IndexedCollection { added, removed, changed, .. } => {
+                assert_eq!(added.len(), 1);
+                assert_eq!(added[0].key, "USD");
+                assert_eq!(removed.len(), 0);
+                assert_eq!(changed.len(), 1);
+                assert_eq!(changed[0].key, "EUR");
+            }
+            _ => panic!("expected IndexedCollection for prices"),
+        }
+    }
+
+    #[test]
+    fn diff_against_reports_removed_price_when_currency_dropped() {
+        let mut before = CatalogItem::create(new_service("Consulting")).unwrap();
+        before.prices = vec![
+            Money::new(10_000, eur()),
+            Money::new(12_000, usd()),
+        ];
+        let mut after = before.clone();
+        after.prices = vec![Money::new(10_000, eur())]; // USD removed
+
+        let changes = after.diff_against(&before);
+        assert_eq!(changes.len(), 1);
+        match &changes[0] {
+            FieldChange::IndexedCollection { added, removed, changed, .. } => {
+                assert!(added.is_empty());
+                assert_eq!(removed.len(), 1);
+                assert_eq!(removed[0].key, "USD");
+                assert!(changed.is_empty());
+            }
+            _ => panic!("expected IndexedCollection"),
+        }
+    }
+
+    #[test]
+    fn diff_against_omits_unchanged_prices_collection() {
+        let item = CatalogItem::create(NewCatalogItem {
+            name: "Consulting".into(),
+            kind: CatalogItemKind::Service,
+            prices: vec![Money::new(10_000, eur())],
+            unit: None,
+            reference: None,
+        })
+        .unwrap();
+        let mut after = item.clone();
+        after.name = "Renamed".into();
+        let changes = after.diff_against(&item);
+        // Only name should appear; prices is unchanged.
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].field(), "name");
     }
 }

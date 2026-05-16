@@ -96,7 +96,6 @@ impl ReorderBookmarks {
 mod tests {
     use super::*;
     use crate::application::RepoError;
-    use crate::domain::bookmark::BookmarkError;
     use parking_lot::Mutex;
     use std::collections::HashMap;
 

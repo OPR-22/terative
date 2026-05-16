@@ -3,10 +3,12 @@ use std::sync::Arc;
 use chrono::{NaiveDate, Utc};
 
 use crate::application::ports::{
-    ClientRepository, InvoiceRepository, ListPaymentsQuery, PaymentRepository,
+    ClientRepository, CommitEvents, EventBus, InvoiceRepository, ListPaymentsQuery,
+    NoopEventBus, PaymentRepository,
 };
 use crate::application::AppError;
 #[cfg(test)] use crate::application::ErrorCode;
+use crate::domain::events::payment_events::PaymentDeleted;
 use crate::domain::invoice::InvoiceId;
 use crate::domain::money::Money;
 use crate::domain::payment::{
@@ -17,6 +19,7 @@ use crate::domain::payment::{
 pub struct RecordPayment {
     payments: Arc<dyn PaymentRepository>,
     invoices: Arc<dyn InvoiceRepository>,
+    events: Arc<dyn EventBus>,
 }
 
 impl RecordPayment {
@@ -24,7 +27,18 @@ impl RecordPayment {
         payments: Arc<dyn PaymentRepository>,
         invoices: Arc<dyn InvoiceRepository>,
     ) -> Self {
-        Self { payments, invoices }
+        Self {
+            payments,
+            invoices,
+            events: Arc::new(NoopEventBus),
+        }
+    }
+
+    /// Inject the real event bus. Production wiring (`OrgServices::new`) calls
+    /// this; tests that don't assert on events keep the no-op default.
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
     }
 
     pub fn execute(&self, input: NewPayment) -> Result<Payment, AppError> {
@@ -34,8 +48,9 @@ impl RecordPayment {
             &input.allocations,
             None,
         )?;
-        let payment = Payment::create(input, Utc::now())?;
+        let mut payment = Payment::create(input, Utc::now())?;
         self.payments.insert(&payment)?;
+        payment.commit(self.events.as_ref());
         Ok(payment)
     }
 }
@@ -54,6 +69,7 @@ pub struct UpdatePaymentInput {
 pub struct UpdatePayment {
     payments: Arc<dyn PaymentRepository>,
     invoices: Arc<dyn InvoiceRepository>,
+    events: Arc<dyn EventBus>,
 }
 
 impl UpdatePayment {
@@ -61,7 +77,16 @@ impl UpdatePayment {
         payments: Arc<dyn PaymentRepository>,
         invoices: Arc<dyn InvoiceRepository>,
     ) -> Self {
-        Self { payments, invoices }
+        Self {
+            payments,
+            invoices,
+            events: Arc::new(NoopEventBus),
+        }
+    }
+
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
     }
 
     pub fn execute(&self, input: UpdatePaymentInput) -> Result<Payment, AppError> {
@@ -82,8 +107,10 @@ impl UpdatePayment {
             input.reference,
             input.allocations,
             input.notes,
+            Utc::now(),
         )?;
         self.payments.update(&payment)?;
+        payment.commit(self.events.as_ref());
         Ok(payment)
     }
 }
@@ -152,17 +179,32 @@ fn sum_allocations_to(
 
 pub struct DeletePayment {
     repo: Arc<dyn PaymentRepository>,
+    events: Arc<dyn EventBus>,
 }
 
 impl DeletePayment {
     pub fn new(repo: Arc<dyn PaymentRepository>) -> Self {
-        Self { repo }
+        Self {
+            repo,
+            events: Arc::new(NoopEventBus),
+        }
+    }
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
     }
     pub fn execute(&self, id: PaymentId) -> Result<(), AppError> {
-        if self.repo.get(id)?.is_none() {
-            return Err(AppError::resource_not_found());
-        }
+        // Load before deleting so the `PaymentDeleted` event can carry the
+        // client scope — the aggregate is gone by the time we publish, so
+        // (unlike create/update) the use case dispatches the event directly
+        // instead of draining it off the aggregate.
+        let payment = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
         self.repo.delete(id)?;
+        self.events.dispatch(&PaymentDeleted {
+            id: payment.id,
+            client_id: payment.client_id,
+            at: Utc::now(),
+        });
         Ok(())
     }
 }
@@ -190,7 +232,7 @@ impl ListPayments {
         let payments = self.repo.list(query)?;
         let ids: Vec<crate::domain::client::ClientId> =
             payments.iter().map(|p| p.client_id).collect();
-        let names = self.clients.names_for(&ids)?;
+        let names = self.clients.labels_for(&ids)?;
         Ok(payments
             .into_iter()
             .map(|p| {
@@ -216,7 +258,7 @@ impl GetPayment {
 
     pub fn execute(&self, id: PaymentId) -> Result<(Payment, Option<String>), AppError> {
         let payment = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
-        let names = self.clients.names_for(&[payment.client_id])?;
+        let names = self.clients.labels_for(&[payment.client_id])?;
         let name = names.get(&payment.client_id).cloned();
         Ok((payment, name))
     }
@@ -305,7 +347,7 @@ mod tests {
         }
     }
 
-    /// Minimal client repo for tests — only `names_for` is exercised by
+    /// Minimal client repo for tests — only `labels_for` is exercised by
     /// the read paths under test, so the rest are no-ops.
     #[derive(Default)]
     struct StubClientRepo;
@@ -329,7 +371,7 @@ mod tests {
         ) -> Result<Page<crate::domain::client::Client>, RepoError> {
             Ok(Page::new(vec![], 0, &PaginationParams::default()))
         }
-        fn names_for(
+        fn labels_for(
             &self,
             _: &[ClientId],
         ) -> Result<HashMap<ClientId, String>, RepoError> {
@@ -374,6 +416,25 @@ mod tests {
         }
         fn delete(&self, _: InvoiceId) -> Result<(), RepoError> {
             Ok(())
+        }
+        fn labels_for(
+            &self,
+            ids: &[InvoiceId],
+        ) -> Result<std::collections::HashMap<InvoiceId, String>, RepoError> {
+            let g = self.invoices.lock();
+            Ok(ids
+                .iter()
+                .filter_map(|id| {
+                    g.get(id).map(|i| {
+                        (
+                            *id,
+                            i.number
+                                .map(|n| format!("#{}", n.0))
+                                .unwrap_or_else(|| String::new()),
+                        )
+                    })
+                })
+                .collect())
         }
     }
 
@@ -711,5 +772,56 @@ mod tests {
             .execute(new_input(500, vec![alloc(draft_id, 500)]))
             .unwrap_err();
         assert!(err.is(ErrorCode::InvoiceNotAllocatable));
+    }
+
+    // === Domain event emission ===
+
+    use crate::application::ports::event_bus::test_support::CollectingEventBus;
+
+    #[test]
+    fn record_payment_publishes_payment_recorded() {
+        let (payments, invoices) = repos();
+        let bus = Arc::new(CollectingEventBus::default());
+        RecordPayment::new(payments, invoices)
+            .with_events(bus.clone())
+            .execute(new_input(1000, vec![]))
+            .unwrap();
+        assert_eq!(bus.names(), ["payment.recorded"]);
+    }
+
+    #[test]
+    fn update_payment_publishes_payment_updated() {
+        let (payments, invoices) = repos();
+        let created = RecordPayment::new(payments.clone(), invoices.clone())
+            .execute(new_input(1000, vec![]))
+            .unwrap();
+        let bus = Arc::new(CollectingEventBus::default());
+        UpdatePayment::new(payments, invoices)
+            .with_events(bus.clone())
+            .execute(UpdatePaymentInput {
+                id: created.id,
+                date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
+                amount: Money::new(2000, eur()),
+                method: PaymentMethod::Cash,
+                reference: None,
+                allocations: vec![],
+                notes: None,
+            })
+            .unwrap();
+        assert_eq!(bus.names(), ["payment.updated"]);
+    }
+
+    #[test]
+    fn delete_payment_publishes_payment_deleted() {
+        let (payments, invoices) = repos();
+        let created = RecordPayment::new(payments.clone(), invoices)
+            .execute(new_input(1000, vec![]))
+            .unwrap();
+        let bus = Arc::new(CollectingEventBus::default());
+        DeletePayment::new(payments)
+            .with_events(bus.clone())
+            .execute(created.id)
+            .unwrap();
+        assert_eq!(bus.names(), ["payment.deleted"]);
     }
 }

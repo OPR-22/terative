@@ -132,6 +132,7 @@ mod tests {
             unit: Some("hour".into()),
             reference: None,
             archived_at: None,
+            pending_events: crate::domain::events::EventBuffer::default(),
         };
         let dto: CatalogItemDto = (&domain).into();
         assert_eq!(dto.id, domain.id.0);

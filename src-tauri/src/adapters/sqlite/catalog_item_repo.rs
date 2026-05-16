@@ -72,6 +72,7 @@ fn row_to_item_without_prices(row: &Row<'_>) -> rusqlite::Result<CatalogItem> {
         unit: row.get("unit")?,
         reference: row.get("reference")?,
         archived_at,
+        pending_events: crate::domain::events::EventBuffer::default(),
     })
 }
 
@@ -259,6 +260,46 @@ impl CatalogItemRepository for SqliteCatalogItemRepository {
         )
         .map_err(map_err)?;
         Ok(())
+    }
+
+    fn labels_for(
+        &self,
+        ids: &[CatalogItemId],
+    ) -> Result<std::collections::HashMap<CatalogItemId, String>, RepoError> {
+        use std::collections::HashMap;
+        if ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let conn = self.db.lock();
+        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{i}")).collect();
+        let sql = format!(
+            "SELECT id, name FROM catalog_items WHERE id IN ({})",
+            placeholders.join(", ")
+        );
+        let id_strs: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+        let params: Vec<&dyn rusqlite::ToSql> =
+            id_strs.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+        let mut stmt = conn.prepare(&sql).map_err(map_err)?;
+        let rows = stmt
+            .query_map(params.as_slice(), |row| {
+                let id_str: String = row.get("id")?;
+                let uuid = uuid::Uuid::parse_str(&id_str).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
+                let name: String = row.get("name")?;
+                Ok((CatalogItemId(uuid), name))
+            })
+            .map_err(map_err)?;
+        let mut out = HashMap::new();
+        for r in rows {
+            let (id, name) = r.map_err(map_err)?;
+            out.insert(id, name);
+        }
+        Ok(out)
     }
 }
 

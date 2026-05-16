@@ -2,6 +2,11 @@ use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
+use crate::domain::aggregate_root::AggregateRoot;
+use crate::domain::events::tax_events::TaxCreated;
+use crate::domain::events::EventBuffer;
+use crate::domain::field_change::FieldChange;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TaxId(pub Uuid);
 
@@ -32,6 +37,31 @@ pub struct TaxDefinition {
     /// `None` = active. `Some(timestamp)` = archived; the timestamp records
     /// when the user clicked "archive".
     pub archived_at: Option<DateTime<Utc>>,
+    /// Domain events buffered by mutating methods, drained by the use case
+    /// after persistence. Not persisted; a row loaded from SQLite always has
+    /// this empty.
+    pub pending_events: EventBuffer,
+}
+
+impl AggregateRoot for TaxDefinition {
+    fn pending_events_mut(&mut self) -> &mut EventBuffer {
+        &mut self.pending_events
+    }
+
+    fn diff_against(&self, before: &Self) -> Vec<FieldChange> {
+        [
+            FieldChange::scalar("name", &before.name, &self.name),
+            FieldChange::number("percentage", &before.percentage, &self.percentage),
+            FieldChange::opt(
+                "tax_id_number",
+                &before.tax_id_number,
+                &self.tax_id_number,
+            ),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -58,7 +88,7 @@ impl TaxDefinition {
         if input.percentage.is_sign_negative() {
             return Err(TaxError::NegativePercentage);
         }
-        Ok(Self {
+        let mut tax = Self {
             id: TaxId::new(),
             name,
             percentage: input.percentage,
@@ -73,7 +103,14 @@ impl TaxDefinition {
                     }
                 }),
             archived_at: None,
-        })
+            pending_events: EventBuffer::default(),
+        };
+        tax.apply(TaxCreated {
+            id: tax.id,
+            name: tax.name.clone(),
+            at: Utc::now(),
+        });
+        Ok(tax)
     }
 
     pub fn is_archived(&self) -> bool {
@@ -150,5 +187,38 @@ mod tests {
         t.archive(Utc::now());
         t.unarchive();
         assert!(!t.is_archived());
+    }
+
+    // === diff_against ===
+
+    fn make(name: &str, pct: Decimal, tax_id: Option<&str>) -> TaxDefinition {
+        TaxDefinition::create(NewTaxDefinition {
+            name: name.into(),
+            percentage: pct,
+            tax_id_number: tax_id.map(str::to_string),
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn diff_against_identical_returns_empty() {
+        let a = make("TVA", dec!(21), Some("BE0123"));
+        let b = a.clone();
+        assert!(b.diff_against(&a).is_empty());
+    }
+
+    #[test]
+    fn diff_against_reports_each_changed_scalar() {
+        let before = make("TVA", dec!(21), Some("BE0123"));
+        let mut after = before.clone();
+        after.name = "VAT".into();
+        after.percentage = dec!(20);
+        after.tax_id_number = None;
+
+        let changes = after.diff_against(&before);
+        assert_eq!(changes.len(), 3);
+        // Field names are static and known; the order matches `diff_against`.
+        let fields: Vec<&str> = changes.iter().map(FieldChange::field).collect();
+        assert_eq!(fields, ["name", "percentage", "tax_id_number"]);
     }
 }

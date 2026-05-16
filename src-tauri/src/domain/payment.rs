@@ -1,7 +1,11 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
+use crate::domain::aggregate_root::AggregateRoot;
 use crate::domain::client::ClientId;
+use crate::domain::events::payment_events::{PaymentRecorded, PaymentUpdated};
+use crate::domain::events::EventBuffer;
+use crate::domain::field_change::{money_to_value, FieldChange};
 use crate::domain::invoice::InvoiceId;
 use crate::domain::money::{Currency, Money, MoneyError};
 
@@ -80,6 +84,46 @@ pub struct Payment {
     pub allocations: Vec<PaymentAllocation>,
     pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
+    /// Domain events buffered by mutating methods, drained by the use case
+    /// after persistence. Not persisted; a row loaded from SQLite always has
+    /// this empty. See [`EventBuffer`] for why this keeps the `derive`s intact.
+    pub pending_events: EventBuffer,
+}
+
+impl AggregateRoot for Payment {
+    fn pending_events_mut(&mut self) -> &mut EventBuffer {
+        &mut self.pending_events
+    }
+
+    fn diff_against(&self, before: &Self) -> Vec<FieldChange> {
+        // `id`, `client_id`, and `created_at` are immutable post-creation
+        // and intentionally omitted.
+        [
+            FieldChange::scalar("date", &before.date, &self.date),
+            FieldChange::money("amount", &before.amount, &self.amount),
+            // `PaymentMethod` has no Display impl; use the DB-form string.
+            FieldChange::scalar(
+                "method",
+                &before.method.to_db_string(),
+                &self.method.to_db_string(),
+            ),
+            FieldChange::opt("reference", &before.reference, &self.reference),
+            FieldChange::opt("notes", &before.notes, &self.notes),
+            // Allocations are uniquely identified by `invoice_id` (domain
+            // forbids duplicates), so we can do an element-level diff:
+            // per-invoice amounts surface added / removed / changed.
+            FieldChange::indexed_collection(
+                "allocations",
+                &before.allocations,
+                &self.allocations,
+                |a: &PaymentAllocation| a.invoice_id,
+                |a: &PaymentAllocation| money_to_value(&a.amount),
+            ),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -121,7 +165,7 @@ impl Payment {
             return Err(PaymentError::NonPositiveAmount);
         }
         let allocations = validate_allocations(&input.allocations, input.amount)?;
-        Ok(Self {
+        let mut payment = Self {
             id: PaymentId::new(),
             client_id: input.client_id,
             date: input.date,
@@ -131,7 +175,16 @@ impl Payment {
             allocations,
             notes: input.notes.and_then(non_empty),
             created_at: now,
-        })
+            pending_events: EventBuffer::default(),
+        };
+        payment.apply(PaymentRecorded {
+            id: payment.id,
+            client_id: payment.client_id,
+            amount: payment.amount,
+            allocations: payment.allocations.clone(),
+            at: now,
+        });
+        Ok(payment)
     }
 
     pub fn replace_fields(
@@ -142,17 +195,29 @@ impl Payment {
         reference: Option<String>,
         allocations: Vec<NewPaymentAllocation>,
         notes: Option<String>,
+        now: DateTime<Utc>,
     ) -> Result<(), PaymentError> {
         if !amount.minor_units().is_positive() {
             return Err(PaymentError::NonPositiveAmount);
         }
         let allocations = validate_allocations(&allocations, amount)?;
+        // Snapshot prior state for the audit diff before any mutation.
+        let before = self.clone();
         self.date = date;
         self.amount = amount;
         self.method = method;
         self.reference = reference.and_then(non_empty);
         self.allocations = allocations;
         self.notes = notes.and_then(non_empty);
+        let changes = self.diff_against(&before);
+        self.apply(PaymentUpdated {
+            id: self.id,
+            client_id: self.client_id,
+            amount: self.amount,
+            allocations: self.allocations.clone(),
+            changes,
+            at: now,
+        });
         Ok(())
     }
 
@@ -374,6 +439,7 @@ mod tests {
             Some("INV-42".into()),
             vec![alloc(invoice_b, 2000)],
             None,
+            now(),
         )
         .unwrap();
         assert_eq!(p.amount.minor_units(), 2000);
@@ -395,11 +461,103 @@ mod tests {
                 None,
                 vec![alloc(invoice, 600)],
                 None,
+                now(),
             )
             .unwrap_err();
         assert_eq!(err, PaymentError::AllocationsExceedPayment);
         // State must be unchanged on error.
         assert_eq!(p.amount.minor_units(), 1000);
+    }
+
+    // === Domain event emission ===
+
+    #[test]
+    fn create_buffers_payment_recorded_event() {
+        let invoice = InvoiceId::new();
+        let mut p =
+            Payment::create(new_payment(1000, vec![alloc(invoice, 600)]), now()).unwrap();
+        let events = p.take_events();
+        assert_eq!(events.len(), 1);
+        let ev = events[0]
+            .downcast_ref::<PaymentRecorded>()
+            .expect("PaymentRecorded");
+        assert_eq!(ev.id, p.id);
+        assert_eq!(ev.amount, p.amount);
+        assert_eq!(ev.allocations.len(), 1);
+        assert_eq!(ev.allocations[0].invoice_id, invoice);
+    }
+
+    #[test]
+    fn replace_fields_buffers_payment_updated_event() {
+        let mut p = Payment::create(new_payment(1000, vec![]), now()).unwrap();
+        let _ = p.take_events(); // discard the recorded event
+        p.replace_fields(
+            date(),
+            Money::new(2000, eur()),
+            PaymentMethod::Cash,
+            None,
+            vec![],
+            None,
+            now(),
+        )
+        .unwrap();
+        let events = p.take_events();
+        assert_eq!(events.len(), 1);
+        let ev = events[0]
+            .downcast_ref::<PaymentUpdated>()
+            .expect("PaymentUpdated");
+        assert_eq!(ev.amount.minor_units(), 2000);
+    }
+
+    #[test]
+    fn replace_fields_event_carries_diff_with_money_and_indexed_allocations() {
+        // Start with a payment of 1000 EUR allocated entirely to invoice A.
+        let inv_a = InvoiceId::new();
+        let inv_b = InvoiceId::new();
+        let mut p = Payment::create(
+            new_payment(1000, vec![alloc(inv_a, 1000)]),
+            now(),
+        )
+        .unwrap();
+        let _ = p.take_events();
+
+        // Update: bump amount to 1500, change method, drop A's allocation,
+        // add a 1500 allocation to B.
+        p.replace_fields(
+            date(),
+            Money::new(1500, eur()),
+            PaymentMethod::Cash,
+            Some("WIRE-9".into()),
+            vec![alloc(inv_b, 1500)],
+            None,
+            now(),
+        )
+        .unwrap();
+
+        let events = p.take_events();
+        let ev = events[0].downcast_ref::<PaymentUpdated>().unwrap();
+        let fields: Vec<&str> = ev.changes.iter().map(FieldChange::field).collect();
+
+        assert!(fields.contains(&"amount"));
+        assert!(fields.contains(&"method"));
+        assert!(fields.contains(&"reference"));
+        assert!(fields.contains(&"allocations"));
+        // `date` and `notes` weren't touched.
+        assert!(!fields.contains(&"date"));
+        assert!(!fields.contains(&"notes"));
+
+        // Allocations: A removed, B added, none changed.
+        let allocs = ev.changes.iter().find(|c| c.field() == "allocations").unwrap();
+        match allocs {
+            FieldChange::IndexedCollection { added, removed, changed, .. } => {
+                assert_eq!(added.len(), 1);
+                assert_eq!(added[0].key, inv_b.to_string());
+                assert_eq!(removed.len(), 1);
+                assert_eq!(removed[0].key, inv_a.to_string());
+                assert!(changed.is_empty());
+            }
+            _ => panic!("expected IndexedCollection for allocations"),
+        }
     }
 
     #[test]

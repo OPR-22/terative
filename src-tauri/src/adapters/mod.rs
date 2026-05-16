@@ -1,3 +1,4 @@
+pub mod event_bus;
 pub mod filesystem_data_management;
 pub mod filesystem_pdf_storage;
 pub mod keyring_credential_store;
@@ -6,6 +7,7 @@ pub mod org_keyring;
 pub mod sqlite;
 pub mod typst_pdf;
 
+pub use event_bus::InProcessEventBus;
 pub use filesystem_data_management::FilesystemDataManagement;
 pub use filesystem_pdf_storage::FilesystemPdfStorage;
 pub use keyring_credential_store::KeyringCredentialStore;

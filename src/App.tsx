@@ -13,6 +13,7 @@ import { CatalogList } from "./pages/CatalogList";
 import { ClientDetail } from "./pages/ClientDetail";
 import { ClientEditor } from "./pages/ClientEditor";
 import { ClientList } from "./pages/ClientList";
+import { Activity } from "./pages/Activity";
 import { Dashboard } from "./pages/Dashboard";
 import { EmailTemplates } from "./pages/EmailTemplates";
 import { InvoiceEditor } from "./pages/InvoiceEditor";
@@ -98,6 +99,7 @@ function App() {
           <Route path="email-templates" element={<EmailTemplates />} />
 
           <Route path="bookmarks/:id" element={<BookmarkView />} />
+          <Route path="activity" element={<Activity />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       ) : (

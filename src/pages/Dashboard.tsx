@@ -2,17 +2,10 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "../stores/toastStore";
 import { useNavigate } from "react-router-dom";
-import {
-  AlertCircle,
-  ArrowRight,
-  FileText,
-  Plus,
-  Send,
-  User,
-  Wallet,
-} from "lucide-react";
+import { AlertCircle, ArrowRight, Plus, Send } from "lucide-react";
 
 import { Page, SectionTitle } from "../components/layout/Page";
+import { ActivityList } from "../components/activity/ActivityList";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -21,6 +14,7 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { Table, Td, Th, THead, Tr } from "../components/ui/Table";
 import {
   ipc,
+  type AuditDto,
   type DashboardOutstandingRowDto,
   type DashboardRevenueRowDto,
   type DashboardSummaryDto,
@@ -46,15 +40,21 @@ export function Dashboard() {
   const { snapshot, load } = useSettingsStore();
   const [summary, setSummary] = useState<DashboardSummaryDto | null>(null);
   const [overdue, setOverdue] = useState<InvoicePaymentRowDto[]>([]);
+  const [activity, setActivity] = useState<AuditDto[]>([]);
 
   useEffect(() => {
     if (!snapshot) void load();
     let cancelled = false;
-    Promise.all([ipc.accountingDashboardSummary(), ipc.accountingListOverdue()])
-      .then(([s, o]) => {
+    Promise.all([
+      ipc.accountingDashboardSummary(),
+      ipc.accountingListOverdue(),
+      ipc.auditPaginateRecent({ page: 1, per_page: 20 }),
+    ])
+      .then(([s, o, a]) => {
         if (cancelled) return;
         setSummary(s);
         setOverdue(o);
+        setActivity(a.data);
       })
       .catch((e) => {
         if (!cancelled) toast.error(e);
@@ -185,54 +185,10 @@ export function Dashboard() {
 
             <Card>
               <CardHead title={t("dashboard.recent_activity")} />
-              <div className="py-1.5">
-                {[
-                  {
-                    Ic: Wallet,
-                    title: t("dashboard.activity_payment_received"),
-                    detail: t("dashboard.activity_payment_received_detail"),
-                    when: t("dashboard.activity_when_recent_minutes"),
-                  },
-                  {
-                    Ic: Send,
-                    title: t("dashboard.activity_invoice_sent"),
-                    detail: t("dashboard.activity_invoice_sent_detail"),
-                    when: t("dashboard.activity_when_today"),
-                  },
-                  {
-                    Ic: FileText,
-                    title: t("dashboard.activity_draft_modified"),
-                    detail: t("dashboard.activity_draft_modified_detail"),
-                    when: t("dashboard.activity_when_recently"),
-                  },
-                  {
-                    Ic: User,
-                    title: t("dashboard.activity_new_client"),
-                    detail: t("dashboard.activity_new_client_detail"),
-                    when: t("dashboard.activity_when_recently"),
-                  },
-                ].map((a, i, arr) => (
-                  <div
-                    key={i}
-                    className={[
-                      "flex items-start gap-3 px-5 py-2.5",
-                      i < arr.length - 1 ? "border-b border-line-soft" : "",
-                    ].join(" ")}
-                  >
-                    <span className="grid place-items-center w-6 h-6 rounded-sm bg-paper-2 text-ink-2 shrink-0">
-                      <a.Ic size={13} strokeWidth={1.5} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[12.5px] font-medium text-ink">{a.title}</div>
-                      <div className="text-[11px] text-ink-3 mt-0.5 truncate">
-                        {a.detail}
-                      </div>
-                    </div>
-                    <div className="text-[11px] text-ink-3 whitespace-nowrap">
-                      {a.when}
-                    </div>
-                  </div>
-                ))}
+              {/* Cap the card height to ~10 rows so the dashboard layout
+                  stays compact; older rows scroll within. */}
+              <div className="max-h-96 overflow-y-auto">
+                <ActivityList items={activity} />
               </div>
             </Card>
           </div>

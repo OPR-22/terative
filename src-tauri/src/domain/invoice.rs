@@ -4,7 +4,13 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use uuid::Uuid;
 
+use crate::domain::aggregate_root::AggregateRoot;
 use crate::domain::client::ClientId;
+use crate::domain::events::invoice_events::{
+    InvoiceCancelled, InvoiceDraftCreated, InvoiceDraftUpdated, InvoiceFinalized,
+};
+use crate::domain::events::EventBuffer;
+use crate::domain::field_change::FieldChange;
 use crate::domain::line_item::{LineItem, LineItemError, NewLineItem};
 use crate::domain::money::{Currency, Money, MoneyError};
 use crate::domain::tax::{TaxDefinition, TaxId};
@@ -137,6 +143,50 @@ pub struct Invoice {
     pub notes: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Domain events buffered by mutating methods, drained by the use case
+    /// after persistence. Not persisted; a row loaded from SQLite always has
+    /// this empty. See [`EventBuffer`] for why this keeps the `derive`s intact.
+    pub pending_events: EventBuffer,
+}
+
+impl AggregateRoot for Invoice {
+    fn pending_events_mut(&mut self) -> &mut EventBuffer {
+        &mut self.pending_events
+    }
+
+    fn diff_against(&self, before: &Self) -> Vec<FieldChange> {
+        // Covers everything `update_draft` can mutate plus the derived
+        // money totals (so a quantity bump shows "subtotal: 100 → 200" in
+        // the audit row). `id`, `client_id`, `status`, `number`, `pdf_path`,
+        // `created_at`, and `updated_at` are intentionally omitted: they
+        // either don't change in `update_draft` or they're internal
+        // bookkeeping rather than user-visible state.
+        [
+            FieldChange::opt("template_id", &before.template_id, &self.template_id),
+            FieldChange::scalar("date", &before.date, &self.date),
+            FieldChange::opt("due_date", &before.due_date, &self.due_date),
+            FieldChange::scalar(
+                "currency",
+                before.currency.code(),
+                self.currency.code(),
+            ),
+            FieldChange::money("subtotal", &before.subtotal, &self.subtotal),
+            FieldChange::money("tax_total", &before.tax_total, &self.tax_total),
+            FieldChange::money("total", &before.total, &self.total),
+            FieldChange::opt("notes", &before.notes, &self.notes),
+            // Line items have no stable identity (the user can edit any of
+            // them), so a count-only summary is the honest v1.
+            FieldChange::collection("line_items", &before.line_items, &self.line_items),
+            FieldChange::collection(
+                "taxes_applied",
+                &before.taxes_applied,
+                &self.taxes_applied,
+            ),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -193,7 +243,7 @@ impl Invoice {
         let (subtotal, tax_total, total, taxes_applied) =
             compute_totals(&line_items, taxes, currency)?;
 
-        Ok(Self {
+        let mut invoice = Self {
             id: InvoiceId::new(),
             number: None,
             client_id: input.client_id,
@@ -211,7 +261,15 @@ impl Invoice {
             notes: input.notes.and_then(non_empty),
             created_at: now,
             updated_at: now,
-        })
+            pending_events: EventBuffer::default(),
+        };
+        invoice.apply(InvoiceDraftCreated {
+            id: invoice.id,
+            client_id: invoice.client_id,
+            total: invoice.total,
+            at: now,
+        });
+        Ok(invoice)
     }
 
     pub fn update_draft(
@@ -238,6 +296,9 @@ impl Invoice {
             .collect::<Result<_, _>>()?;
         let (subtotal, tax_total, total, taxes_applied) =
             compute_totals(&items, taxes, currency)?;
+        // Snapshot prior state for the audit diff. The clone is shallow over
+        // line items + taxes_applied (small Vecs of Money/Decimal).
+        let before = self.clone();
         self.currency = currency;
         self.line_items = items;
         self.taxes_applied = taxes_applied;
@@ -249,6 +310,13 @@ impl Invoice {
         self.due_date = due_date;
         self.notes = notes.and_then(non_empty);
         self.updated_at = now;
+        let changes = self.diff_against(&before);
+        self.apply(InvoiceDraftUpdated {
+            id: self.id,
+            client_id: self.client_id,
+            changes,
+            at: now,
+        });
         Ok(())
     }
 
@@ -266,6 +334,13 @@ impl Invoice {
         self.number = Some(number);
         self.status = InvoiceStatus::Finalized;
         self.updated_at = now;
+        self.apply(InvoiceFinalized {
+            id: self.id,
+            client_id: self.client_id,
+            number,
+            total: self.total,
+            at: now,
+        });
         Ok(())
     }
 
@@ -290,6 +365,12 @@ impl Invoice {
             InvoiceStatus::Finalized | InvoiceStatus::Sent => {
                 self.status = InvoiceStatus::Cancelled;
                 self.updated_at = now;
+                self.apply(InvoiceCancelled {
+                    id: self.id,
+                    client_id: self.client_id,
+                    number: self.number,
+                    at: now,
+                });
                 Ok(())
             }
         }
@@ -896,5 +977,121 @@ mod tests {
             .update_draft(eur(), vec![line("A", 1, 1000)], &[], None, date(), None, None, now())
             .unwrap_err();
         assert!(matches!(err, InvoiceError::NotDraft));
+    }
+
+    // === Domain event emission ===
+
+    fn draft(total_cents: i64) -> Invoice {
+        Invoice::create_draft(
+            NewInvoice {
+                client_id: ClientId::new(),
+                template_id: None,
+                date: date(),
+                due_date: None,
+                line_items: vec![line("A", 1, total_cents)],
+                tax_ids: vec![],
+                notes: None,
+                currency: eur(),
+            },
+            &[],
+            now(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn create_draft_buffers_invoice_draft_created_event() {
+        let mut inv = draft(1000);
+        let events = inv.take_events();
+        assert_eq!(events.len(), 1);
+        let ev = events[0]
+            .downcast_ref::<InvoiceDraftCreated>()
+            .expect("InvoiceDraftCreated");
+        assert_eq!(ev.id, inv.id);
+        assert_eq!(ev.client_id, inv.client_id);
+        assert_eq!(ev.total, inv.total);
+    }
+
+    #[test]
+    fn update_draft_buffers_invoice_draft_updated_event() {
+        let mut inv = draft(1000);
+        let _ = inv.take_events(); // discard the draft-created event
+        inv.update_draft(eur(), vec![line("B", 2, 500)], &[], None, date(), None, None, now())
+            .unwrap();
+        let events = inv.take_events();
+        assert_eq!(events.len(), 1);
+        assert!(events[0].downcast_ref::<InvoiceDraftUpdated>().is_some());
+    }
+
+    #[test]
+    fn update_draft_event_carries_field_diff_with_money_totals_and_line_count() {
+        let mut inv = draft(1000); // 1 line, total 1000 EUR
+        let _ = inv.take_events();
+        // Replace one line with two cheaper ones — total goes 1000 → 1000
+        // (2×500), but line_items count goes 1 → 2 and notes is added.
+        inv.update_draft(
+            eur(),
+            vec![line("B", 1, 500), line("C", 1, 500)],
+            &[],
+            None,
+            date(),
+            None,
+            Some("VIP".into()),
+            now(),
+        )
+        .unwrap();
+
+        let events = inv.take_events();
+        let ev = events[0]
+            .downcast_ref::<InvoiceDraftUpdated>()
+            .expect("InvoiceDraftUpdated");
+
+        let fields: Vec<&str> = ev.changes.iter().map(FieldChange::field).collect();
+        assert!(fields.contains(&"notes"));        // None → Some
+        assert!(fields.contains(&"line_items"));   // 1 → 2
+        // Money totals didn't change (still 1000 + 0 + 1000), so they must
+        // not appear:
+        assert!(!fields.contains(&"subtotal"));
+        assert!(!fields.contains(&"tax_total"));
+        assert!(!fields.contains(&"total"));
+        assert!(!fields.contains(&"currency"));
+
+        // line_items is a count-only Collection.
+        let li = ev.changes.iter().find(|c| c.field() == "line_items").unwrap();
+        match li {
+            FieldChange::Collection { from_count, to_count, .. } => {
+                assert_eq!(*from_count, 1);
+                assert_eq!(*to_count, 2);
+            }
+            _ => panic!("expected Collection for line_items"),
+        }
+    }
+
+    #[test]
+    fn finalize_buffers_invoice_finalized_event() {
+        let mut inv = draft(1000);
+        let _ = inv.take_events(); // discard the draft-created event
+        inv.finalize(InvoiceNumber(7), now()).unwrap();
+        let events = inv.take_events();
+        assert_eq!(events.len(), 1);
+        let ev = events[0]
+            .downcast_ref::<InvoiceFinalized>()
+            .expect("InvoiceFinalized");
+        assert_eq!(ev.number, InvoiceNumber(7));
+        assert_eq!(ev.total, inv.total);
+    }
+
+    #[test]
+    fn cancel_buffers_invoice_cancelled_event() {
+        let mut inv = draft(1000);
+        inv.finalize(InvoiceNumber(7), now()).unwrap();
+        let _ = inv.take_events(); // discard draft-created + finalized
+        inv.cancel(now()).unwrap();
+        let events = inv.take_events();
+        assert_eq!(events.len(), 1);
+        let ev = events[0]
+            .downcast_ref::<InvoiceCancelled>()
+            .expect("InvoiceCancelled");
+        assert_eq!(ev.number, Some(InvoiceNumber(7)));
     }
 }

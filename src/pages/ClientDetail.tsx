@@ -14,6 +14,7 @@ import { Modal } from "../components/ui/Modal";
 import { StatusDot } from "../components/ui/StatusDot";
 import { Table, Td, Th, THead, Tr } from "../components/ui/Table";
 import { Tabs, type TabOption } from "../components/ui/Tabs";
+import { ActivityList } from "../components/activity/ActivityList";
 import { StatusBadge } from "../components/invoice/StatusBadge";
 import { PaymentStatusBadge } from "../components/invoice/PaymentStatusBadge";
 import { AddressListEditor } from "../components/client/AddressListEditor";
@@ -25,6 +26,7 @@ import { useClientStore } from "../stores/clientStore";
 import { useCurrencyCatalogStore } from "../stores/currencyCatalogStore";
 import {
   ipc,
+  type AuditDto,
   type ClientAddressDto,
   type ClientDto,
   type ClientJournalEntryDto,
@@ -46,7 +48,8 @@ type Tab =
   | "journal"
   | "invoices"
   | "payments"
-  | "emails";
+  | "emails"
+  | "activity";
 
 function computeAgeLabel(
   dob: string | null,
@@ -112,6 +115,7 @@ export function ClientDetail() {
     { id: "invoices", label: t("clients.tab_invoices") },
     { id: "payments", label: t("clients.tab_payments") },
     { id: "emails", label: t("clients.tab_emails") },
+    { id: "activity", label: t("clients.tab_activity") },
   ];
 
   return (
@@ -164,7 +168,42 @@ export function ClientDetail() {
       {tab === "invoices" ? <InvoicesTab clientId={client.id} /> : null}
       {tab === "payments" ? <PaymentsTab clientId={client.id} /> : null}
       {tab === "emails" ? <EmailsTab clientId={client.id} /> : null}
+      {tab === "activity" ? <ActivityTab clientId={client.id} /> : null}
     </Page>
+  );
+}
+
+// ---- Activity tab ----
+
+function ActivityTab({ clientId }: { clientId: string }) {
+  const { t } = useTranslation();
+  const [items, setItems] = useState<AuditDto[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setErr(null);
+    ipc
+      .auditPaginateForClient(clientId, { page: 1, per_page: 100 })
+      .then((page) => {
+        if (!cancelled) setItems(page.data);
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId]);
+
+  if (err) return <p className="text-[13px] text-danger">{err}</p>;
+  if (!items) return <EmptyState description={t("common.loading")} />;
+
+  // `ActivityList` renders its own empty state.
+  return (
+    <Card>
+      <ActivityList items={items} />
+    </Card>
   );
 }
 

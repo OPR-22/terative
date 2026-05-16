@@ -371,6 +371,7 @@ mod tests {
             default_currency: crate::domain::money::Currency::Eur,
             archived_at: None,
             created_at: Utc.with_ymd_and_hms(2026, 4, 14, 9, 0, 0).unwrap(),
+            pending_events: crate::domain::events::EventBuffer::default(),
         }
     }
 

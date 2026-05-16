@@ -395,6 +395,9 @@ fn assemble(head: PaymentHead, allocations: Vec<PaymentAllocation>) -> Payment {
         allocations,
         notes: head.notes,
         created_at: head.created_at,
+        // A row loaded from SQLite has no pending events — they exist only
+        // for the lifetime of an in-memory mutation.
+        pending_events: crate::domain::events::EventBuffer::default(),
     }
 }
 
@@ -524,6 +527,7 @@ mod tests {
                     amount: Money::new(500, eur()),
                 }],
                 None,
+                Utc::now(),
             )
             .unwrap();
         repo.update(&payment).unwrap();

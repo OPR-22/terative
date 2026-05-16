@@ -30,6 +30,7 @@ import { useCurrencyCatalogStore } from "../stores/currencyCatalogStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import {
   ipc,
+  type AuditDto,
   type InvoiceDto,
   type NewInvoiceDto,
   type NewLineItemDto,
@@ -37,6 +38,7 @@ import {
   type PaymentMethodDto,
   type UpdateDraftInvoiceDto,
 } from "../ipc";
+import { ActivityList } from "../components/activity/ActivityList";
 
 interface LineRow {
   /** Optional source catalog item. The line carries a snapshot of the
@@ -168,7 +170,7 @@ export function InvoiceEditor() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [invoicePayments, setInvoicePayments] = useState<PaymentDto[]>([]);
-  type ViewerTab = "summary" | "preview" | "payments" | "email";
+  type ViewerTab = "summary" | "preview" | "payments" | "email" | "activity";
   const [tab, setTab] = useState<ViewerTab>("summary");
 
   // Load the invoice when an id is present.
@@ -603,6 +605,7 @@ export function InvoiceEditor() {
               label: t("invoices.tab_email"),
               count: invoice ? invoice.email_sends.length : null,
             },
+            { id: "activity", label: t("invoices.tab_activity") },
           ] as TabOption<ViewerTab>[]
         }
       />
@@ -1101,6 +1104,13 @@ export function InvoiceEditor() {
         </Card>
       ) : null}
 
+      {tab === "activity" && invoice ? (
+        <Card>
+          <CardHead title={t("activity.title")} />
+          <InvoiceActivityPanel invoiceId={invoice.id} />
+        </Card>
+      ) : null}
+
       {markingPaid && invoice ? (
         <MarkPaidModal
           invoice={invoice}
@@ -1120,4 +1130,34 @@ export function InvoiceEditor() {
       />
     </Page>
   );
+}
+
+/// Read-only activity timeline for one invoice (created → finalized → sent →
+/// cancelled, plus duplications). Fetches on its own since activity is not
+/// part of the invoice DTO.
+function InvoiceActivityPanel({ invoiceId }: { invoiceId: string }) {
+  const { t } = useTranslation();
+  const [items, setItems] = useState<AuditDto[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setErr(null);
+    ipc
+      .auditPaginateForInvoice(invoiceId, { page: 1, per_page: 200 })
+      .then((page) => {
+        if (!cancelled) setItems(page.data);
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [invoiceId]);
+
+  if (err) return <p className="px-5 py-4 text-[13px] text-danger">{err}</p>;
+  if (!items) return <EmptyState description={t("common.loading")} />;
+  // `ActivityList` renders its own empty state.
+  return <ActivityList items={items} />;
 }

@@ -1,6 +1,10 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
 
+use crate::domain::aggregate_root::AggregateRoot;
+use crate::domain::events::client_events::{ClientArchived, ClientCreated, ClientUnarchived};
+use crate::domain::events::EventBuffer;
+use crate::domain::field_change::FieldChange;
 use crate::domain::money::Currency;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -216,6 +220,56 @@ pub struct Client {
     /// trail without a separate event log.
     pub archived_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    /// Domain events buffered by mutating methods, drained by the use case
+    /// after persistence. Not persisted; a row loaded from SQLite always has
+    /// this empty. See [`EventBuffer`] for why this keeps the `derive`s intact.
+    pub pending_events: EventBuffer,
+}
+
+impl AggregateRoot for Client {
+    fn pending_events_mut(&mut self) -> &mut EventBuffer {
+        &mut self.pending_events
+    }
+
+    fn diff_against(&self, before: &Self) -> Vec<FieldChange> {
+        // `archived_at` and `created_at` are intentionally omitted: archive
+        // / unarchive have their own dedicated events, and `created_at` is
+        // immutable. `id` and the event buffer are not user-visible state.
+        [
+            FieldChange::scalar("name", &before.name, &self.name),
+            FieldChange::scalar("kind", before.kind.as_str(), self.kind.as_str()),
+            FieldChange::opt("contact_name", &before.contact_name, &self.contact_name),
+            FieldChange::opt("tax_id", &before.tax_id, &self.tax_id),
+            FieldChange::opt(
+                "registration_number",
+                &before.registration_number,
+                &self.registration_number,
+            ),
+            FieldChange::opt("notes", &before.notes, &self.notes),
+            FieldChange::opt("referred_by", &before.referred_by, &self.referred_by),
+            FieldChange::opt("date_of_birth", &before.date_of_birth, &self.date_of_birth),
+            FieldChange::opt("sex", &before.sex, &self.sex),
+            FieldChange::opt("gender", &before.gender, &self.gender),
+            FieldChange::opt("pronouns", &before.pronouns, &self.pronouns),
+            FieldChange::opt("occupation", &before.occupation, &self.occupation),
+            FieldChange::opt("language", &before.language, &self.language),
+            FieldChange::scalar(
+                "default_currency",
+                before.default_currency.code(),
+                self.default_currency.code(),
+            ),
+            // Contact entries and addresses have no stable identity (the user
+            // can edit any of them), so a count-only summary is the honest
+            // v1 — element-level diffs would require synthetic IDs the
+            // domain doesn't model today.
+            FieldChange::collection("emails", &before.emails, &self.emails),
+            FieldChange::collection("phones", &before.phones, &self.phones),
+            FieldChange::collection("addresses", &before.addresses, &self.addresses),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -276,7 +330,7 @@ impl Client {
         let phones = sanitize_contacts(input.phones)?;
         let addresses = sanitize_addresses(input.addresses)?;
         let date_of_birth = validate_dob(input.date_of_birth, now)?;
-        Ok(Self {
+        let mut client = Self {
             id: ClientId::new(),
             kind: input.kind,
             name,
@@ -297,7 +351,14 @@ impl Client {
             default_currency: input.default_currency,
             archived_at: None,
             created_at: now,
-        })
+            pending_events: EventBuffer::default(),
+        };
+        client.apply(ClientCreated {
+            id: client.id,
+            name: client.name.clone(),
+            at: now,
+        });
+        Ok(client)
     }
 
     pub fn is_archived(&self) -> bool {
@@ -353,10 +414,20 @@ impl Client {
 
     pub fn archive(&mut self, now: DateTime<Utc>) {
         self.archived_at = Some(now);
+        self.apply(ClientArchived {
+            id: self.id,
+            name: self.name.clone(),
+            at: now,
+        });
     }
 
-    pub fn unarchive(&mut self) {
+    pub fn unarchive(&mut self, now: DateTime<Utc>) {
         self.archived_at = None;
+        self.apply(ClientUnarchived {
+            id: self.id,
+            name: self.name.clone(),
+            at: now,
+        });
     }
 }
 
@@ -664,9 +735,55 @@ mod tests {
         )
         .unwrap();
         c.archive(now());
-        c.unarchive();
+        c.unarchive(now());
         assert!(c.archived_at.is_none());
         assert!(!c.is_archived());
+    }
+
+    // === Domain event emission ===
+
+    fn acme() -> Client {
+        Client::create(
+            NewClient {
+                name: "Acme".into(),
+                ..Default::default()
+            },
+            now(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn create_buffers_client_created_event() {
+        let mut c = acme();
+        let events = c.take_events();
+        assert_eq!(events.len(), 1);
+        let ev = events[0]
+            .downcast_ref::<ClientCreated>()
+            .expect("ClientCreated");
+        assert_eq!(ev.id, c.id);
+        assert_eq!(ev.name, "Acme");
+    }
+
+    #[test]
+    fn archive_buffers_client_archived_event() {
+        let mut c = acme();
+        let _ = c.take_events(); // discard the created event
+        c.archive(now());
+        let events = c.take_events();
+        assert_eq!(events.len(), 1);
+        assert!(events[0].downcast_ref::<ClientArchived>().is_some());
+    }
+
+    #[test]
+    fn unarchive_buffers_client_unarchived_event() {
+        let mut c = acme();
+        c.archive(now());
+        let _ = c.take_events(); // discard created + archived
+        c.unarchive(now());
+        let events = c.take_events();
+        assert_eq!(events.len(), 1);
+        assert!(events[0].downcast_ref::<ClientUnarchived>().is_some());
     }
 
     #[test]
@@ -947,5 +1064,58 @@ mod tests {
         assert!(c.pronouns.is_none());
         assert!(c.occupation.is_none());
         assert!(c.language.is_none());
+    }
+
+    // === diff_against ===
+
+    #[test]
+    fn diff_against_identical_returns_empty() {
+        let a = acme();
+        let b = a.clone();
+        assert!(b.diff_against(&a).is_empty());
+    }
+
+    #[test]
+    fn diff_against_reports_scalars_opts_and_collections() {
+        let before = acme();
+        let mut after = before.clone();
+
+        after.name = "Acme Corp".into();                      // scalar
+        after.kind = ClientKind::Company;                     // scalar (enum)
+        after.tax_id = Some("BE0123456".into());              // opt None → Some
+        after.notes = Some("VIP".into());                     // opt None → Some
+        after.default_currency = Currency::Usd;               // scalar (enum code)
+        after
+            .replace_emails(vec![NewContactEntry {
+                value: "billing@acme.example".into(),
+                label: None,
+                is_default: true,
+            }])
+            .unwrap();                                        // collection 0 → 1
+
+        let changes = after.diff_against(&before);
+        let fields: Vec<&str> = changes.iter().map(FieldChange::field).collect();
+
+        assert!(fields.contains(&"name"));
+        assert!(fields.contains(&"kind"));
+        assert!(fields.contains(&"tax_id"));
+        assert!(fields.contains(&"notes"));
+        assert!(fields.contains(&"default_currency"));
+        assert!(fields.contains(&"emails"));
+        // Untouched fields must not appear:
+        assert!(!fields.contains(&"phones"));
+        assert!(!fields.contains(&"addresses"));
+        assert!(!fields.contains(&"date_of_birth"));
+        assert!(!fields.contains(&"language"));
+
+        // Email collection diff: count went 0 → 1.
+        let emails = changes.iter().find(|c| c.field() == "emails").unwrap();
+        match emails {
+            FieldChange::Collection { from_count, to_count, .. } => {
+                assert_eq!(*from_count, 0);
+                assert_eq!(*to_count, 1);
+            }
+            _ => panic!("expected Collection for emails"),
+        }
     }
 }

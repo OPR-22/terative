@@ -343,6 +343,48 @@ impl InvoiceRepository for SqliteInvoiceRepository {
         .map_err(map_err)?;
         Ok(())
     }
+
+    fn labels_for(
+        &self,
+        ids: &[InvoiceId],
+    ) -> Result<std::collections::HashMap<InvoiceId, String>, RepoError> {
+        use std::collections::HashMap;
+        if ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let conn = self.db.lock();
+        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{i}")).collect();
+        // Compose the label in SQL: `"#<number>"` for finalized invoices,
+        // `"#-"` for drafts (no number yet) — the dash signals "draft" while
+        // keeping the visual `"#"` prefix consistent with finalized labels.
+        let sql = format!(
+            "SELECT id, \
+                    CASE WHEN number IS NOT NULL THEN '#' || number ELSE '#-' END AS label \
+             FROM invoices \
+             WHERE id IN ({})",
+            placeholders.join(", ")
+        );
+        let id_strs: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+        let params: Vec<&dyn rusqlite::ToSql> =
+            id_strs.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+        let mut stmt = conn.prepare(&sql).map_err(map_err)?;
+        let rows = stmt
+            .query_map(params.as_slice(), |row| {
+                let id_str: String = row.get("id")?;
+                let id: InvoiceId = parse_uuid(&id_str, InvoiceId)?;
+                let label: Option<String> = row.get("label")?;
+                Ok((id, label))
+            })
+            .map_err(map_err)?;
+        let mut out = HashMap::new();
+        for r in rows {
+            let (id, label) = r.map_err(map_err)?;
+            if let Some(l) = label {
+                out.insert(id, l);
+            }
+        }
+        Ok(out)
+    }
 }
 
 fn insert_items_and_taxes(tx: &rusqlite::Transaction<'_>, invoice: &Invoice) -> Result<(), RepoError> {
@@ -487,6 +529,9 @@ fn assemble(
         notes: head.notes,
         created_at: head.created_at,
         updated_at: head.updated_at,
+        // A row loaded from SQLite has no pending events — they exist only
+        // for the lifetime of an in-memory mutation.
+        pending_events: crate::domain::events::EventBuffer::default(),
     }
 }
 

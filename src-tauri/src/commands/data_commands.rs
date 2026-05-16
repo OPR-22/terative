@@ -82,11 +82,12 @@ pub fn data_export(
 #[tauri::command]
 #[specta::specta]
 pub fn data_backup(state: State<'_, AppState>) -> Result<String, AppError> {
+    // Goes through the `CreateBackup` use case (not `data_management`
+    // directly) so a manual backup also records a `BackupCreated` audit.
     state.org()?
-        .data_management
-        .create_backup()
+        .create_backup
+        .execute()
         .map(|p| p.to_string_lossy().to_string())
-        .map_err(AppError::from)
 }
 
 /// Restore the live db from a backup file. `source_password` is required

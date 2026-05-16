@@ -3,12 +3,14 @@ use std::sync::Arc;
 use chrono::{NaiveDate, Utc};
 
 use crate::application::ports::{
-    ClientRepository, EmailLogRepository, InvoiceNumberGenerator, InvoiceRepository,
-    ListInvoicesQuery, Page, PaymentRepository, PdfGenerator, PdfRenderInput, PdfStorage,
-    SettingsRepository, TaxRepository, TemplateRepository,
+    ClientRepository, CommitEvents, EmailLogRepository, EventBus, InvoiceNumberGenerator,
+    InvoiceRepository, ListInvoicesQuery, NoopEventBus, Page, PaymentRepository, PdfGenerator,
+    PdfRenderInput, PdfStorage, SettingsRepository, TaxRepository, TemplateRepository,
 };
 use crate::application::{AppError, RepoError};
 #[cfg(test)] use crate::application::ErrorCode;
+use crate::domain::aggregate_root::AggregateRoot;
+use crate::domain::events::invoice_events::InvoiceDuplicated;
 use crate::domain::invoice::{Invoice, InvoiceId, InvoiceStatus, NewInvoice};
 use crate::domain::money::{Currency, Money};
 use crate::domain::line_item::NewLineItem;
@@ -66,16 +68,28 @@ fn cancelled_watermark(lang: crate::domain::settings::Language) -> &'static str 
 pub struct CreateDraftInvoice {
     invoices: Arc<dyn InvoiceRepository>,
     taxes: Arc<dyn TaxRepository>,
+    events: Arc<dyn EventBus>,
 }
 
 impl CreateDraftInvoice {
     pub fn new(invoices: Arc<dyn InvoiceRepository>, taxes: Arc<dyn TaxRepository>) -> Self {
-        Self { invoices, taxes }
+        Self {
+            invoices,
+            taxes,
+            events: Arc::new(NoopEventBus),
+        }
+    }
+    /// Inject the real event bus. Production wiring (`OrgServices::new`) calls
+    /// this; tests that don't assert on events keep the no-op default.
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
     }
     pub fn execute(&self, input: NewInvoice) -> Result<Invoice, AppError> {
         let taxes = load_taxes(self.taxes.as_ref(), &input.tax_ids)?;
-        let invoice = Invoice::create_draft(input, &taxes, Utc::now())?;
+        let mut invoice = Invoice::create_draft(input, &taxes, Utc::now())?;
         self.invoices.insert(&invoice)?;
+        invoice.commit(self.events.as_ref());
         Ok(invoice)
     }
 }
@@ -98,11 +112,20 @@ pub struct UpdateDraftInvoiceInput {
 pub struct UpdateDraftInvoice {
     invoices: Arc<dyn InvoiceRepository>,
     taxes: Arc<dyn TaxRepository>,
+    events: Arc<dyn EventBus>,
 }
 
 impl UpdateDraftInvoice {
     pub fn new(invoices: Arc<dyn InvoiceRepository>, taxes: Arc<dyn TaxRepository>) -> Self {
-        Self { invoices, taxes }
+        Self {
+            invoices,
+            taxes,
+            events: Arc::new(NoopEventBus),
+        }
+    }
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
     }
     pub fn execute(&self, input: UpdateDraftInvoiceInput) -> Result<Invoice, AppError> {
         let mut invoice = self.invoices.get(input.id)?.ok_or(AppError::resource_not_found())?;
@@ -118,6 +141,7 @@ impl UpdateDraftInvoice {
             Utc::now(),
         )?;
         self.invoices.update(&invoice)?;
+        invoice.commit(self.events.as_ref());
         Ok(invoice)
     }
 }
@@ -131,6 +155,7 @@ pub struct FinalizeInvoice {
     clients: Arc<dyn ClientRepository>,
     pdf: Arc<dyn PdfGenerator>,
     storage: Arc<dyn PdfStorage>,
+    events: Arc<dyn EventBus>,
 }
 
 impl FinalizeInvoice {
@@ -152,7 +177,13 @@ impl FinalizeInvoice {
             clients,
             pdf,
             storage,
+            events: Arc::new(NoopEventBus),
         }
+    }
+
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
     }
 
     pub fn execute(&self, id: InvoiceId) -> Result<Invoice, AppError> {
@@ -183,22 +214,31 @@ impl FinalizeInvoice {
         let path = self.storage.store(&file_name, &pdf_bytes)?;
         invoice.set_pdf_path(path);
         self.invoices.update(&invoice)?;
+        invoice.commit(self.events.as_ref());
         Ok(invoice)
     }
 }
 
 pub struct DuplicateInvoice {
     invoices: Arc<dyn InvoiceRepository>,
+    events: Arc<dyn EventBus>,
 }
 
 impl DuplicateInvoice {
     pub fn new(invoices: Arc<dyn InvoiceRepository>) -> Self {
-        Self { invoices }
+        Self {
+            invoices,
+            events: Arc::new(NoopEventBus),
+        }
+    }
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
     }
     pub fn execute(&self, id: InvoiceId) -> Result<Invoice, AppError> {
         let source = self.invoices.get(id)?.ok_or(AppError::resource_not_found())?;
         let now = Utc::now();
-        let draft = Invoice {
+        let mut draft = Invoice {
             id: InvoiceId::new(),
             number: None,
             status: InvoiceStatus::Draft,
@@ -219,7 +259,17 @@ impl DuplicateInvoice {
                 .collect(),
             ..source
         };
+        // The draft is built by struct literal (not `create_draft`), so no
+        // `InvoiceDraftCreated` is auto-buffered — `InvoiceDuplicated` is the
+        // single event this flow records.
+        draft.apply(InvoiceDuplicated {
+            source_id: source.id,
+            new_id: draft.id,
+            client_id: draft.client_id,
+            at: now,
+        });
         self.invoices.insert(&draft)?;
+        draft.commit(self.events.as_ref());
         Ok(draft)
     }
 }
@@ -232,6 +282,7 @@ pub struct CancelInvoice {
     settings: Arc<dyn SettingsRepository>,
     pdf: Arc<dyn PdfGenerator>,
     storage: Arc<dyn PdfStorage>,
+    events: Arc<dyn EventBus>,
 }
 
 impl CancelInvoice {
@@ -250,7 +301,12 @@ impl CancelInvoice {
             settings,
             pdf,
             storage,
+            events: Arc::new(NoopEventBus),
         }
+    }
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
     }
     pub fn execute(&self, id: InvoiceId) -> Result<Invoice, AppError> {
         let mut invoice = self.invoices.get(id)?.ok_or(AppError::resource_not_found())?;
@@ -292,6 +348,7 @@ impl CancelInvoice {
         }
 
         self.invoices.update(&invoice)?;
+        invoice.commit(self.events.as_ref());
         Ok(invoice)
     }
 }
@@ -332,7 +389,7 @@ impl ListInvoices {
         let totals = self.payments.allocated_for_invoices(&ids)?;
         let client_ids: Vec<crate::domain::client::ClientId> =
             page.data.iter().map(|i| i.client_id).collect();
-        let names = self.clients.names_for(&client_ids)?;
+        let names = self.clients.labels_for(&client_ids)?;
         let mut logs_by_invoice = self.email_logs.list_by_invoices(&ids)?;
         Ok(page.map(|inv| {
             let paid = totals
@@ -550,7 +607,7 @@ impl GetInvoice {
         let paid = self
             .payments
             .allocated_for_invoice(id, invoice.currency)?;
-        let names = self.clients.names_for(&[invoice.client_id])?;
+        let names = self.clients.labels_for(&[invoice.client_id])?;
         let client_name = names.get(&invoice.client_id).cloned();
         let mut logs_by_invoice = self.email_logs.list_by_invoices(&[id])?;
         let logs = logs_by_invoice.remove(&id).unwrap_or_default();
@@ -609,6 +666,22 @@ mod tests {
             self.inner.lock().remove(&id);
             Ok(())
         }
+        fn labels_for(
+            &self,
+            ids: &[InvoiceId],
+        ) -> Result<HashMap<InvoiceId, String>, RepoError> {
+            let g = self.inner.lock();
+            Ok(ids
+                .iter()
+                .filter_map(|id| g.get(id).map(|i| (*id, label_for(i))))
+                .collect())
+        }
+    }
+
+    fn label_for(i: &Invoice) -> String {
+        i.number
+            .map(|n| format!("#{}", n.0))
+            .unwrap_or_else(|| String::new())
     }
 
     /// Minimal stub so invoice use cases that depend on `PaymentRepository`
@@ -715,6 +788,16 @@ mod tests {
         }
         fn delete(&self, _: TaxId) -> Result<(), RepoError> {
             Ok(())
+        }
+        fn labels_for(
+            &self,
+            ids: &[TaxId],
+        ) -> Result<HashMap<TaxId, String>, RepoError> {
+            let g = self.inner.lock();
+            Ok(ids
+                .iter()
+                .filter_map(|id| g.get(id).map(|t| (*id, t.name.clone())))
+                .collect())
         }
     }
 
@@ -1108,7 +1191,7 @@ mod tests {
         ) -> Result<Page<Client>, RepoError> {
             Ok(Page::new(vec![], 0, &PaginationParams::default()))
         }
-        fn names_for(
+        fn labels_for(
             &self,
             ids: &[ClientId],
         ) -> Result<HashMap<ClientId, String>, RepoError> {
@@ -1380,5 +1463,97 @@ mod tests {
         );
         let err = finalize.execute(InvoiceId::new()).unwrap_err();
         assert!(err.is(ErrorCode::ResourceNotFound));
+    }
+
+    // === Domain event emission ===
+
+    use crate::application::ports::event_bus::test_support::CollectingEventBus;
+
+    #[test]
+    fn create_draft_invoice_publishes_invoice_draft_created() {
+        let (inv_repo, tax_repo, tax) = setup();
+        let bus = Arc::new(CollectingEventBus::default());
+        CreateDraftInvoice::new(inv_repo, tax_repo)
+            .with_events(bus.clone())
+            .execute(new_invoice_input(ClientId::new(), tax.id))
+            .unwrap();
+        assert_eq!(bus.names(), ["invoice.draft_created"]);
+    }
+
+    #[test]
+    fn update_draft_invoice_publishes_invoice_draft_updated() {
+        let (inv_repo, tax_repo, tax) = setup();
+        let created = CreateDraftInvoice::new(inv_repo.clone(), tax_repo.clone())
+            .execute(new_invoice_input(ClientId::new(), tax.id))
+            .unwrap();
+        let bus = Arc::new(CollectingEventBus::default());
+        UpdateDraftInvoice::new(inv_repo, tax_repo)
+            .with_events(bus.clone())
+            .execute(UpdateDraftInvoiceInput {
+                id: created.id,
+                template_id: None,
+                date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
+                due_date: None,
+                line_items: vec![NewLineItem {
+                    catalog_item_id: None,
+                    description: "Bigger".into(),
+                    quantity: dec!(5),
+                    unit_price: Money::new(1000, eur()),
+                }],
+                tax_ids: vec![tax.id],
+                notes: None,
+                currency: eur(),
+            })
+            .unwrap();
+        assert_eq!(bus.names(), ["invoice.draft_updated"]);
+    }
+
+    #[test]
+    fn duplicate_invoice_publishes_invoice_duplicated() {
+        let (inv_repo, tax_repo, tax) = setup();
+        let created = CreateDraftInvoice::new(inv_repo.clone(), tax_repo)
+            .execute(new_invoice_input(ClientId::new(), tax.id))
+            .unwrap();
+        let bus = Arc::new(CollectingEventBus::default());
+        DuplicateInvoice::new(inv_repo)
+            .with_events(bus.clone())
+            .execute(created.id)
+            .unwrap();
+        assert_eq!(bus.names(), ["invoice.duplicated"]);
+    }
+
+    #[test]
+    fn finalize_invoice_publishes_invoice_finalized() {
+        let (inv_repo, tax_repo, tax) = setup();
+        let client_repo = Arc::new(FakeClientRepo(Mutex::new(HashMap::new())));
+        let client = Client::create(
+            NewClient {
+                name: "Acme".into(),
+                ..Default::default()
+            },
+            Utc::now(),
+        )
+        .unwrap();
+        client_repo.insert(&client).unwrap();
+        let created = CreateDraftInvoice::new(inv_repo.clone(), tax_repo.clone())
+            .execute(NewInvoice {
+                client_id: client.id,
+                ..new_invoice_input(client.id, tax.id)
+            })
+            .unwrap();
+        let bus = Arc::new(CollectingEventBus::default());
+        FinalizeInvoice::new(
+            inv_repo,
+            Arc::new(FakeNumberGenerator(Mutex::new(1))),
+            Arc::new(FakeTemplateRepo(Mutex::new(HashMap::new()))),
+            Arc::new(FakeSettingsRepo::default()),
+            client_repo,
+            Arc::new(FakePdfGenerator(Mutex::new(0))),
+            Arc::new(CapturingPdfStorage::default()),
+        )
+        .with_events(bus.clone())
+        .execute(created.id)
+        .unwrap();
+        assert_eq!(bus.names(), ["invoice.finalized"]);
     }
 }

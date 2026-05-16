@@ -1045,7 +1045,6 @@ mod tests {
 
     fn set_auto_backup_prefs(db: &Db, enabled: bool, interval_hours: u32) {
         use crate::application::ports::SettingsRepository;
-        use crate::domain::settings::AppPreferences;
         let repo = crate::adapters::sqlite::SqliteSettingsRepository::new(db.clone());
         let mut prefs = repo.get_app_preferences().unwrap();
         prefs.auto_backup_enabled = enabled;

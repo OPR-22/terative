@@ -27,6 +27,9 @@ use commands::{
         data_source_appears_encrypted,
         data_user_backup_dir,
     },
+    audit_commands::{
+        audit_paginate_for_client, audit_paginate_for_invoice, audit_paginate_recent,
+    },
     email_commands::{
         email_log_list_for_client, email_test_connection, invoice_send,
         settings_update_email_config, settings_update_email_password,
@@ -203,6 +206,9 @@ fn build_specta() -> Builder<tauri::Wry> {
                 email_test_connection,
                 invoice_send,
                 email_log_list_for_client,
+                audit_paginate_recent,
+                audit_paginate_for_client,
+                audit_paginate_for_invoice,
                 email_template_create,
                 email_template_update,
                 email_template_delete,
@@ -331,7 +337,9 @@ fn spawn_auto_backup_ticker(app: tauri::AppHandle) {
         // Auto-backup is per-org. When no org is open the ticker is a no-op
         // — picker is showing, no DB to back up.
         if let Ok(svc) = app.state::<commands::AppState>().org() {
-            if let Err(e) = svc.data_management.auto_backup_if_due() {
+            // Goes through the use case (not `data_management` directly) so a
+            // scheduled backup also records a `BackupCreated` audit event.
+            if let Err(e) = svc.auto_backup_if_due.execute() {
                 eprintln!("auto-backup check failed: {e}");
             }
         }

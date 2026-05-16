@@ -45,6 +45,7 @@ fn row_to_tax(row: &Row<'_>) -> rusqlite::Result<TaxDefinition> {
         percentage,
         tax_id_number: row.get("tax_id_number")?,
         archived_at,
+        pending_events: crate::domain::events::EventBuffer::default(),
     })
 }
 
@@ -174,6 +175,46 @@ impl TaxRepository for SqliteTaxRepository {
         )
         .map_err(map_err)?;
         Ok(())
+    }
+
+    fn labels_for(
+        &self,
+        ids: &[TaxId],
+    ) -> Result<std::collections::HashMap<TaxId, String>, RepoError> {
+        use std::collections::HashMap;
+        if ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let conn = self.db.lock();
+        let placeholders: Vec<String> = (1..=ids.len()).map(|i| format!("?{i}")).collect();
+        let sql = format!(
+            "SELECT id, name FROM tax_definitions WHERE id IN ({})",
+            placeholders.join(", ")
+        );
+        let id_strs: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+        let params: Vec<&dyn rusqlite::ToSql> =
+            id_strs.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+        let mut stmt = conn.prepare(&sql).map_err(map_err)?;
+        let rows = stmt
+            .query_map(params.as_slice(), |row| {
+                let id_str: String = row.get("id")?;
+                let uuid = uuid::Uuid::parse_str(&id_str).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
+                let name: String = row.get("name")?;
+                Ok((TaxId(uuid), name))
+            })
+            .map_err(map_err)?;
+        let mut out = HashMap::new();
+        for r in rows {
+            let (id, name) = r.map_err(map_err)?;
+            out.insert(id, name);
+        }
+        Ok(out)
     }
 }
 

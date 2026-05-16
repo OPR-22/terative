@@ -1,32 +1,49 @@
 use std::sync::Arc;
 
-use crate::application::ports::CatalogItemRepository;
+use crate::application::ports::{
+    CatalogItemRepository, CommitEvents, EventBus, NoopEventBus,
+};
 use crate::application::AppError;
 #[cfg(test)] use crate::application::ErrorCode;
+use crate::domain::aggregate_root::AggregateRoot;
 use crate::domain::catalog_item::{
     CatalogItem, CatalogItemError, CatalogItemId, CatalogItemKind, NewCatalogItem,
 };
+use crate::domain::events::catalog_item_events::CatalogItemUpdated;
 use crate::domain::money::Money;
 
 #[derive(Clone)]
 pub struct CreateCatalogItem {
     repo: Arc<dyn CatalogItemRepository>,
+    events: Arc<dyn EventBus>,
 }
 
 impl CreateCatalogItem {
     pub fn new(repo: Arc<dyn CatalogItemRepository>) -> Self {
-        Self { repo }
+        Self {
+            repo,
+            events: Arc::new(NoopEventBus),
+        }
+    }
+
+    /// Inject the real event bus. Production wiring (`OrgServices::new`) calls
+    /// this; tests that don't assert on events keep the no-op default.
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
     }
 
     pub fn execute(&self, input: NewCatalogItem) -> Result<CatalogItem, AppError> {
-        let item = CatalogItem::create(input)?;
+        let mut item = CatalogItem::create(input)?;
         self.repo.insert(&item)?;
+        item.commit(self.events.as_ref());
         Ok(item)
     }
 }
 
 pub struct UpdateCatalogItem {
     repo: Arc<dyn CatalogItemRepository>,
+    events: Arc<dyn EventBus>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,7 +58,15 @@ pub struct UpdateCatalogItemInput {
 
 impl UpdateCatalogItem {
     pub fn new(repo: Arc<dyn CatalogItemRepository>) -> Self {
-        Self { repo }
+        Self {
+            repo,
+            events: Arc::new(NoopEventBus),
+        }
+    }
+
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
     }
 
     pub fn execute(&self, input: UpdateCatalogItemInput) -> Result<CatalogItem, AppError> {
@@ -50,12 +75,23 @@ impl UpdateCatalogItem {
         if name.is_empty() {
             return Err(CatalogItemError::EmptyName.into());
         }
+        // Snapshot prior state for the audit diff. Cheap clone (Vec<Money>
+        // is small).
+        let before = item.clone();
         item.name = name;
         item.kind = input.kind;
         item.replace_prices(input.prices)?;
         item.unit = input.unit.and_then(normalize);
         item.reference = input.reference.and_then(normalize);
         self.repo.update(&item)?;
+        // No domain `update` method — the use case records the event itself.
+        let changes = item.diff_against(&before);
+        item.apply(CatalogItemUpdated {
+            id: item.id,
+            changes,
+            at: chrono::Utc::now(),
+        });
+        item.commit(self.events.as_ref());
         Ok(item)
     }
 }
@@ -159,6 +195,16 @@ mod tests {
         fn delete(&self, id: CatalogItemId) -> Result<(), RepoError> {
             self.inner.lock().remove(&id);
             Ok(())
+        }
+        fn labels_for(
+            &self,
+            ids: &[CatalogItemId],
+        ) -> Result<HashMap<CatalogItemId, String>, RepoError> {
+            let g = self.inner.lock();
+            Ok(ids
+                .iter()
+                .filter_map(|id| g.get(id).map(|i| (*id, i.name.clone())))
+                .collect())
         }
     }
 

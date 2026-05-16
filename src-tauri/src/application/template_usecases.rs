@@ -548,5 +548,6 @@ fn sample_invoice(currency: Currency, client_id: ClientId, template_id: Template
         notes: Some("Merci pour votre confiance.".into()),
         created_at: Utc::now(),
         updated_at: Utc::now(),
+        pending_events: crate::domain::events::EventBuffer::default(),
     }
 }

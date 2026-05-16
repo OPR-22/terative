@@ -1,5 +1,6 @@
 pub mod pagination;
 pub mod accounting_queries;
+pub mod audit_repository;
 pub mod bookmark_repository;
 pub mod catalog_item_repository;
 pub mod client_journal_repository;
@@ -8,6 +9,7 @@ pub mod client_repository;
 pub mod credential_store;
 pub mod data_management;
 pub mod email_log_repository;
+pub mod event_bus;
 pub mod email_sender;
 pub mod email_template_repository;
 pub mod invoice_number_generator;
@@ -26,6 +28,7 @@ pub use accounting_queries::{
     DashboardRevenueRow, DashboardSummary, DerivedPaymentStatus, InvoicePaymentRow,
     RevenueBucket, RevenueByClient, RevenueGrouping,
 };
+pub use audit_repository::AuditRepository;
 pub use client_journal_repository::ClientJournalRepository;
 pub use client_notebook_repository::ClientNotebookRepository;
 pub use client_repository::{ClientAttributeValues, ClientRepository, ListClientsQuery};
@@ -35,6 +38,7 @@ pub use credential_store::CredentialStore;
 pub use data_management::{BackupKind, BackupMetadata, BackupScope, DataManagement};
 pub use email_log_repository::EmailLogRepository;
 pub use email_sender::{EmailAttachment, EmailError, EmailSender, OutboundEmail};
+pub use event_bus::{CommitEvents, EventBus, EventHandler, NoopEventBus};
 pub use email_template_repository::EmailTemplateRepository;
 pub use invoice_number_generator::InvoiceNumberGenerator;
 pub use invoice_repository::{

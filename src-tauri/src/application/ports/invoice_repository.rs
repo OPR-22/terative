@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::application::RepoError;
 use crate::application::ports::pagination::{Page, PaginationParams};
 use crate::domain::client::ClientId;
@@ -9,6 +11,16 @@ pub trait InvoiceRepository: Send + Sync {
     fn get(&self, id: InvoiceId) -> Result<Option<Invoice>, RepoError>;
     fn list(&self, query: ListInvoicesQuery) -> Result<Page<Invoice>, RepoError>;
     fn delete(&self, id: InvoiceId) -> Result<(), RepoError>;
+
+    /// Batch fetch of user-facing labels for invoices — `"#1001"` for
+    /// finalized invoices (those with an assigned number), or `"#-"` for
+    /// drafts that haven't been assigned a number yet. Missing entries mean
+    /// the invoice doesn't exist. Used by audit handlers to render
+    /// `entity_label` strings without an N+1 lookup.
+    fn labels_for(
+        &self,
+        ids: &[InvoiceId],
+    ) -> Result<HashMap<InvoiceId, String>, RepoError>;
 }
 
 /// User-facing groupings over the underlying `DerivedPaymentStatus` —

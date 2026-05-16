@@ -1,4 +1,5 @@
 pub mod accounting_commands;
+pub mod audit_commands;
 pub mod bookmark_commands;
 pub mod catalog_item_commands;
 pub mod client_commands;
@@ -21,17 +22,22 @@ use std::sync::Arc;
 use arc_swap::ArcSwap;
 
 use crate::adapters::sqlite::{
-    Db, SqliteAccountingRepository, SqliteBookmarkRepository, SqliteCatalogItemRepository,
-    SqliteClientJournalRepository, SqliteClientNotebookRepository, SqliteClientRepository,
-    SqliteEmailLogRepository, SqliteEmailTemplateRepository, SqliteInvoiceNumberGenerator,
-    SqliteInvoiceRepository, SqliteNotebookSectionRepository, SqlitePaymentRepository,
-    SqliteSettingsRepository, SqliteTaxRepository, SqliteTemplateRepository,
+    Db, SqliteAccountingRepository, SqliteAuditRepository, SqliteBookmarkRepository,
+    SqliteCatalogItemRepository, SqliteClientJournalRepository, SqliteClientNotebookRepository,
+    SqliteClientRepository, SqliteEmailLogRepository, SqliteEmailTemplateRepository,
+    SqliteInvoiceNumberGenerator, SqliteInvoiceRepository, SqliteNotebookSectionRepository,
+    SqlitePaymentRepository, SqliteSettingsRepository, SqliteTaxRepository,
+    SqliteTemplateRepository,
 };
 use crate::adapters::{
-    FilesystemDataManagement, FilesystemPdfStorage, KeyringCredentialStore, LettreEmailSender,
-    TypstPdfGenerator,
+    FilesystemDataManagement, FilesystemPdfStorage, InProcessEventBus, KeyringCredentialStore,
+    LettreEmailSender, TypstPdfGenerator,
 };
 use crate::application::accounting_usecases::AccountingService;
+use crate::application::audit_handlers::{register_all, AuditHandlerContext};
+use crate::application::audit_usecases::{
+    PaginateAuditForClient, PaginateAuditForInvoice, PaginateRecentAudit,
+};
 use crate::application::bookmark_usecases::{
     CreateBookmark, DeleteBookmark, ListBookmarks, ReorderBookmarks, UpdateBookmark,
 };
@@ -61,11 +67,12 @@ use crate::application::notebook_usecases::{
     ListNotebookSections, RenameNotebookSection, ReorderNotebookSections, SaveClientNotebook,
     UpdateJournalEntry,
 };
+use crate::application::data_usecases::{AutoBackupIfDue, CreateBackup};
 use crate::application::org_registry::OrgRegistry;
 use crate::application::payment_usecases::{
     DeletePayment, GetPayment, ListPayments, RecordPayment, UpdatePayment,
 };
-use crate::application::ports::{DataManagement, OrgKeyStore};
+use crate::application::ports::{AuditRepository, DataManagement, EventBus, OrgKeyStore};
 #[cfg(debug_assertions)]
 use crate::application::seed_usecases::SeedDatabase;
 use crate::application::settings_usecases::{
@@ -160,6 +167,12 @@ pub struct OrgServices {
     pub accounting: AccountingService,
 
     pub data_management: Arc<dyn DataManagement>,
+    pub create_backup: CreateBackup,
+    pub auto_backup_if_due: AutoBackupIfDue,
+
+    pub paginate_recent_audit: PaginateRecentAudit,
+    pub paginate_audit_for_client: PaginateAuditForClient,
+    pub paginate_audit_for_invoice: PaginateAuditForInvoice,
 
     pub create_notebook_section: CreateNotebookSection,
     pub rename_notebook_section: RenameNotebookSection,
@@ -205,6 +218,8 @@ impl OrgServices {
         let client_journal_repo = Arc::new(SqliteClientJournalRepository::new(db.clone()));
         let email_template_repo = Arc::new(SqliteEmailTemplateRepository::new(db.clone()));
         let email_log_repo = Arc::new(SqliteEmailLogRepository::new(db.clone()));
+        let audit_repo: Arc<dyn AuditRepository> =
+            Arc::new(SqliteAuditRepository::new(db.clone()));
         let number_gen = Arc::new(SqliteInvoiceNumberGenerator::new(db.clone()));
         let pdf = Arc::new(TypstPdfGenerator::new());
         let pdf_storage = Arc::new(FilesystemPdfStorage::new(
@@ -228,13 +243,30 @@ impl OrgServices {
             key,
         ));
 
+        // The audit-log event bus. `register_all` wires every domain-event
+        // handler against it; mutating use cases get this bus via
+        // `.with_events(..)` so their `commit()` calls land in the log.
+        let mut bus = InProcessEventBus::new();
+        register_all(
+            &mut bus,
+            AuditHandlerContext {
+                audits: audit_repo.clone(),
+                invoices: invoice_repo.clone(),
+                clients: client_repo.clone(),
+                catalog_items: catalog_item_repo.clone(),
+                taxes: tax_repo.clone(),
+            },
+        );
+        let events: Arc<dyn EventBus> = Arc::new(bus);
+
         #[cfg(debug_assertions)]
         let seed_database = SeedDatabase::new(
-            CreateClient::new(client_repo.clone()),
-            CreateCatalogItem::new(catalog_item_repo.clone()),
-            CreateTax::new(tax_repo.clone()),
+            CreateClient::new(client_repo.clone()).with_events(events.clone()),
+            CreateCatalogItem::new(catalog_item_repo.clone()).with_events(events.clone()),
+            CreateTax::new(tax_repo.clone()).with_events(events.clone()),
             CreateBookmark::new(bookmark_repo.clone()),
-            CreateDraftInvoice::new(invoice_repo.clone(), tax_repo.clone()),
+            CreateDraftInvoice::new(invoice_repo.clone(), tax_repo.clone())
+                .with_events(events.clone()),
             FinalizeInvoice::new(
                 invoice_repo.clone(),
                 number_gen.clone(),
@@ -243,7 +275,8 @@ impl OrgServices {
                 client_repo.clone(),
                 pdf.clone(),
                 pdf_storage.clone(),
-            ),
+            )
+            .with_events(events.clone()),
             CancelInvoice::new(
                 invoice_repo.clone(),
                 client_repo.clone(),
@@ -251,8 +284,10 @@ impl OrgServices {
                 settings_repo.clone(),
                 pdf.clone(),
                 pdf_storage.clone(),
-            ),
-            RecordPayment::new(payment_repo.clone(), invoice_repo.clone()),
+            )
+            .with_events(events.clone()),
+            RecordPayment::new(payment_repo.clone(), invoice_repo.clone())
+                .with_events(events.clone()),
             CreateJournalEntry::new(client_journal_repo.clone()),
             invoice_repo.clone(),
             client_repo.clone(),
@@ -264,16 +299,22 @@ impl OrgServices {
             user_backup_dir,
             system_backup_dir,
 
-            create_client: CreateClient::new(client_repo.clone()),
-            update_client: UpdateClient::new(client_repo.clone()),
-            archive_client: ArchiveClient::new(client_repo.clone()),
-            unarchive_client: UnarchiveClient::new(client_repo.clone()),
+            create_client: CreateClient::new(client_repo.clone())
+                .with_events(events.clone()),
+            update_client: UpdateClient::new(client_repo.clone())
+                .with_events(events.clone()),
+            archive_client: ArchiveClient::new(client_repo.clone())
+                .with_events(events.clone()),
+            unarchive_client: UnarchiveClient::new(client_repo.clone())
+                .with_events(events.clone()),
             list_clients: ListClients::new(client_repo.clone()),
             get_client_detail: GetClientDetail::new(client_repo.clone()),
             list_client_attribute_values: ListClientAttributeValues::new(client_repo.clone()),
 
-            create_catalog_item: CreateCatalogItem::new(catalog_item_repo.clone()),
-            update_catalog_item: UpdateCatalogItem::new(catalog_item_repo.clone()),
+            create_catalog_item: CreateCatalogItem::new(catalog_item_repo.clone())
+                .with_events(events.clone()),
+            update_catalog_item: UpdateCatalogItem::new(catalog_item_repo.clone())
+                .with_events(events.clone()),
             archive_catalog_item: ArchiveCatalogItem::new(catalog_item_repo.clone()),
             unarchive_catalog_item: UnarchiveCatalogItem::new(catalog_item_repo.clone()),
             list_catalog_items: ListCatalogItems::new(catalog_item_repo),
@@ -283,8 +324,8 @@ impl OrgServices {
             update_currency: UpdateCurrency::new(settings_repo.clone()),
             update_app_preferences: UpdateAppPreferences::new(settings_repo.clone()),
 
-            create_tax: CreateTax::new(tax_repo.clone()),
-            update_tax: UpdateTax::new(tax_repo.clone()),
+            create_tax: CreateTax::new(tax_repo.clone()).with_events(events.clone()),
+            update_tax: UpdateTax::new(tax_repo.clone()).with_events(events.clone()),
             archive_tax: ArchiveTax::new(tax_repo.clone()),
             unarchive_tax: UnarchiveTax::new(tax_repo.clone()),
             list_taxes: ListTaxes::new(tax_repo.clone()),
@@ -308,8 +349,10 @@ impl OrgServices {
                 pdf.clone(),
             ),
 
-            create_draft_invoice: CreateDraftInvoice::new(invoice_repo.clone(), tax_repo.clone()),
-            update_draft_invoice: UpdateDraftInvoice::new(invoice_repo.clone(), tax_repo.clone()),
+            create_draft_invoice: CreateDraftInvoice::new(invoice_repo.clone(), tax_repo.clone())
+                .with_events(events.clone()),
+            update_draft_invoice: UpdateDraftInvoice::new(invoice_repo.clone(), tax_repo.clone())
+                .with_events(events.clone()),
             finalize_invoice: FinalizeInvoice::new(
                 invoice_repo.clone(),
                 number_gen,
@@ -318,8 +361,10 @@ impl OrgServices {
                 client_repo.clone(),
                 pdf.clone(),
                 pdf_storage.clone(),
-            ),
-            duplicate_invoice: DuplicateInvoice::new(invoice_repo.clone()),
+            )
+            .with_events(events.clone()),
+            duplicate_invoice: DuplicateInvoice::new(invoice_repo.clone())
+                .with_events(events.clone()),
             cancel_invoice: CancelInvoice::new(
                 invoice_repo.clone(),
                 client_repo.clone(),
@@ -327,7 +372,8 @@ impl OrgServices {
                 settings_repo.clone(),
                 pdf,
                 pdf_storage.clone(),
-            ),
+            )
+            .with_events(events.clone()),
             list_invoices: ListInvoices::new(
                 invoice_repo.clone(),
                 payment_repo.clone(),
@@ -359,7 +405,8 @@ impl OrgServices {
                 email_sender,
                 email_template_repo.clone(),
                 email_log_repo.clone(),
-            ),
+            )
+            .with_events(events.clone()),
 
             list_email_logs_for_client: ListEmailLogsForClient::new(email_log_repo),
 
@@ -369,15 +416,26 @@ impl OrgServices {
             set_default_email_template: SetDefaultEmailTemplate::new(email_template_repo.clone()),
             list_email_templates: ListEmailTemplates::new(email_template_repo),
 
-            record_payment: RecordPayment::new(payment_repo.clone(), invoice_repo.clone()),
-            update_payment: UpdatePayment::new(payment_repo.clone(), invoice_repo.clone()),
-            delete_payment: DeletePayment::new(payment_repo.clone()),
+            record_payment: RecordPayment::new(payment_repo.clone(), invoice_repo.clone())
+                .with_events(events.clone()),
+            update_payment: UpdatePayment::new(payment_repo.clone(), invoice_repo.clone())
+                .with_events(events.clone()),
+            delete_payment: DeletePayment::new(payment_repo.clone())
+                .with_events(events.clone()),
             list_payments: ListPayments::new(payment_repo.clone(), client_repo.clone()),
             get_payment: GetPayment::new(payment_repo, client_repo),
 
             accounting: AccountingService::new(accounting_repo),
 
+            create_backup: CreateBackup::new(data_management.clone())
+                .with_events(events.clone()),
+            auto_backup_if_due: AutoBackupIfDue::new(data_management.clone())
+                .with_events(events.clone()),
             data_management,
+
+            paginate_recent_audit: PaginateRecentAudit::new(audit_repo.clone()),
+            paginate_audit_for_client: PaginateAuditForClient::new(audit_repo.clone()),
+            paginate_audit_for_invoice: PaginateAuditForInvoice::new(audit_repo),
 
             create_notebook_section: CreateNotebookSection::new(notebook_section_repo.clone()),
             rename_notebook_section: RenameNotebookSection::new(notebook_section_repo.clone()),

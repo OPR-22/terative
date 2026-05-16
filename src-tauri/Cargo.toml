@@ -42,6 +42,7 @@ rand = "0.8"
 slug = "0.1"
 arc-swap = "1"
 zeroize = "1"
+downcast-rs = "1.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"

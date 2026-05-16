@@ -76,6 +76,7 @@ mod tests {
             percentage: dec!(21),
             tax_id_number: Some("BE123".into()),
             archived_at: None,
+            pending_events: crate::domain::events::EventBuffer::default(),
         };
         let dto: TaxDefinitionDto = (&domain).into();
         assert_eq!(dto.id, domain.id.0);

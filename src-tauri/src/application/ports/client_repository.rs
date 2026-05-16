@@ -20,7 +20,7 @@ pub trait ClientRepository: Send + Sync {
     /// (callers treat that as "client not found", same fallback as a
     /// `LEFT JOIN`). Includes archived clients — old invoices reference
     /// them and we still want to display the name.
-    fn names_for(
+    fn labels_for(
         &self,
         ids: &[ClientId],
     ) -> Result<HashMap<ClientId, String>, RepoError>;

@@ -83,6 +83,24 @@ export const commands = {
 	emailTestConnection: () => typedError<null, AppError>(__TAURI_INVOKE("email_test_connection")),
 	invoiceSend: (id: string) => typedError<InvoiceDto, AppError>(__TAURI_INVOKE("invoice_send", { id })),
 	emailLogListForClient: (clientId: string) => typedError<EmailLogDto[], AppError>(__TAURI_INVOKE("email_log_list_for_client", { clientId })),
+	/**
+	 *  Dashboard "Recent audit" card and the dedicated Audit page —
+	 *  newest-first across the whole org.
+	 */
+	auditPaginateRecent: (pagination: {
+	page?: number | null,
+	per_page?: number | null,
+} | null) => typedError<PageDto<AuditDto>, AppError>(__TAURI_INVOKE("audit_paginate_recent", { pagination })),
+	// Per-client audit tab — newest-first, scoped to one client.
+	auditPaginateForClient: (clientId: string, pagination: {
+	page?: number | null,
+	per_page?: number | null,
+} | null) => typedError<PageDto<AuditDto>, AppError>(__TAURI_INVOKE("audit_paginate_for_client", { clientId, pagination })),
+	// Per-invoice audit strip — chronological timeline for one invoice.
+	auditPaginateForInvoice: (invoiceId: string, pagination: {
+	page?: number | null,
+	per_page?: number | null,
+} | null) => typedError<PageDto<AuditDto>, AppError>(__TAURI_INVOKE("audit_paginate_for_invoice", { invoiceId, pagination })),
 	emailTemplateCreate: (input: NewEmailTemplateDto) => typedError<EmailTemplateDto, AppError>(__TAURI_INVOKE("email_template_create", { input })),
 	emailTemplateUpdate: (input: UpdateEmailTemplateDto) => typedError<EmailTemplateDto, AppError>(__TAURI_INVOKE("email_template_update", { input })),
 	emailTemplateDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("email_template_delete", { id })),
@@ -294,6 +312,22 @@ export type AppliedTaxDto = {
 	percentage: string,
 	tax_id_number: string | null,
 	computed_amount: MoneyDto,
+};
+
+export type AuditDto = {
+	id: string,
+	event_type: string,
+	entity_type: string,
+	entity_id: string | null,
+	client_id: string | null,
+	invoice_id: string | null,
+	/**
+	 *  Event-type-specific fields as a JSON string. Kept as a string (rather
+	 *  than a structured type) because the shape varies per `event_type`; the
+	 *  frontend `JSON.parse`s it and switches on `event_type`.
+	 */
+	metadata_json: string,
+	occurred_at: string,
 };
 
 export type BackupDto = {

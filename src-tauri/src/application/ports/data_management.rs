@@ -35,6 +35,16 @@ impl BackupKind {
             BackupKind::PreRestore | BackupKind::PreMigration => BackupScope::System,
         }
     }
+
+    /// Lowercase, stable identifier for logs / activity metadata.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            BackupKind::Manual => "manual",
+            BackupKind::Auto => "auto",
+            BackupKind::PreRestore => "prerestore",
+            BackupKind::PreMigration => "premigration",
+        }
+    }
 }
 
 /// One backup file on disk, with metadata parsed from its filename.

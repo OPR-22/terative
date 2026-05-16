@@ -12,12 +12,12 @@ appends without reshuffling other tiers.
 
 - [x] T1.01 Multi-organisation — add `org_id` across schema, repos, queries, use cases. Do before other tier-1 items.
 - [x] T1.02 Multi-currency — domain `Money`, per-invoice currency, FX, accounting roll-ups.
-- [ ] T1.03 Database encryption / password — SQLCipher via `rusqlite`, key derivation, unlock on org selection, backup/restore impact.
+- [x] T1.03 Database encryption / password — SQLCipher via `rusqlite`, key derivation, unlock on org selection, backup/restore impact.
 - [ ] T1.04 Activity history / audit log — `events` table written by use cases, covers invoices/clients/payments/backups.
 - [ ] T1.05 Invoice file storage — `year/month/<name>.pdf` layout, numbering reset to `000001`, client name in filename, migrate existing files.
 - [ ] T1.07 Global search — FTS5 index across clients, invoices, catalog items.
 - [ ] T1.08 App updates (like discord ? Like freetube ? apple/microsoft dev account required ?) 
-- [ ] T1.09 (optional) Families (parent is the client and child is under that parent)
+- [ ] T1.09 (optional) Families (parent is the client and child is under that parent) - think of a way or something.
 - [ ] T1.10 Tax groups (grouping up multiple taxes so it shows up as a single checkbox in UI + default group applied to invoice) 
 - [ ] T1.11 Cleanup/refactor of code, split command/queries, move ipc commands to interface, cleanup domains and imports...
 
@@ -59,6 +59,7 @@ appends without reshuffling other tiers.
 - [ ] T3.17 add sorting by invoice # and date 
 - [ ] T3.18 Smart save forms in memory (ex: so a user can click on a user profile and come back to the invoice without losing invoice entered data)
 - [ ] T3.19 in payments tab, period filter doesnt work, search neither.
+- [ ] T3.20 links on dashboard pages dont do what they should do (relance, view activity, see all ...)
 
 
 ## Tier 4 — Polish

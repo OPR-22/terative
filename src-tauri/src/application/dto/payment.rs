@@ -266,6 +266,7 @@ mod tests {
             }],
             notes: None,
             created_at: Utc::now(),
+            pending_events: crate::domain::events::EventBuffer::default(),
         };
         let dto: PaymentDto = (&domain).into();
         assert_eq!(dto.allocations.len(), 1);

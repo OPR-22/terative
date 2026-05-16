@@ -12,6 +12,7 @@
 //!   Use cases stay pure domain.
 
 pub mod accounting;
+pub mod audit;
 pub mod bookmark;
 pub mod catalog_item;
 pub mod client;
@@ -32,6 +33,7 @@ pub use accounting::{
     DerivedPaymentStatusDto, InvoicePaymentRowDto, RevenueBucketDto, RevenueByClientDto,
     RevenueByClientInputDto, RevenueByPeriodInputDto, RevenueGroupingDto,
 };
+pub use audit::AuditDto;
 pub use client::{
     ClientAddressDto, ClientAttributeValuesDto, ClientDto, ClientKindDto, ContactEntryDto,
     ListClientsQueryDto, NewClientDto, UpdateClientDto,

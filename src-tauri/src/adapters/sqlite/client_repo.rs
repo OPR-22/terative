@@ -79,6 +79,9 @@ fn row_to_bare_client(row: &Row<'_>) -> rusqlite::Result<Client> {
         ),
     };
     Ok(Client {
+        // A row loaded from SQLite has no pending events — they exist only
+        // for the lifetime of an in-memory mutation.
+        pending_events: crate::domain::events::EventBuffer::default(),
         id,
         kind,
         name: row.get("name")?,
@@ -438,7 +441,7 @@ impl ClientRepository for SqliteClientRepository {
         Ok(Page::new(out, total, &query.pagination))
     }
 
-    fn names_for(
+    fn labels_for(
         &self,
         ids: &[ClientId],
     ) -> Result<HashMap<ClientId, String>, RepoError> {

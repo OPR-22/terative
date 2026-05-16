@@ -1,9 +1,13 @@
 pub mod accounting_usecases;
+pub mod audit_handlers;
+pub mod audit_usecases;
 pub mod bookmark_usecases;
 pub mod catalog_item_usecases;
 pub mod client_usecases;
+pub mod data_usecases;
 pub mod dto;
 pub mod email_log_usecases;
+pub mod events;
 pub mod email_template_usecases;
 pub mod email_usecases;
 pub mod errors;

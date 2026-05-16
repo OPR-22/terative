@@ -322,6 +322,36 @@ CREATE INDEX idx_email_logs_client  ON email_logs(client_id);
 CREATE INDEX idx_email_logs_invoice ON email_logs(invoice_id);
 CREATE INDEX idx_email_logs_sent_at ON email_logs(sent_at);
 
+-- T1.04 — Audit log. Append-only projection of domain events, written by
+-- the AuditProjector handlers and read back by the dashboard feed, the
+-- per-client tab and the per-invoice strip.
+--
+-- `event_type` is the dotted DomainEvent::event_name (e.g. "invoice.finalized").
+-- `entity_type` / `entity_id` identify the event's *subject*.
+-- `client_id` / `invoice_id` are denormalised *scope pointers*: they make the
+-- per-client and per-invoice views single indexed lookups, and may differ from
+-- the subject (a payment's row carries the payment id in `entity_id` but still
+-- points at a `client_id`). FKs are ON DELETE SET NULL so a hard-deleted
+-- client/invoice leaves the audit row behind as a renderable tombstone —
+-- the human-readable bits live in `metadata_json`.
+CREATE TABLE audits (
+    id              TEXT PRIMARY KEY,
+    event_type      TEXT NOT NULL,
+    entity_type     TEXT NOT NULL,
+    entity_id       TEXT,
+    client_id       TEXT REFERENCES clients(id)  ON DELETE SET NULL,
+    invoice_id      TEXT REFERENCES invoices(id) ON DELETE SET NULL,
+    metadata_json   TEXT NOT NULL DEFAULT '{}',
+    occurred_at     TEXT NOT NULL
+);
+
+-- Dashboard feed: newest-first across the whole org.
+CREATE INDEX idx_audits_occurred_at ON audits(occurred_at DESC);
+-- Per-client tab: filter by client, newest first.
+CREATE INDEX idx_audits_client      ON audits(client_id, occurred_at DESC);
+-- Per-invoice strip: filter by invoice, ordered chronologically.
+CREATE INDEX idx_audits_invoice     ON audits(invoice_id, occurred_at);
+
 CREATE VIEW v_invoice_payment_status AS
 SELECT
     i.id,
