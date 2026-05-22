@@ -13,7 +13,7 @@ appends without reshuffling other tiers.
 - [x] T1.01 Multi-organisation — add `org_id` across schema, repos, queries, use cases. Do before other tier-1 items.
 - [x] T1.02 Multi-currency — domain `Money`, per-invoice currency, FX, accounting roll-ups.
 - [x] T1.03 Database encryption / password — SQLCipher via `rusqlite`, key derivation, unlock on org selection, backup/restore impact.
-- [ ] T1.04 Activity history / audit log — `events` table written by use cases, covers invoices/clients/payments/backups.
+- [x] T1.04 Activity history / audit log — `events` table written by use cases, covers invoices/clients/payments/backups.
 - [ ] T1.05 Invoice file storage — `year/month/<name>.pdf` layout, numbering reset to `000001`, client name in filename, migrate existing files.
 - [ ] T1.07 Global search — FTS5 index across clients, invoices, catalog items.
 - [ ] T1.08 App updates (like discord ? Like freetube ? apple/microsoft dev account required ?) 

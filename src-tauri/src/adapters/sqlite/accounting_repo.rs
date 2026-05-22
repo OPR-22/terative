@@ -601,6 +601,7 @@ mod tests {
                 date,
                 due_date,
                 line_items: vec![NewLineItem {
+                    id: None,
                     catalog_item_id: None,
                     description: "W".into(),
                     quantity: dec!(1),

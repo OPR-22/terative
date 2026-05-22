@@ -339,6 +339,7 @@ mod tests {
 
     fn email(value: &str, is_default: bool) -> NewContactEntry {
         NewContactEntry {
+            id: None,
             value: value.into(),
             label: None,
             is_default,

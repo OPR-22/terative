@@ -514,6 +514,7 @@ mod tests {
 
     fn email(value: &str, is_default: bool) -> NewContactEntry {
         NewContactEntry {
+            id: None,
             value: value.into(),
             label: None,
             is_default,
@@ -559,6 +560,7 @@ mod tests {
                 name: "Acme".into(),
                 emails: vec![email("a@x.com", false), email("b@x.com", true)],
                 phones: vec![NewContactEntry {
+                    id: None,
                     value: "555-0100".into(),
                     label: Some("Mobile".into()),
                     is_default: true,
@@ -584,6 +586,7 @@ mod tests {
             NewClient {
                 name: "Acme".into(),
                 addresses: vec![NewClientAddress {
+                    id: None,
                     label: Some("HQ".into()),
                     street: "1 Way".into(),
                     city: "Brussels".into(),
@@ -636,6 +639,7 @@ mod tests {
             NewClient {
                 name: "Acme".into(),
                 addresses: vec![NewClientAddress {
+                    id: None,
                     street: "Old St".into(),
                     city: "Brussels".into(),
                     postal_code: "1000".into(),
@@ -651,6 +655,7 @@ mod tests {
         .unwrap();
         repo.insert(&c).unwrap();
         c.replace_addresses(vec![NewClientAddress {
+            id: None,
             street: "New St".into(),
             city: "Brussels".into(),
             postal_code: "1000".into(),

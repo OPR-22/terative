@@ -41,6 +41,7 @@ import {
 import { ActivityList } from "../components/activity/ActivityList";
 
 interface LineRow {
+  id: string | null;
   /** Optional source catalog item. The line carries a snapshot of the
    *  price; we only keep the id for stats. */
   catalog_item_id: string | null;
@@ -113,6 +114,7 @@ function initialForm(
       currency: fallbackCurrency,
       lines: [
         {
+          id: null,
           catalog_item_id: null,
           description: "",
           quantity: "1",
@@ -130,6 +132,7 @@ function initialForm(
     notes: invoice.notes ?? "",
     currency: invoice.currency,
     lines: invoice.line_items.map((li) => ({
+      id: li.id,
       catalog_item_id: li.catalog_item_id,
       description: li.description,
       quantity: li.quantity,
@@ -365,6 +368,7 @@ export function InvoiceEditor() {
       lines: [
         ...f.lines,
         {
+          id: null,
           catalog_item_id: null,
           description: "",
           quantity: "1",
@@ -392,6 +396,7 @@ export function InvoiceEditor() {
     return form.lines
       .filter((li) => li.description.trim() !== "")
       .map((li) => ({
+        id: li.id,
         catalog_item_id: li.catalog_item_id,
         description: li.description,
         quantity: li.quantity || "1",

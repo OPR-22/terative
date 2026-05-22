@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::domain::aggregate_root::AggregateRoot;
 use crate::domain::events::client_events::{ClientArchived, ClientCreated, ClientUnarchived};
 use crate::domain::events::EventBuffer;
-use crate::domain::field_change::FieldChange;
+use crate::domain::field_change::{DiffableValue, FieldChange};
 use crate::domain::money::Currency;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -59,9 +59,47 @@ pub struct ContactEntry {
 
 #[derive(Debug, Clone, Default)]
 pub struct NewContactEntry {
+    /// Existing id when this entry is being edited in place; `None` when
+    /// the user just added a new row. Preserving the id across saves keeps
+    /// the audit log accurate (no false "list changed" diffs) and lets
+    /// downstream consumers reason about row identity over time.
+    pub id: Option<ContactEntryId>,
     pub value: String,
     pub label: Option<String>,
     pub is_default: bool,
+}
+
+impl DiffableValue for ContactEntry {
+    fn audit_key(&self) -> String {
+        self.id.0.to_string()
+    }
+    fn audit_label(&self) -> Option<String> {
+        // The contact's value is the most useful identifier in the audit row
+        // (the email itself, the phone number). Falls back to the user-typed
+        // label when value is somehow empty (validation prevents that).
+        Some(self.value.clone())
+    }
+    fn to_audit_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "value": self.value,
+            "label": self.label,
+            "is_default": self.is_default,
+        })
+    }
+    fn diff_against(&self, before: &Self) -> Vec<FieldChange> {
+        [
+            FieldChange::scalar("value", &before.value, &self.value),
+            FieldChange::opt("label", &before.label, &self.label),
+            FieldChange::scalar(
+                "is_default",
+                &before.is_default.to_string(),
+                &self.is_default.to_string(),
+            ),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
 }
 
 /// Whether this client is a natural person or a legal entity. Drives UI
@@ -171,6 +209,9 @@ impl ClientAddress {
 
 #[derive(Debug, Clone, Default)]
 pub struct NewClientAddress {
+    /// Existing id when this address is being edited in place; `None` when
+    /// the user just added a new row. See `NewContactEntry::id`.
+    pub id: Option<ClientAddressId>,
     pub label: Option<String>,
     pub street: String,
     pub apt_suite: Option<String>,
@@ -180,6 +221,67 @@ pub struct NewClientAddress {
     pub country: String,
     pub is_billing: bool,
     pub is_shipping: bool,
+}
+
+impl DiffableValue for ClientAddress {
+    fn audit_key(&self) -> String {
+        self.id.0.to_string()
+    }
+    fn audit_label(&self) -> Option<String> {
+        // Free-form label if set, else city as a sensible fallback so the
+        // audit row can disambiguate multiple addresses without forcing the
+        // user to label every one.
+        self.label
+            .clone()
+            .or_else(|| {
+                if self.city.is_empty() {
+                    None
+                } else {
+                    Some(self.city.clone())
+                }
+            })
+    }
+    fn to_audit_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "label": self.label,
+            "street": self.street,
+            "apt_suite": self.apt_suite,
+            "city": self.city,
+            "state_province": self.state_province,
+            "postal_code": self.postal_code,
+            "country": self.country,
+            "is_billing": self.is_billing,
+            "is_shipping": self.is_shipping,
+        })
+    }
+    fn diff_against(&self, before: &Self) -> Vec<FieldChange> {
+        [
+            FieldChange::opt("label", &before.label, &self.label),
+            FieldChange::scalar("street", &before.street, &self.street),
+            FieldChange::opt("apt_suite", &before.apt_suite, &self.apt_suite),
+            FieldChange::scalar("city", &before.city, &self.city),
+            FieldChange::opt(
+                "state_province",
+                &before.state_province,
+                &self.state_province,
+            ),
+            FieldChange::scalar("postal_code", &before.postal_code, &self.postal_code),
+            FieldChange::scalar("country", &before.country, &self.country),
+            FieldChange::scalar(
+                "is_billing",
+                &before.is_billing.to_string(),
+                &self.is_billing.to_string(),
+            ),
+            FieldChange::scalar(
+                "is_shipping",
+                &before.is_shipping.to_string(),
+                &self.is_shipping.to_string(),
+            ),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -258,13 +360,9 @@ impl AggregateRoot for Client {
                 before.default_currency.code(),
                 self.default_currency.code(),
             ),
-            // Contact entries and addresses have no stable identity (the user
-            // can edit any of them), so a count-only summary is the honest
-            // v1 — element-level diffs would require synthetic IDs the
-            // domain doesn't model today.
-            FieldChange::collection("emails", &before.emails, &self.emails),
-            FieldChange::collection("phones", &before.phones, &self.phones),
-            FieldChange::collection("addresses", &before.addresses, &self.addresses),
+            FieldChange::diffable_collection("emails", &before.emails, &self.emails),
+            FieldChange::diffable_collection("phones", &before.phones, &self.phones),
+            FieldChange::diffable_collection("addresses", &before.addresses, &self.addresses),
         ]
         .into_iter()
         .flatten()
@@ -441,7 +539,7 @@ fn sanitize_contacts(input: Vec<NewContactEntry>) -> Result<Vec<ContactEntry>, C
             return Err(ClientError::EmptyContactValue);
         }
         out.push(ContactEntry {
-            id: ContactEntryId::new(),
+            id: entry.id.unwrap_or_else(ContactEntryId::new),
             value,
             label: entry.label.and_then(non_empty),
             is_default: entry.is_default,
@@ -507,7 +605,7 @@ fn sanitize_addresses(
             return Err(ClientError::EmptyAddressCountry);
         }
         out.push(ClientAddress {
-            id: ClientAddressId::new(),
+            id: a.id.unwrap_or_else(ClientAddressId::new),
             label: a.label.and_then(non_empty),
             street,
             apt_suite: a.apt_suite.and_then(non_empty),
@@ -563,6 +661,7 @@ mod tests {
 
     fn new_email(value: &str, is_default: bool) -> NewContactEntry {
         NewContactEntry {
+            id: None,
             value: value.into(),
             label: None,
             is_default,
@@ -881,6 +980,7 @@ mod tests {
 
     fn new_address(street: &str, billing: bool, shipping: bool) -> NewClientAddress {
         NewClientAddress {
+            id: None,
             label: None,
             street: street.into(),
             apt_suite: None,
@@ -1087,6 +1187,7 @@ mod tests {
         after.default_currency = Currency::Usd;               // scalar (enum code)
         after
             .replace_emails(vec![NewContactEntry {
+                id: None,
                 value: "billing@acme.example".into(),
                 label: None,
                 is_default: true,
@@ -1108,14 +1209,16 @@ mod tests {
         assert!(!fields.contains(&"date_of_birth"));
         assert!(!fields.contains(&"language"));
 
-        // Email collection diff: count went 0 → 1.
+        // Email collection diff: one row added (0 → 1 entries).
         let emails = changes.iter().find(|c| c.field() == "emails").unwrap();
         match emails {
-            FieldChange::Collection { from_count, to_count, .. } => {
-                assert_eq!(*from_count, 0);
-                assert_eq!(*to_count, 1);
+            FieldChange::IndexedCollection { added, removed, changed, .. } => {
+                assert_eq!(added.len(), 1, "the new email is reported as added");
+                assert!(removed.is_empty());
+                assert!(changed.is_empty());
+                assert_eq!(added[0].label.as_deref(), Some("billing@acme.example"));
             }
-            _ => panic!("expected Collection for emails"),
+            _ => panic!("expected IndexedCollection for emails"),
         }
     }
 }

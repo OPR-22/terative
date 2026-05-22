@@ -36,7 +36,7 @@ use crate::adapters::{
 use crate::application::accounting_usecases::AccountingService;
 use crate::application::audit_handlers::{register_all, AuditHandlerContext};
 use crate::application::audit_usecases::{
-    PaginateAuditForClient, PaginateAuditForInvoice, PaginateRecentAudit,
+    CleanupAudits, PaginateAuditForClient, PaginateAuditForInvoice, PaginateRecentAudit,
 };
 use crate::application::bookmark_usecases::{
     CreateBookmark, DeleteBookmark, ListBookmarks, ReorderBookmarks, UpdateBookmark,
@@ -173,6 +173,7 @@ pub struct OrgServices {
     pub paginate_recent_audit: PaginateRecentAudit,
     pub paginate_audit_for_client: PaginateAuditForClient,
     pub paginate_audit_for_invoice: PaginateAuditForInvoice,
+    pub cleanup_audits: CleanupAudits,
 
     pub create_notebook_section: CreateNotebookSection,
     pub rename_notebook_section: RenameNotebookSection,
@@ -435,7 +436,8 @@ impl OrgServices {
 
             paginate_recent_audit: PaginateRecentAudit::new(audit_repo.clone()),
             paginate_audit_for_client: PaginateAuditForClient::new(audit_repo.clone()),
-            paginate_audit_for_invoice: PaginateAuditForInvoice::new(audit_repo),
+            paginate_audit_for_invoice: PaginateAuditForInvoice::new(audit_repo.clone()),
+            cleanup_audits: CleanupAudits::new(audit_repo),
 
             create_notebook_section: CreateNotebookSection::new(notebook_section_repo.clone()),
             rename_notebook_section: RenameNotebookSection::new(notebook_section_repo.clone()),

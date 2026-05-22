@@ -282,16 +282,19 @@ fn sample_client() -> Client {
         NewClient {
             name: "Sample Client".into(),
             emails: vec![NewContactEntry {
+                id: None,
                 value: "client@example.com".into(),
                 label: None,
                 is_default: true,
             }],
             phones: vec![NewContactEntry {
+                id: None,
                 value: "+32 1 234 5678".into(),
                 label: None,
                 is_default: true,
             }],
             addresses: vec![NewClientAddress {
+                id: None,
                 street: "123 Example St".into(),
                 city: "City".into(),
                 postal_code: "1000".into(),

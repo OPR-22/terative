@@ -2,6 +2,7 @@ use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::domain::catalog_item::CatalogItemId;
+use crate::domain::field_change::{money_to_value, DiffableValue, FieldChange};
 use crate::domain::money::{Money, MoneyError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -54,6 +55,11 @@ pub enum LineItemError {
 
 #[derive(Debug, Clone)]
 pub struct NewLineItem {
+    /// Existing id when editing a draft invoice in place; `None` for newly
+    /// added rows. Preserving the id across saves keeps the audit log
+    /// accurate (no false "list changed" diffs) and lets per-line
+    /// references survive edits.
+    pub id: Option<LineItemId>,
     pub catalog_item_id: Option<CatalogItemId>,
     pub description: String,
     pub quantity: Decimal,
@@ -74,13 +80,52 @@ impl LineItem {
         }
         let total = compute_total(input.quantity, input.unit_price)?;
         Ok(Self {
-            id: LineItemId::new(),
+            id: input.id.unwrap_or_else(LineItemId::new),
             catalog_item_id: input.catalog_item_id,
             description,
             quantity: input.quantity,
             unit_price: input.unit_price,
             total,
         })
+    }
+}
+
+impl DiffableValue for LineItem {
+    fn audit_key(&self) -> String {
+        self.id.0.to_string()
+    }
+    fn audit_label(&self) -> Option<String> {
+        // Description is what the user sees on the invoice for this line;
+        // makes per-line audit rows immediately readable ("Widget: quantity
+        // 3 → 5" rather than "uuid abc-123: quantity 3 → 5").
+        if self.description.is_empty() {
+            None
+        } else {
+            Some(self.description.clone())
+        }
+    }
+    fn to_audit_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "catalog_item_id": self.catalog_item_id.map(|c| c.0.to_string()),
+            "description": self.description,
+            "quantity": self.quantity.to_string(),
+            "unit_price": money_to_value(&self.unit_price),
+            "total": money_to_value(&self.total),
+        })
+    }
+    fn diff_against(&self, before: &Self) -> Vec<FieldChange> {
+        // catalog_item_id intentionally omitted from the per-line sub-diff:
+        // it's a stats-only back-link, not user-facing — surfacing it in the
+        // audit feed would be noise.
+        [
+            FieldChange::scalar("description", &before.description, &self.description),
+            FieldChange::number("quantity", &before.quantity, &self.quantity),
+            FieldChange::money("unit_price", &before.unit_price, &self.unit_price),
+            FieldChange::money("total", &before.total, &self.total),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
     }
 }
 
@@ -103,6 +148,7 @@ mod tests {
 
     fn new_li(unit_price: Money, qty: Decimal) -> NewLineItem {
         NewLineItem {
+            id: None,
             catalog_item_id: None,
             description: "Widget".into(),
             quantity: qty,
@@ -127,6 +173,7 @@ mod tests {
     fn create_preserves_catalog_item_id() {
         let cat_id = CatalogItemId::new();
         let li = LineItem::create(NewLineItem {
+            id: None,
             catalog_item_id: Some(cat_id),
             description: "From catalog".into(),
             quantity: dec!(1),

@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use tauri::State;
 use uuid::Uuid;
 
@@ -37,7 +38,7 @@ pub fn audit_paginate_for_client(
     Ok(page.map(|a| AuditDto::from(&a)).into())
 }
 
-/// Per-invoice audit strip — chronological timeline for one invoice.
+/// Per-invoice audit strip — newest-first timeline for one invoice.
 #[tauri::command]
 #[specta::specta]
 pub fn audit_paginate_for_invoice(
@@ -50,4 +51,17 @@ pub fn audit_paginate_for_invoice(
         .paginate_audit_for_invoice
         .execute(InvoiceId(invoice_id), pagination.into())?;
     Ok(page.map(|a| AuditDto::from(&a)).into())
+}
+
+/// Delete every audit row older than `cutoff`. Returns the number of rows
+/// removed. The FE constrains `cutoff` to "today minus N years" for some
+/// `N ∈ 1..=5` and warns before invoking — this command itself is
+/// unrestricted (single-user local app).
+#[tauri::command]
+#[specta::specta]
+pub fn audit_cleanup_older_than(
+    state: State<'_, AppState>,
+    cutoff: DateTime<Utc>,
+) -> Result<u64, AppError> {
+    state.org()?.cleanup_audits.execute(cutoff)
 }

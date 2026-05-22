@@ -27,12 +27,17 @@ export type FieldChange =
 export type MoneyValue = { currency: string; amount: string };
 /** `label` is a human-friendly rendering of `key` (e.g. "#1001" for an
  *  invoice UUID). Optional — keys that are already user-readable (like
- *  currency codes) come back with `label` undefined. */
+ *  currency codes) come back with `label` undefined.
+ *  `changes` is set on `changed` entries emitted by the backend's
+ *  `diffable_collection` — when present, it carries the per-field sub-diff
+ *  of the element (recursive `FieldChange` list) instead of the legacy
+ *  whole-element `from`/`to` snapshot. */
 export type IndexedDelta = {
   key: string;
   label?: string;
   from?: unknown;
   to?: unknown;
+  changes?: FieldChange[];
 };
 
 /** Best-effort parse of an audit row's `metadata_json` into a `changes` list. */
@@ -118,15 +123,40 @@ function ChangeLine({ change }: { change: FieldChange }) {
               </li>
             ))}
             {change.changed.map((d) => (
-              <li
-                key={`chg-${d.key}`}
-                className="flex items-center gap-1.5 text-ink-2"
-              >
-                <PencilLine size={11} strokeWidth={1.5} />
-                <span className="font-medium">{deltaLabel(d)}</span>
-                <span className="text-ink-3">{fmtAny(d.from)}</span>
-                <ArrowRight size={10} strokeWidth={1.5} className="text-ink-3" />
-                <span>{fmtAny(d.to)}</span>
+              <li key={`chg-${d.key}`} className="text-ink-2">
+                <div className="flex items-center gap-1.5">
+                  <PencilLine size={11} strokeWidth={1.5} />
+                  <span className="font-medium">{deltaLabel(d)}</span>
+                  {/* Legacy whole-element from→to (e.g. catalog prices keyed
+                      by currency) — only shown when the backend didn't emit
+                      a per-field sub-diff. */}
+                  {!d.changes ? (
+                    <>
+                      <span className="text-ink-3">{fmtAny(d.from)}</span>
+                      <ArrowRight
+                        size={10}
+                        strokeWidth={1.5}
+                        className="text-ink-3"
+                      />
+                      <span>{fmtAny(d.to)}</span>
+                    </>
+                  ) : null}
+                </div>
+                {/* Recursive per-field sub-diff. Renders the element's own
+                    diff_against() result — including any nested
+                    IndexedCollections — using this same component. */}
+                {d.changes && d.changes.length > 0 ? (
+                  <ul className="mt-1 ml-5 space-y-0.5 border-l border-line-soft pl-3">
+                    {d.changes.map((sub, i) => (
+                      <li
+                        key={`${d.key}-sub-${sub.field}-${i}`}
+                        className="text-[11px] text-ink-2"
+                      >
+                        <ChangeLine change={sub} />
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </li>
             ))}
           </ul>

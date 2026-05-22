@@ -458,6 +458,7 @@ mod tests {
                 date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
                 due_date: None,
                 line_items: vec![NewLineItem {
+                    id: None,
                     catalog_item_id: None,
                     description: "line".into(),
                     quantity: Decimal::from(1),
@@ -752,6 +753,7 @@ mod tests {
                 date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
                 due_date: None,
                 line_items: vec![NewLineItem {
+                    id: None,
                     catalog_item_id: None,
                     description: "x".into(),
                     quantity: Decimal::from(1),

@@ -163,11 +163,13 @@ impl AuditRepository for SqliteAuditRepository {
             .map_err(map_err)? as u64;
         let limit = params.per_page as u64;
         let offset = params.offset();
-        // Oldest first: the invoice strip renders a top-to-bottom timeline.
+        // Newest first — consistent with `paginate_recent` /
+        // `paginate_by_client`. The timeline UI renders most-recent at the
+        // top across every audit surface.
         let sql = format!(
             "SELECT {SELECT_COLS} FROM audits \
              WHERE invoice_id = ?1 \
-             ORDER BY occurred_at ASC, id ASC LIMIT {limit} OFFSET {offset}",
+             ORDER BY occurred_at DESC, id DESC LIMIT {limit} OFFSET {offset}",
         );
         let mut stmt = conn.prepare(&sql).map_err(map_err)?;
         let rows = stmt
@@ -178,6 +180,17 @@ impl AuditRepository for SqliteAuditRepository {
             out.push(r.map_err(map_err)?);
         }
         Ok(Page::new(out, total, params))
+    }
+
+    fn delete_older_than(&self, cutoff: DateTime<Utc>) -> Result<u64, RepoError> {
+        let conn = self.db.lock();
+        let affected = conn
+            .execute(
+                "DELETE FROM audits WHERE occurred_at < ?1",
+                params![cutoff.to_rfc3339()],
+            )
+            .map_err(map_err)?;
+        Ok(affected as u64)
     }
 }
 
@@ -299,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn paginate_by_invoice_orders_chronologically() {
+    fn paginate_by_invoice_orders_newest_first() {
         let db = open_memory();
         let clients = SqliteClientRepository::new(db.clone());
         let repo = SqliteAuditRepository::new(db.clone());
@@ -322,8 +335,8 @@ mod tests {
         let rows = repo.paginate_by_invoice(invoice_id, &page(50)).unwrap();
         assert_eq!(rows.total, 2);
         assert_eq!(rows.data.len(), 2);
-        assert_eq!(rows.data[0].event_type, "i.early");
-        assert_eq!(rows.data[1].event_type, "i.late");
+        assert_eq!(rows.data[0].event_type, "i.late");
+        assert_eq!(rows.data[1].event_type, "i.early");
     }
 
     #[test]

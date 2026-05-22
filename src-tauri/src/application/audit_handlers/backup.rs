@@ -33,6 +33,10 @@ impl EventHandler<BackupCreated> for BackupCreatedAuditHandler {
                 metadata_json: json!({
                     "path": event.path,
                     "kind": event.kind.as_str(),
+                    // No entity scope for a backup; use the kind ("manual" /
+                    // "auto") as a uniform `entity_label` so the FE renderer
+                    // can treat backup rows the same as everything else.
+                    "entity_label": event.kind.as_str(),
                 })
                 .to_string(),
                 occurred_at: event.occurred_at(),

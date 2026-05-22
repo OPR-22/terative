@@ -54,6 +54,7 @@ fn use_cases_run_through_orgservices_land_in_the_activity_log() {
             date: NaiveDate::from_ymd_opt(2026, 5, 15).unwrap(),
             due_date: None,
             line_items: vec![NewLineItem {
+                id: None,
                 catalog_item_id: None,
                 description: "Consulting".into(),
                 quantity: Decimal::from(1),

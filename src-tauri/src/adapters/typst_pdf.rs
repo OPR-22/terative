@@ -388,16 +388,19 @@ mod tests {
             NewClient {
                 name: "Acme Corp".into(),
                 emails: vec![NewContactEntry {
+                    id: None,
                     value: "billing@acme.example".into(),
                     label: None,
                     is_default: true,
                 }],
                 phones: vec![NewContactEntry {
+                    id: None,
                     value: "+32 1 234 5678".into(),
                     label: None,
                     is_default: true,
                 }],
                 addresses: vec![NewClientAddress {
+                    id: None,
                     street: "123 Main St".into(),
                     city: "City".into(),
                     postal_code: "1000".into(),

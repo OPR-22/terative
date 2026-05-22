@@ -5,7 +5,7 @@ use crate::domain::aggregate_root::AggregateRoot;
 use crate::domain::client::ClientId;
 use crate::domain::events::payment_events::{PaymentRecorded, PaymentUpdated};
 use crate::domain::events::EventBuffer;
-use crate::domain::field_change::{money_to_value, FieldChange};
+use crate::domain::field_change::{money_to_value, DiffableValue, FieldChange};
 use crate::domain::invoice::InvoiceId;
 use crate::domain::money::{Currency, Money, MoneyError};
 
@@ -73,6 +73,27 @@ pub struct PaymentAllocation {
     pub amount: Money,
 }
 
+impl DiffableValue for PaymentAllocation {
+    fn audit_key(&self) -> String {
+        // Domain forbids duplicate invoice_id within a single payment, so
+        // it is a stable per-element identity. The audit handler enriches
+        // the label post-hoc with the invoice number (e.g. `"#1001"`)
+        // since it needs a repo to resolve.
+        self.invoice_id.to_string()
+    }
+    fn to_audit_json(&self) -> serde_json::Value {
+        money_to_value(&self.amount)
+    }
+    fn diff_against(&self, before: &Self) -> Vec<FieldChange> {
+        // Only `amount` can change in place — `invoice_id` is the identity
+        // key, so a different invoice_id means a different row entirely
+        // (handled by added/removed, not changed).
+        FieldChange::money("amount", &before.amount, &self.amount)
+            .into_iter()
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Payment {
     pub id: PaymentId,
@@ -109,15 +130,15 @@ impl AggregateRoot for Payment {
             ),
             FieldChange::opt("reference", &before.reference, &self.reference),
             FieldChange::opt("notes", &before.notes, &self.notes),
-            // Allocations are uniquely identified by `invoice_id` (domain
-            // forbids duplicates), so we can do an element-level diff:
-            // per-invoice amounts surface added / removed / changed.
-            FieldChange::indexed_collection(
+            // Allocations: per-element diff via `DiffableValue` keyed by
+            // `invoice_id`. Changed entries carry a `Money` sub-diff
+            // (`amount: €50 → €75`); added/removed entries carry the full
+            // Money payload. Audit handler enriches each delta's `label`
+            // with the resolved invoice number (e.g. `"#1001"`).
+            FieldChange::diffable_collection(
                 "allocations",
                 &before.allocations,
                 &self.allocations,
-                |a: &PaymentAllocation| a.invoice_id,
-                |a: &PaymentAllocation| money_to_value(&a.amount),
             ),
         ]
         .into_iter()

@@ -456,6 +456,11 @@
   "activity": {
     "title": "Activity",
     "empty": "No activity yet.",
+    "open_client": "Open client",
+    "open_invoice": "Open invoice",
+    "load_more": "Load more",
+    "events_count_one": "{{count}} event",
+    "events_count_other": "{{count}} events",
     "event": {
       "client_created": "New client — {{entity_label}}",
       "client_updated": "Client updated — {{entity_label}}",
@@ -480,6 +485,16 @@
   "audit": {
     "no_changes": "No field changes recorded.",
     "entries_suffix": "entries",
+    "cleanup": {
+      "prompt": "Delete entries older than",
+      "years_one": "{{count}} year",
+      "years_other": "{{count}} years",
+      "action": "Clean up",
+      "confirm_title": "Delete old activity?",
+      "confirm_body": "This permanently deletes every activity entry older than {{count}} years. This action cannot be undone — type \"delete\" to confirm.",
+      "success_one": "{{count}} entry deleted.",
+      "success_other": "{{count}} entries deleted."
+    },
     "field": {
       "name": "Name",
       "kind": "Type",
@@ -514,7 +529,23 @@
       "taxes_applied": "Taxes applied",
       "amount": "Amount",
       "method": "Method",
-      "allocations": "Allocations"
+      "allocations": "Allocations",
+      "value": "Value",
+      "label": "Label",
+      "is_default": "Default",
+      "street": "Street",
+      "apt_suite": "Apt / Suite",
+      "city": "City",
+      "state_province": "State / Province",
+      "postal_code": "Postal code",
+      "country": "Country",
+      "is_billing": "Billing",
+      "is_shipping": "Shipping",
+      "description": "Description",
+      "quantity": "Quantity",
+      "unit_price": "Unit price",
+      "tax_name": "Tax name",
+      "computed_amount": "Computed amount"
     }
   },
   "payments": {

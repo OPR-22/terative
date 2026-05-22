@@ -453,6 +453,11 @@
   "activity": {
     "title": "Activité",
     "empty": "Aucune activité pour le moment.",
+    "open_client": "Ouvrir le client",
+    "open_invoice": "Ouvrir la facture",
+    "load_more": "Charger plus",
+    "events_count_one": "{{count}} événement",
+    "events_count_other": "{{count}} événements",
     "event": {
       "client_created": "Nouveau client — {{entity_label}}",
       "client_updated": "Client modifié — {{entity_label}}",
@@ -477,6 +482,16 @@
   "audit": {
     "no_changes": "Aucun changement de champ enregistré.",
     "entries_suffix": "entrées",
+    "cleanup": {
+      "prompt": "Supprimer les entrées de plus de",
+      "years_one": "{{count}} an",
+      "years_other": "{{count}} ans",
+      "action": "Nettoyer",
+      "confirm_title": "Supprimer l'historique ancien ?",
+      "confirm_body": "Cette action supprime définitivement toute entrée d'activité de plus de {{count}} ans. Cette opération est irréversible — tapez « supprimer » pour confirmer.",
+      "success_one": "{{count}} entrée supprimée.",
+      "success_other": "{{count}} entrées supprimées."
+    },
     "field": {
       "name": "Nom",
       "kind": "Type",
@@ -511,7 +526,23 @@
       "taxes_applied": "Taxes appliquées",
       "amount": "Montant",
       "method": "Méthode",
-      "allocations": "Allocations"
+      "allocations": "Allocations",
+      "value": "Valeur",
+      "label": "Libellé",
+      "is_default": "Par défaut",
+      "street": "Rue",
+      "apt_suite": "Appartement / Suite",
+      "city": "Ville",
+      "state_province": "État / Province",
+      "postal_code": "Code postal",
+      "country": "Pays",
+      "is_billing": "Facturation",
+      "is_shipping": "Livraison",
+      "description": "Description",
+      "quantity": "Quantité",
+      "unit_price": "Prix unitaire",
+      "tax_name": "Nom de la taxe",
+      "computed_amount": "Montant calculé"
     }
   },
   "payments": {

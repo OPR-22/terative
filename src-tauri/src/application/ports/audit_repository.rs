@@ -1,3 +1,5 @@
+use chrono::{DateTime, Utc};
+
 use crate::application::ports::{Page, PaginationParams};
 use crate::application::RepoError;
 use crate::domain::audit::Audit;
@@ -23,11 +25,17 @@ pub trait AuditRepository: Send + Sync {
         params: &PaginationParams,
     ) -> Result<Page<Audit>, RepoError>;
 
-    /// Audit scoped to one invoice, oldest first (timeline order).
-    /// Powers the per-invoice audit strip.
+    /// Audit scoped to one invoice, newest first — consistent with the
+    /// other audit feeds. Powers the per-invoice audit strip.
     fn paginate_by_invoice(
         &self,
         invoice_id: InvoiceId,
         params: &PaginationParams,
     ) -> Result<Page<Audit>, RepoError>;
+
+    /// Delete every audit row whose `occurred_at < cutoff`. Returns the
+    /// number of rows removed. Used by the manual "clean up old activity"
+    /// settings affordance; the FE constrains the cutoff to "today minus
+    /// N years" for some `N` in 1..=5.
+    fn delete_older_than(&self, cutoff: DateTime<Utc>) -> Result<u64, RepoError>;
 }

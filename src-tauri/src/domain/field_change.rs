@@ -74,10 +74,22 @@ pub struct IndexedDelta {
     pub key: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// Full element payload as JSON. Populated for `added` (when only `to`
+    /// is set) and `removed` (when only `from` is set). For `changed`
+    /// entries produced by [`FieldChange::diffable_collection`], this is
+    /// left `None` — the per-field sub-diff lives in `changes` instead.
+    /// Closure-based [`FieldChange::indexed_collection`] still uses
+    /// from+to here for `changed` entries (catalog prices, etc.).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<Value>,
+    /// Recursive per-field sub-diff. Populated on `changed` entries
+    /// emitted by [`FieldChange::diffable_collection`]; each entry's
+    /// inner [`FieldChange`]s may themselves include nested
+    /// `IndexedCollection`s for arbitrarily deep value-object trees.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub changes: Option<Vec<FieldChange>>,
 }
 
 /// Money rendered for the audit payload: ISO currency code plus the amount
@@ -264,6 +276,7 @@ impl FieldChange {
                     label: None,
                     from: Some(value_of(prev)),
                     to: Some(value_of(t)),
+                    changes: None,
                 }),
                 Some(_) => {} // unchanged — omit
                 None => added.push(IndexedDelta {
@@ -271,6 +284,7 @@ impl FieldChange {
                     label: None,
                     from: None,
                     to: Some(value_of(t)),
+                    changes: None,
                 }),
             }
         }
@@ -282,6 +296,7 @@ impl FieldChange {
                     label: None,
                     from: Some(value_of(f)),
                     to: None,
+                    changes: None,
                 });
             }
         }
@@ -304,6 +319,144 @@ impl FieldChange {
 /// emits inside its variant.
 pub fn money_to_value(m: &Money) -> Value {
     serde_json::to_value(MoneyValue::from_money(m)).unwrap_or(Value::Null)
+}
+
+/// Implemented by value-object collection elements (line items, contact
+/// entries, addresses, allocations, …) so they can be diffed recursively
+/// by [`FieldChange::diffable_collection`]. Each element supplies:
+///
+/// - `audit_key` — stable identity for matching elements across before/after
+///   (typically the entity's UUID for entities with one, or a stable content
+///   key like ISO currency code for value-keyed lists).
+/// - `audit_label` — optional human-readable name surfaced in the audit row
+///   (e.g. the email value, an address city, the line item description).
+/// - `to_audit_json` — full element payload for `added` / `removed` entries.
+///   Not used for `changed` (the per-field sub-diff in `changes` is richer).
+/// - `diff_against` — per-field [`FieldChange`] list comparing self vs. an
+///   older copy of the same element. May itself emit nested
+///   `IndexedCollection`s, enabling arbitrarily deep recursion.
+pub trait DiffableValue: PartialEq {
+    fn audit_key(&self) -> String;
+    fn audit_label(&self) -> Option<String> {
+        None
+    }
+    fn to_audit_json(&self) -> Value;
+    fn diff_against(&self, before: &Self) -> Vec<FieldChange>;
+}
+
+impl FieldChange {
+    /// Element-level recursive diff for a `Vec<T>` of value objects. Each
+    /// `changed` entry carries its own [`FieldChange`] list (the element's
+    /// `diff_against` result), so the frontend can render per-sub-field
+    /// changes instead of dumping the whole row. Use this for line items,
+    /// contact entries, addresses, allocations — anything that has stable
+    /// identity AND meaningful per-field deltas.
+    ///
+    /// Returns `None` when nothing was added, removed, or changed.
+    pub fn diffable_collection<T: DiffableValue>(
+        field: &'static str,
+        from: &[T],
+        to: &[T],
+    ) -> Option<Self> {
+        let mut added: Vec<IndexedDelta> = Vec::new();
+        let mut removed: Vec<IndexedDelta> = Vec::new();
+        let mut changed: Vec<IndexedDelta> = Vec::new();
+
+        for t in to {
+            let key = t.audit_key();
+            match from.iter().find(|f| f.audit_key() == key) {
+                Some(prev) if prev != t => {
+                    let sub = t.diff_against(prev);
+                    if !sub.is_empty() {
+                        changed.push(IndexedDelta {
+                            key,
+                            label: t.audit_label(),
+                            from: None,
+                            to: None,
+                            changes: Some(sub),
+                        });
+                    }
+                }
+                Some(_) => {} // unchanged — omit
+                None => added.push(IndexedDelta {
+                    key,
+                    label: t.audit_label(),
+                    from: None,
+                    to: Some(t.to_audit_json()),
+                    changes: None,
+                }),
+            }
+        }
+        for f in from {
+            let key = f.audit_key();
+            if !to.iter().any(|t| t.audit_key() == key) {
+                removed.push(IndexedDelta {
+                    key,
+                    label: f.audit_label(),
+                    from: Some(f.to_audit_json()),
+                    to: None,
+                    changes: None,
+                });
+            }
+        }
+
+        if added.is_empty() && removed.is_empty() && changed.is_empty() {
+            None
+        } else {
+            Some(Self::IndexedCollection {
+                field,
+                added,
+                removed,
+                changed,
+            })
+        }
+    }
+
+    /// Element-level diff for a `Vec<String>`. Each element is its own key
+    /// (the string itself), so there is no `changed` bucket — only added
+    /// and removed strings. Use for tag-style lists. Order-insensitive.
+    pub fn string_collection(
+        field: &'static str,
+        from: &[String],
+        to: &[String],
+    ) -> Option<Self> {
+        let mut added: Vec<IndexedDelta> = Vec::new();
+        let mut removed: Vec<IndexedDelta> = Vec::new();
+
+        for s in to {
+            if !from.iter().any(|f| f == s) {
+                added.push(IndexedDelta {
+                    key: s.clone(),
+                    label: None,
+                    from: None,
+                    to: Some(Value::String(s.clone())),
+                    changes: None,
+                });
+            }
+        }
+        for s in from {
+            if !to.iter().any(|t| t == s) {
+                removed.push(IndexedDelta {
+                    key: s.clone(),
+                    label: None,
+                    from: Some(Value::String(s.clone())),
+                    to: None,
+                    changes: None,
+                });
+            }
+        }
+
+        if added.is_empty() && removed.is_empty() {
+            None
+        } else {
+            Some(Self::IndexedCollection {
+                field,
+                added,
+                removed,
+                changed: vec![],
+            })
+        }
+    }
 }
 
 fn opt_to_value<T: ToString>(opt: &Option<T>) -> Value {
@@ -568,6 +721,114 @@ mod tests {
         assert_eq!(json["removed"].as_array().unwrap().len(), 0);
         assert_eq!(json["changed"][0]["key"], "EUR");
         assert_eq!(json["changed"][0]["from"]["amount"], "100.00");
+    }
+
+    #[test]
+    fn diffable_collection_emits_recursive_sub_diff_on_changed() {
+        #[derive(Debug, Clone, PartialEq)]
+        struct Row {
+            id: u32,
+            name: String,
+            count: rust_decimal::Decimal,
+        }
+        impl DiffableValue for Row {
+            fn audit_key(&self) -> String {
+                self.id.to_string()
+            }
+            fn audit_label(&self) -> Option<String> {
+                Some(self.name.clone())
+            }
+            fn to_audit_json(&self) -> Value {
+                serde_json::json!({ "name": self.name, "count": self.count.to_string() })
+            }
+            fn diff_against(&self, before: &Self) -> Vec<FieldChange> {
+                [
+                    FieldChange::scalar("name", &before.name, &self.name),
+                    FieldChange::number("count", &before.count, &self.count),
+                ]
+                .into_iter()
+                .flatten()
+                .collect()
+            }
+        }
+
+        use rust_decimal_macros::dec;
+        let from = vec![
+            Row { id: 1, name: "Alpha".into(), count: dec!(2) },
+            Row { id: 2, name: "Bravo".into(), count: dec!(5) },
+            Row { id: 3, name: "Charlie".into(), count: dec!(1) },
+        ];
+        let to = vec![
+            Row { id: 1, name: "Alpha".into(), count: dec!(2) }, // unchanged
+            Row { id: 2, name: "Bravo".into(), count: dec!(7) }, // count changed
+            Row { id: 4, name: "Delta".into(), count: dec!(3) }, // added (3 removed)
+        ];
+
+        let diff = FieldChange::diffable_collection("rows", &from, &to).unwrap();
+        match diff {
+            FieldChange::IndexedCollection { added, removed, changed, .. } => {
+                assert_eq!(added.len(), 1);
+                assert_eq!(added[0].key, "4");
+                assert_eq!(added[0].label.as_deref(), Some("Delta"));
+                assert!(added[0].changes.is_none());
+                assert_eq!(added[0].to.as_ref().unwrap()["name"], "Delta");
+
+                assert_eq!(removed.len(), 1);
+                assert_eq!(removed[0].key, "3");
+                assert!(removed[0].changes.is_none());
+
+                assert_eq!(changed.len(), 1);
+                assert_eq!(changed[0].key, "2");
+                assert_eq!(changed[0].label.as_deref(), Some("Bravo"));
+                assert!(changed[0].from.is_none(), "changed entries skip from/to");
+                let sub = changed[0].changes.as_ref().unwrap();
+                assert_eq!(sub.len(), 1, "only count changed, not name");
+                assert_eq!(sub[0].field(), "count");
+            }
+            _ => panic!("expected IndexedCollection"),
+        }
+    }
+
+    #[test]
+    fn diffable_collection_unchanged_returns_none() {
+        #[derive(Debug, Clone, PartialEq)]
+        struct Row { id: u32, value: String }
+        impl DiffableValue for Row {
+            fn audit_key(&self) -> String { self.id.to_string() }
+            fn to_audit_json(&self) -> Value { serde_json::json!({ "value": self.value }) }
+            fn diff_against(&self, before: &Self) -> Vec<FieldChange> {
+                FieldChange::scalar("value", &before.value, &self.value).into_iter().collect()
+            }
+        }
+        let rows = vec![Row { id: 1, value: "a".into() }];
+        assert!(FieldChange::diffable_collection("rows", &rows, &rows).is_none());
+    }
+
+    #[test]
+    fn string_collection_reports_added_and_removed_only() {
+        let from: Vec<String> = vec!["a".into(), "b".into(), "c".into()];
+        let to: Vec<String> = vec!["a".into(), "c".into(), "d".into()];
+        let diff = FieldChange::string_collection("tags", &from, &to).unwrap();
+        match diff {
+            FieldChange::IndexedCollection { added, removed, changed, .. } => {
+                assert_eq!(added.len(), 1);
+                assert_eq!(added[0].key, "d");
+                assert_eq!(added[0].to.as_ref().unwrap(), &Value::String("d".into()));
+                assert_eq!(removed.len(), 1);
+                assert_eq!(removed[0].key, "b");
+                assert!(changed.is_empty(), "strings cannot change in place");
+            }
+            _ => panic!("expected IndexedCollection"),
+        }
+    }
+
+    #[test]
+    fn string_collection_unchanged_returns_none() {
+        let xs: Vec<String> = vec!["a".into(), "b".into()];
+        assert!(FieldChange::string_collection("tags", &xs, &xs).is_none());
+        // Order-insensitive:
+        let reordered = vec!["b".into(), "a".into()];
+        assert!(FieldChange::string_collection("tags", &xs, &reordered).is_none());
     }
 
     #[test]

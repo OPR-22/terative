@@ -591,6 +591,7 @@ mod tests {
                 date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
                 due_date: None,
                 line_items: vec![NewLineItem {
+                    id: None,
                     catalog_item_id: None,
                     description: "Widget".into(),
                     quantity: dec!(2),
@@ -626,6 +627,7 @@ mod tests {
                 date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
                 due_date: None,
                 line_items: vec![NewLineItem {
+                    id: None,
                     catalog_item_id: None,
                     description: "Old".into(),
                     quantity: dec!(1),
@@ -644,6 +646,7 @@ mod tests {
             .update_draft(
                 eur(),
                 vec![NewLineItem {
+                    id: None,
                     catalog_item_id: None,
                     description: "New".into(),
                     quantity: dec!(3),
@@ -676,6 +679,7 @@ mod tests {
                 date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
                 due_date: None,
                 line_items: vec![NewLineItem {
+                    id: None,
                     catalog_item_id: None,
                     description: "A".into(),
                     quantity: dec!(1),

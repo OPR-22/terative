@@ -227,6 +227,7 @@ impl SeedDatabase {
             let phone_value: String = PhoneNumber().fake();
             let default_currency = *currency_pool.choose(&mut rng).unwrap();
             let address = NewClientAddress {
+                id: None,
                 label: Some("Principal".into()),
                 street: format!(
                     "{} {}",
@@ -264,11 +265,13 @@ impl SeedDatabase {
                         rng.gen_range(100..1000),
                     )),
                     emails: vec![NewContactEntry {
+                        id: None,
                         value: billing_email,
                         label: Some("Facturation".into()),
                         is_default: true,
                     }],
                     phones: vec![NewContactEntry {
+                        id: None,
                         value: phone_value,
                         label: Some("Standard".into()),
                         is_default: true,
@@ -296,11 +299,13 @@ impl SeedDatabase {
                     tax_id: None,
                     registration_number: None,
                     emails: vec![NewContactEntry {
+                        id: None,
                         value: email_value,
                         label: Some("Personnel".into()),
                         is_default: true,
                     }],
                     phones: vec![NewContactEntry {
+                        id: None,
                         value: phone_value,
                         label: Some("Mobile".into()),
                         is_default: true,
@@ -453,6 +458,7 @@ impl SeedDatabase {
             let line_count = rng.gen_range(1..5);
             let line_items: Vec<NewLineItem> = (0..line_count)
                 .map(|_| NewLineItem {
+                    id: None,
                     catalog_item_id: None,
                     description: Sentence(3..8).fake(),
                     quantity: Decimal::from(rng.gen_range(1..6)),

@@ -83,6 +83,11 @@ impl From<&LineItem> for LineItemDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct NewLineItemDto {
+    /// Existing id when editing a draft invoice in place; `None` for newly
+    /// added rows. Preserved end-to-end so the audit log doesn't see a
+    /// fresh row identity on every save.
+    #[serde(default)]
+    pub id: Option<Uuid>,
     #[serde(default)]
     pub catalog_item_id: Option<Uuid>,
     pub description: String,
@@ -94,6 +99,7 @@ impl TryFrom<NewLineItemDto> for NewLineItem {
     type Error = DtoConvertError;
     fn try_from(dto: NewLineItemDto) -> Result<Self, Self::Error> {
         Ok(NewLineItem {
+            id: dto.id.map(crate::domain::line_item::LineItemId),
             catalog_item_id: dto
                 .catalog_item_id
                 .map(crate::domain::catalog_item::CatalogItemId),
@@ -493,6 +499,7 @@ mod tests {
             date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
             due_date: None,
             line_items: vec![NewLineItemDto {
+                id: None,
                 catalog_item_id: None,
                 description: "Widget".into(),
                 quantity: dec!(2),

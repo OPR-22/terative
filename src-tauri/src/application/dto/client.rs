@@ -32,6 +32,7 @@ impl From<&ContactEntry> for ContactEntryDto {
 impl From<ContactEntryDto> for NewContactEntry {
     fn from(dto: ContactEntryDto) -> Self {
         NewContactEntry {
+            id: dto.id.map(crate::domain::client::ContactEntryId),
             value: dto.value,
             label: dto.label,
             is_default: dto.is_default,
@@ -103,6 +104,7 @@ impl From<&ClientAddress> for ClientAddressDto {
 impl From<ClientAddressDto> for NewClientAddress {
     fn from(dto: ClientAddressDto) -> Self {
         NewClientAddress {
+            id: dto.id.map(crate::domain::client::ClientAddressId),
             label: dto.label,
             street: dto.street,
             apt_suite: dto.apt_suite,

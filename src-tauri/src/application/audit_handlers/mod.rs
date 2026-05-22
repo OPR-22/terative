@@ -198,5 +198,14 @@ pub(crate) mod test_support {
             v.sort_by(|a, b| a.occurred_at.cmp(&b.occurred_at));
             Ok(paginate(v, params))
         }
+        fn delete_older_than(
+            &self,
+            cutoff: chrono::DateTime<chrono::Utc>,
+        ) -> Result<u64, RepoError> {
+            let mut g = self.rows.lock();
+            let before = g.len();
+            g.retain(|a| a.occurred_at >= cutoff);
+            Ok((before - g.len()) as u64)
+        }
     }
 }

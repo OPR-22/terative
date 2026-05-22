@@ -270,6 +270,7 @@ fn with_invoice_label(
         label,
         from: d.from.clone(),
         to: d.to.clone(),
+        changes: d.changes.clone(),
     }
 }
 
@@ -450,6 +451,7 @@ mod tests {
             label: None,
             from: None,
             to: Some(serde_json::json!({"currency": "EUR", "amount": "10.00"})),
+            changes: None,
         };
         let changes = vec![FieldChange::IndexedCollection {
             field: "allocations",

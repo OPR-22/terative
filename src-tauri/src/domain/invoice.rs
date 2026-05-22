@@ -10,7 +10,7 @@ use crate::domain::events::invoice_events::{
     InvoiceCancelled, InvoiceDraftCreated, InvoiceDraftUpdated, InvoiceFinalized,
 };
 use crate::domain::events::EventBuffer;
-use crate::domain::field_change::FieldChange;
+use crate::domain::field_change::{money_to_value, DiffableValue, FieldChange};
 use crate::domain::line_item::{LineItem, LineItemError, NewLineItem};
 use crate::domain::money::{Currency, Money, MoneyError};
 use crate::domain::tax::{TaxDefinition, TaxId};
@@ -124,6 +124,49 @@ pub struct AppliedTax {
     pub computed_amount: Money,
 }
 
+impl DiffableValue for AppliedTax {
+    fn audit_key(&self) -> String {
+        // Stable identity: the tax definition's id when present, else the
+        // name (legacy / hand-typed taxes have no FK back to a definition).
+        // The name is a reasonable fallback because the unique-by-name
+        // constraint at the use case layer keeps it from colliding.
+        self.tax_definition_id
+            .map(|id| id.0.to_string())
+            .unwrap_or_else(|| self.tax_name.clone())
+    }
+    fn audit_label(&self) -> Option<String> {
+        Some(self.tax_name.clone())
+    }
+    fn to_audit_json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "tax_definition_id": self.tax_definition_id.map(|id| id.0.to_string()),
+            "tax_name": self.tax_name,
+            "percentage": self.percentage.to_string(),
+            "tax_id_number": self.tax_id_number,
+            "computed_amount": money_to_value(&self.computed_amount),
+        })
+    }
+    fn diff_against(&self, before: &Self) -> Vec<FieldChange> {
+        [
+            FieldChange::scalar("tax_name", &before.tax_name, &self.tax_name),
+            FieldChange::number("percentage", &before.percentage, &self.percentage),
+            FieldChange::opt(
+                "tax_id_number",
+                &before.tax_id_number,
+                &self.tax_id_number,
+            ),
+            FieldChange::money(
+                "computed_amount",
+                &before.computed_amount,
+                &self.computed_amount,
+            ),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Invoice {
     pub id: InvoiceId,
@@ -174,10 +217,8 @@ impl AggregateRoot for Invoice {
             FieldChange::money("tax_total", &before.tax_total, &self.tax_total),
             FieldChange::money("total", &before.total, &self.total),
             FieldChange::opt("notes", &before.notes, &self.notes),
-            // Line items have no stable identity (the user can edit any of
-            // them), so a count-only summary is the honest v1.
-            FieldChange::collection("line_items", &before.line_items, &self.line_items),
-            FieldChange::collection(
+            FieldChange::diffable_collection("line_items", &before.line_items, &self.line_items),
+            FieldChange::diffable_collection(
                 "taxes_applied",
                 &before.taxes_applied,
                 &self.taxes_applied,
@@ -545,6 +586,7 @@ mod tests {
 
     fn line(desc: &str, qty: i64, price: i64) -> NewLineItem {
         NewLineItem {
+            id: None,
             catalog_item_id: None,
             description: desc.into(),
             quantity: Decimal::from(qty),
@@ -1056,14 +1098,17 @@ mod tests {
         assert!(!fields.contains(&"total"));
         assert!(!fields.contains(&"currency"));
 
-        // line_items is a count-only Collection.
+        // line_items: the original "A" line was dropped and two fresh
+        // lines "B" and "C" replaced it, so the diff reports 2 added +
+        // 1 removed. Element-level (not just count-only).
         let li = ev.changes.iter().find(|c| c.field() == "line_items").unwrap();
         match li {
-            FieldChange::Collection { from_count, to_count, .. } => {
-                assert_eq!(*from_count, 1);
-                assert_eq!(*to_count, 2);
+            FieldChange::IndexedCollection { added, removed, changed, .. } => {
+                assert_eq!(added.len(), 2);
+                assert_eq!(removed.len(), 1);
+                assert!(changed.is_empty());
             }
-            _ => panic!("expected Collection for line_items"),
+            _ => panic!("expected IndexedCollection for line_items"),
         }
     }
 

@@ -28,7 +28,8 @@ use commands::{
         data_user_backup_dir,
     },
     audit_commands::{
-        audit_paginate_for_client, audit_paginate_for_invoice, audit_paginate_recent,
+        audit_cleanup_older_than, audit_paginate_for_client, audit_paginate_for_invoice,
+        audit_paginate_recent,
     },
     email_commands::{
         email_log_list_for_client, email_test_connection, invoice_send,
@@ -209,6 +210,7 @@ fn build_specta() -> Builder<tauri::Wry> {
                 audit_paginate_recent,
                 audit_paginate_for_client,
                 audit_paginate_for_invoice,
+                audit_cleanup_older_than,
                 email_template_create,
                 email_template_update,
                 email_template_delete,

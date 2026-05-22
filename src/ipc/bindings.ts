@@ -96,11 +96,18 @@ export const commands = {
 	page?: number | null,
 	per_page?: number | null,
 } | null) => typedError<PageDto<AuditDto>, AppError>(__TAURI_INVOKE("audit_paginate_for_client", { clientId, pagination })),
-	// Per-invoice audit strip — chronological timeline for one invoice.
+	// Per-invoice audit strip — newest-first timeline for one invoice.
 	auditPaginateForInvoice: (invoiceId: string, pagination: {
 	page?: number | null,
 	per_page?: number | null,
 } | null) => typedError<PageDto<AuditDto>, AppError>(__TAURI_INVOKE("audit_paginate_for_invoice", { invoiceId, pagination })),
+	/**
+	 *  Delete every audit row older than `cutoff`. Returns the number of rows
+	 *  removed. The FE constrains `cutoff` to "today minus N years" for some
+	 *  `N ∈ 1..=5` and warns before invoking — this command itself is
+	 *  unrestricted (single-user local app).
+	 */
+	auditCleanupOlderThan: (cutoff: string) => typedError<number, AppError>(__TAURI_INVOKE("audit_cleanup_older_than", { cutoff })),
 	emailTemplateCreate: (input: NewEmailTemplateDto) => typedError<EmailTemplateDto, AppError>(__TAURI_INVOKE("email_template_create", { input })),
 	emailTemplateUpdate: (input: UpdateEmailTemplateDto) => typedError<EmailTemplateDto, AppError>(__TAURI_INVOKE("email_template_update", { input })),
 	emailTemplateDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("email_template_delete", { id })),
@@ -728,6 +735,12 @@ export type NewJournalEntryDto = {
 };
 
 export type NewLineItemDto = {
+	/**
+	 *  Existing id when editing a draft invoice in place; `None` for newly
+	 *  added rows. Preserved end-to-end so the audit log doesn't see a
+	 *  fresh row identity on every save.
+	 */
+	id?: string | null,
 	catalog_item_id?: string | null,
 	description: string,
 	quantity: string,

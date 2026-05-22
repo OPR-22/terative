@@ -659,6 +659,7 @@ mod tests {
         let emails = email
             .map(|e| {
                 vec![NewContactEntry {
+                    id: None,
                     value: e.into(),
                     label: None,
                     is_default: true,

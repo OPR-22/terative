@@ -1,8 +1,13 @@
 //! Read-only paginated use cases over the audit log — one per UI surface.
 //! Thin wrappers around [`AuditRepository`]; all ordering, paging and
 //! limiting is the repository's job.
+//!
+//! Plus the lone write operation that isn't a projection: [`CleanupAudits`],
+//! the user-triggered "delete everything older than X" maintenance command.
 
 use std::sync::Arc;
+
+use chrono::{DateTime, Utc};
 
 use crate::application::ports::{AuditRepository, Page, PaginationParams};
 use crate::application::AppError;
@@ -45,6 +50,25 @@ impl PaginateAuditForClient {
 }
 
 /// Per-invoice audit strip.
+/// Manual maintenance command: delete every audit row older than `cutoff`.
+/// The FE constrains `cutoff` to "today minus N years" for some
+/// `N ∈ 1..=5`, but the use case itself accepts any timestamp — callers
+/// past the FE are trusted (this is a single-user local app).
+pub struct CleanupAudits {
+    repo: Arc<dyn AuditRepository>,
+}
+
+impl CleanupAudits {
+    pub fn new(repo: Arc<dyn AuditRepository>) -> Self {
+        Self { repo }
+    }
+
+    /// Returns the number of rows removed.
+    pub fn execute(&self, cutoff: DateTime<Utc>) -> Result<u64, AppError> {
+        Ok(self.repo.delete_older_than(cutoff)?)
+    }
+}
+
 pub struct PaginateAuditForInvoice {
     repo: Arc<dyn AuditRepository>,
 }
@@ -111,5 +135,23 @@ mod tests {
             .unwrap();
         assert_eq!(result.total, 1);
         assert_eq!(result.data[0].event_type, "a.1");
+    }
+
+    #[test]
+    fn cleanup_audits_deletes_rows_older_than_cutoff_and_returns_count() {
+        let repo = Arc::new(InMemoryAuditRepo::default());
+        // Two rows older than 24h, one newer.
+        seed(&repo, "old.1", None, 48);
+        seed(&repo, "old.2", None, 30);
+        seed(&repo, "fresh", None, 1);
+
+        let cutoff = Utc::now() - chrono::Duration::hours(24);
+        let removed = CleanupAudits::new(repo.clone()).execute(cutoff).unwrap();
+        assert_eq!(removed, 2);
+
+        // Only the fresh row remains.
+        let remaining = PaginateRecentAudit::new(repo).execute(page(10)).unwrap();
+        assert_eq!(remaining.total, 1);
+        assert_eq!(remaining.data[0].event_type, "fresh");
     }
 }
