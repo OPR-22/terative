@@ -8,7 +8,9 @@ import { useNavigate } from "react-router-dom";
  *   ⌘N / ^N       → new invoice (navigates to /invoices)
  *   ⌘,            → settings
  *   ⌘/            → clients
- *   ⌘K            → dashboard
+ *
+ * ⌘K (global search) is handled separately in the Topbar so it stays
+ * reachable while a form field is focused.
  *
  * Shortcuts are swallowed when the event target is an input/textarea so
  * typing in a form isn't hijacked.
@@ -43,10 +45,6 @@ export function useKeyboardShortcuts() {
         case "/":
           e.preventDefault();
           navigate("/clients");
-          break;
-        case "k":
-          e.preventDefault();
-          navigate("/dashboard");
           break;
       }
     };

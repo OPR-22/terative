@@ -16,6 +16,7 @@ pub mod notebook_usecases;
 pub mod org_registry;
 pub mod payment_usecases;
 pub mod ports;
+pub mod search_usecases;
 pub mod secret_key;
 #[cfg(debug_assertions)]
 pub mod seed_usecases;

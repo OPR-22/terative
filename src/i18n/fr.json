@@ -8,6 +8,17 @@
     "back": "Retour",
     "forward": "Suivant"
   },
+  "search": {
+    "placeholder": "Rechercher clients, factures, catalogue…",
+    "hint": "Recherchez parmi les clients, les factures et le catalogue.",
+    "loading": "Recherche…",
+    "empty": "Aucun résultat pour « {{query}} »",
+    "group_client": "Clients",
+    "group_invoice": "Factures",
+    "group_catalog_item": "Catalogue",
+    "open_hint": "pour ouvrir",
+    "dismiss_hint": "pour fermer"
+  },
   "nav": {
     "dashboard": "Tableau de bord",
     "invoices": "Factures",
@@ -353,7 +364,7 @@
     "user_backup_dir_placeholder": "Laissez vide pour utiliser l’emplacement par défaut",
     "default_invoice_due_days": "Échéance par défaut (jours)",
     "invoice_numbering": "Numérotation des factures",
-    "invoice_numbering_help": "Choisissez le numéro de votre prochaine facture. Les numéros sont affichés sur 7 chiffres (ex. 0000001). Modifiable uniquement avant la finalisation de la première facture.",
+    "invoice_numbering_help": "Choisissez le numéro de votre prochaine facture. Modifiable uniquement avant la finalisation de la première facture.",
     "next_invoice_number": "Prochain numéro de facture",
     "invoice_numbering_locked": "Verrouillé — une facture a déjà été finalisée, le numéro de départ ne peut plus être modifié.",
     "developer": "Développement",

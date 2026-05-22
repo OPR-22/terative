@@ -8,6 +8,17 @@
     "back": "Go back",
     "forward": "Go forward"
   },
+  "search": {
+    "placeholder": "Search clients, invoices, catalog…",
+    "hint": "Search across clients, invoices and catalog items.",
+    "loading": "Searching…",
+    "empty": "No results for “{{query}}”",
+    "group_client": "Clients",
+    "group_invoice": "Invoices",
+    "group_catalog_item": "Catalog",
+    "open_hint": "to open",
+    "dismiss_hint": "to dismiss"
+  },
   "nav": {
     "dashboard": "Dashboard",
     "invoices": "Invoices",
@@ -356,7 +367,7 @@
     "user_backup_dir_placeholder": "Leave empty to use the default location",
     "default_invoice_due_days": "Default invoice due (days)",
     "invoice_numbering": "Invoice numbering",
-    "invoice_numbering_help": "Choose the number your next invoice will use. Numbers are shown padded to 7 digits (e.g. 0000001). This can only be changed before the first invoice is finalized.",
+    "invoice_numbering_help": "Choose the number your next invoice will use. This can only be changed before the first invoice is finalized.",
     "next_invoice_number": "Next invoice number",
     "invoice_numbering_locked": "Locked — an invoice has already been finalized, so the starting number can no longer be changed.",
     "developer": "Developer",

@@ -442,3 +442,86 @@ LEFT JOIN (
 ) alloc ON alloc.invoice_id = i.id
 WHERE i.status IN ('Finalized', 'Sent')
   AND i.total - COALESCE(alloc.allocated, 0) > 0;
+
+-- === GLOBAL SEARCH (T1.07) ===
+--
+-- A single FTS5 full-text index spanning the three entity types a user
+-- searches across: clients, catalog items and invoices. One standalone
+-- (non external-content) FTS5 table keeps the design simple — ordinary
+-- INSERT/UPDATE/DELETE work, so the sync triggers below are plain SQL.
+--
+-- `entity_type` / `entity_id` are UNINDEXED: they are stored and returned
+-- but never tokenised. `title` is the primary display string; `body` holds
+-- the secondary searchable text (contact names, tax IDs, references).
+--
+-- The `unicode61 remove_diacritics 2` tokenizer folds accents, so a search
+-- for "cafe" matches "café" — important for the FR-first user base.
+CREATE VIRTUAL TABLE search_index USING fts5(
+    entity_type UNINDEXED,
+    entity_id   UNINDEXED,
+    title,
+    body,
+    tokenize = "unicode61 remove_diacritics 2"
+);
+
+-- One AFTER INSERT / UPDATE / DELETE trio per source table keeps the index
+-- in sync. UPDATE is a delete-then-insert so a row that loses its
+-- searchable content is dropped from the index rather than left stale.
+-- Only finalized invoices are indexed, by their number. A draft has no
+-- number and nothing else searchable, so the `WHEN` guard skips it.
+
+-- ── clients ──
+CREATE TRIGGER trg_search_clients_ai AFTER INSERT ON clients BEGIN
+    INSERT INTO search_index (entity_type, entity_id, title, body)
+    VALUES ('client', new.id, new.name,
+            trim(coalesce(new.contact_name, '') || ' ' ||
+                 coalesce(new.tax_id, '') || ' ' ||
+                 coalesce(new.registration_number, '')));
+END;
+
+CREATE TRIGGER trg_search_clients_ad AFTER DELETE ON clients BEGIN
+    DELETE FROM search_index WHERE entity_type = 'client' AND entity_id = old.id;
+END;
+
+CREATE TRIGGER trg_search_clients_au AFTER UPDATE ON clients BEGIN
+    DELETE FROM search_index WHERE entity_type = 'client' AND entity_id = old.id;
+    INSERT INTO search_index (entity_type, entity_id, title, body)
+    VALUES ('client', new.id, new.name,
+            trim(coalesce(new.contact_name, '') || ' ' ||
+                 coalesce(new.tax_id, '') || ' ' ||
+                 coalesce(new.registration_number, '')));
+END;
+
+-- ── catalog_items ──
+CREATE TRIGGER trg_search_catalog_ai AFTER INSERT ON catalog_items BEGIN
+    INSERT INTO search_index (entity_type, entity_id, title, body)
+    VALUES ('catalog_item', new.id, new.name, coalesce(new.reference, ''));
+END;
+
+CREATE TRIGGER trg_search_catalog_ad AFTER DELETE ON catalog_items BEGIN
+    DELETE FROM search_index WHERE entity_type = 'catalog_item' AND entity_id = old.id;
+END;
+
+CREATE TRIGGER trg_search_catalog_au AFTER UPDATE ON catalog_items BEGIN
+    DELETE FROM search_index WHERE entity_type = 'catalog_item' AND entity_id = old.id;
+    INSERT INTO search_index (entity_type, entity_id, title, body)
+    VALUES ('catalog_item', new.id, new.name, coalesce(new.reference, ''));
+END;
+
+-- ── invoices ──
+CREATE TRIGGER trg_search_invoices_ai AFTER INSERT ON invoices
+WHEN new.number IS NOT NULL BEGIN
+    INSERT INTO search_index (entity_type, entity_id, title, body)
+    VALUES ('invoice', new.id, CAST(new.number AS TEXT), '');
+END;
+
+CREATE TRIGGER trg_search_invoices_ad AFTER DELETE ON invoices BEGIN
+    DELETE FROM search_index WHERE entity_type = 'invoice' AND entity_id = old.id;
+END;
+
+CREATE TRIGGER trg_search_invoices_au AFTER UPDATE ON invoices
+WHEN new.number IS NOT NULL BEGIN
+    DELETE FROM search_index WHERE entity_type = 'invoice' AND entity_id = old.id;
+    INSERT INTO search_index (entity_type, entity_id, title, body)
+    VALUES ('invoice', new.id, CAST(new.number AS TEXT), '');
+END;

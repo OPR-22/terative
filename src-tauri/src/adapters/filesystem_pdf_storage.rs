@@ -130,10 +130,10 @@ mod tests {
         let storage = FilesystemPdfStorage::new(settings, tmp.path().to_path_buf());
 
         let path = storage
-            .store("2026/05/0000007-acme.pdf", b"pdf-bytes")
+            .store("2026/05/7-acme.pdf", b"pdf-bytes")
             .unwrap();
 
-        let expected = root.join("2026").join("05").join("0000007-acme.pdf");
+        let expected = root.join("2026").join("05").join("7-acme.pdf");
         assert_eq!(PathBuf::from(&path), expected);
         assert!(expected.exists());
         assert_eq!(fs::read(&expected).unwrap(), b"pdf-bytes");

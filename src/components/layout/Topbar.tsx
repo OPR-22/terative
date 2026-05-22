@@ -1,8 +1,9 @@
-import { Fragment } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, ArrowRight, Search } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 
+import { SearchPalette } from "../search/SearchPalette";
 import { useWorkspaceName } from "../../hooks/useWorkspaceName";
 import { usePageMeta, type Crumb } from "./PageMeta";
 
@@ -11,11 +12,26 @@ export function Topbar() {
   const { crumbs } = usePageMeta();
   const navigate = useNavigate();
   const workspaceName = useWorkspaceName();
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // ⌘K / Ctrl+K toggles the global search palette from anywhere — including
+  // while a form field is focused, so it stays reachable mid-edit.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
   const allCrumbs: Crumb[] = [
     { label: workspaceName, to: "/dashboard" },
     ...crumbs,
   ];
   return (
+    <>
     <div className="flex items-center justify-between px-7 py-3.5 border-b border-line bg-paper">
       <div className="flex items-center gap-3 min-w-0">
         <div className="flex items-center gap-1 shrink-0">
@@ -60,7 +76,8 @@ export function Topbar() {
       <div className="flex items-center gap-2">
         <button
           type="button"
-          className="flex items-center gap-2 px-2.5 py-1.5 bg-paper-2 border border-line rounded-sm text-[12px] text-ink-3 min-w-[220px] hover:border-ink-4"
+          onClick={() => setSearchOpen(true)}
+          className="flex items-center gap-2 px-2.5 py-1.5 bg-paper-2 border border-line rounded-sm text-[12px] text-ink-3 min-w-[220px] hover:border-ink-4 cursor-pointer"
         >
           <Search size={13} strokeWidth={1.5} />
           <span>{t("topbar.search_placeholder")}</span>
@@ -70,5 +87,7 @@ export function Topbar() {
         </button>
       </div>
     </div>
+    {searchOpen ? <SearchPalette onClose={() => setSearchOpen(false)} /> : null}
+    </>
   );
 }

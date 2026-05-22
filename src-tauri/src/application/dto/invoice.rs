@@ -172,8 +172,8 @@ impl From<&EmailLog> for EmailSendDto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct InvoiceDto {
     pub id: Uuid,
-    /// The invoice's display number, already zero-padded to 7 digits (e.g.`"0000042"`) 
-    pub number: Option<String>,
+    /// The invoice's sequential number; `None` while the invoice is a draft.
+    pub number: Option<u64>,
     pub client_id: Uuid,
     pub client_name: Option<String>,
     pub template_id: Option<Uuid>,
@@ -238,7 +238,7 @@ impl InvoiceDto {
     ) -> Self {
         Self {
             id: i.id.0,
-            number: i.number.map(|n| n.to_string()),
+            number: i.number.map(|n| n.0),
             client_id: i.client_id.0,
             client_name,
             template_id: i.template_id.map(|t| t.0),
@@ -469,7 +469,7 @@ mod tests {
         let dto = InvoiceDto::from_invoice_basic(&domain);
         assert_eq!(dto.id, domain.id.0);
         // Number crosses the wire pre-formatted via `InvoiceNumber`'s Display.
-        assert_eq!(dto.number.as_deref(), Some("0000042"));
+        assert_eq!(dto.number, Some(42));
         assert_eq!(dto.line_items.len(), 1);
         assert_eq!(dto.line_items[0].total.amount, 2000);
         assert_eq!(dto.taxes_applied.len(), 1);

@@ -58,6 +58,7 @@ use commands::{
     payment_commands::{
         payment_delete, payment_get, payment_list, payment_record, payment_update,
     },
+    search_commands::global_search,
     catalog_item_commands::{
         catalog_item_archive, catalog_item_create, catalog_item_list, catalog_item_unarchive,
         catalog_item_update,
@@ -232,6 +233,7 @@ fn build_specta() -> Builder<tauri::Wry> {
                 accounting_client_balances,
                 accounting_aging_report,
                 accounting_dashboard_summary,
+                global_search,
                 data_export,
                 data_backup,
                 data_restore,

@@ -67,11 +67,9 @@ fn cancelled_watermark(lang: crate::domain::settings::Language) -> &'static str 
 /// Storage-relative path for an invoice's rendered PDF:
 /// `<year>/<month>/<number>-<client-slug>.pdf`. Year and month come from the
 /// invoice's own document date, so an invoice dated December files under that
-/// December even if it is finalized in January. The number is zero-padded by
-/// [`InvoiceNumber`](crate::domain::invoice::InvoiceNumber)'s `Display`; an
-/// invoice with no number yet (not expected on the finalize/cancel paths)
-/// falls back to its UUID. The client slug is omitted when it reduces to
-/// nothing.
+/// December even if it is finalized in January. An invoice with no number
+/// yet (not expected on the finalize/cancel paths) falls back to its UUID.
+/// The client slug is omitted when it reduces to nothing.
 fn invoice_pdf_relative_path(invoice: &Invoice, client_name: &str) -> String {
     let year = invoice.date.format("%Y");
     let month = invoice.date.format("%m");
@@ -937,7 +935,7 @@ mod tests {
     }
 
     #[test]
-    fn invoice_pdf_relative_path_uses_year_month_padded_number_and_slug() {
+    fn invoice_pdf_relative_path_uses_year_month_number_and_slug() {
         let (_inv_repo, _tax_repo, tax) = setup();
         let mut inv =
             Invoice::create_draft(new_invoice_input(ClientId::new(), tax.id), &[], Utc::now())
@@ -947,10 +945,10 @@ mod tests {
         // new_invoice_input dates the invoice 2026-04-14.
         assert_eq!(
             invoice_pdf_relative_path(&inv, "Acme Corp."),
-            "2026/04/0000007-acme-corp.pdf",
+            "2026/04/7-acme-corp.pdf",
         );
         // A client name with no usable characters drops the slug entirely.
-        assert_eq!(invoice_pdf_relative_path(&inv, "***"), "2026/04/0000007.pdf");
+        assert_eq!(invoice_pdf_relative_path(&inv, "***"), "2026/04/7.pdf");
     }
 
     #[test]
@@ -1137,7 +1135,7 @@ mod tests {
         );
         let calls = storage.calls.lock();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].0, "2026/04/0001001-acme.pdf");
+        assert_eq!(calls[0].0, "2026/04/1001-acme.pdf");
 
         let reloaded = inv_repo.inner.lock().get(&invoice.id).cloned().unwrap();
         assert_eq!(reloaded.status, InvoiceStatus::Cancelled);
@@ -1517,16 +1515,16 @@ mod tests {
 
         assert_eq!(finalized.status, InvoiceStatus::Finalized);
         assert_eq!(finalized.number, Some(InvoiceNumber(1001)));
-        // PDF lands under `<year>/<month>/<padded-number>-<client-slug>.pdf`,
+        // PDF lands under `<year>/<month>/<number>-<client-slug>.pdf`,
         // year/month taken from the invoice's 2026-04-14 date.
         assert_eq!(
             finalized.pdf_path.as_deref(),
-            Some("/tmp/2026/04/0001001-acme.pdf")
+            Some("/tmp/2026/04/1001-acme.pdf")
         );
         assert_eq!(*pdf.0.lock(), 1, "pdf render must be called exactly once");
         let calls = storage.calls.lock();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].0, "2026/04/0001001-acme.pdf");
+        assert_eq!(calls[0].0, "2026/04/1001-acme.pdf");
         assert_eq!(calls[0].1, b"%PDF-fake");
 
         // Persisted state reflects the finalize.
@@ -1534,7 +1532,7 @@ mod tests {
         assert_eq!(reloaded.status, InvoiceStatus::Finalized);
         assert_eq!(
             reloaded.pdf_path.as_deref(),
-            Some("/tmp/2026/04/0001001-acme.pdf")
+            Some("/tmp/2026/04/1001-acme.pdf")
         );
     }
 

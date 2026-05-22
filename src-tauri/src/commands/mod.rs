@@ -10,6 +10,7 @@ pub mod invoice_commands;
 pub mod notebook_commands;
 pub mod org_commands;
 pub mod payment_commands;
+pub mod search_commands;
 #[cfg(debug_assertions)]
 pub mod seed_commands;
 pub mod settings_commands;
@@ -26,8 +27,8 @@ use crate::adapters::sqlite::{
     SqliteCatalogItemRepository, SqliteClientJournalRepository, SqliteClientNotebookRepository,
     SqliteClientRepository, SqliteEmailLogRepository, SqliteEmailTemplateRepository,
     SqliteInvoiceNumberGenerator, SqliteInvoiceRepository, SqliteNotebookSectionRepository,
-    SqlitePaymentRepository, SqliteSettingsRepository, SqliteTaxRepository,
-    SqliteTemplateRepository,
+    SqlitePaymentRepository, SqliteSearchRepository, SqliteSettingsRepository,
+    SqliteTaxRepository, SqliteTemplateRepository,
 };
 use crate::adapters::{
     FilesystemDataManagement, FilesystemPdfStorage, InProcessEventBus, KeyringCredentialStore,
@@ -74,6 +75,7 @@ use crate::application::payment_usecases::{
     DeletePayment, GetPayment, ListPayments, RecordPayment, UpdatePayment,
 };
 use crate::application::ports::{AuditRepository, DataManagement, EventBus, OrgKeyStore};
+use crate::application::search_usecases::GlobalSearch;
 #[cfg(debug_assertions)]
 use crate::application::seed_usecases::SeedDatabase;
 use crate::application::settings_usecases::{
@@ -169,6 +171,8 @@ pub struct OrgServices {
 
     pub accounting: AccountingService,
 
+    pub global_search: GlobalSearch,
+
     pub data_management: Arc<dyn DataManagement>,
     pub create_backup: CreateBackup,
     pub auto_backup_if_due: AutoBackupIfDue,
@@ -217,6 +221,7 @@ impl OrgServices {
         let invoice_repo = Arc::new(SqliteInvoiceRepository::new(db.clone()));
         let payment_repo = Arc::new(SqlitePaymentRepository::new(db.clone()));
         let accounting_repo = Arc::new(SqliteAccountingRepository::new(db.clone()));
+        let search_repo = Arc::new(SqliteSearchRepository::new(db.clone()));
         let notebook_section_repo = Arc::new(SqliteNotebookSectionRepository::new(db.clone()));
         let client_notebook_repo = Arc::new(SqliteClientNotebookRepository::new(db.clone()));
         let client_journal_repo = Arc::new(SqliteClientJournalRepository::new(db.clone()));
@@ -438,6 +443,8 @@ impl OrgServices {
             get_payment: GetPayment::new(payment_repo, client_repo),
 
             accounting: AccountingService::new(accounting_repo),
+
+            global_search: GlobalSearch::new(search_repo),
 
             create_backup: CreateBackup::new(data_management.clone())
                 .with_events(events.clone()),

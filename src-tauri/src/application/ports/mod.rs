@@ -19,6 +19,7 @@ pub mod org_key_store;
 pub mod payment_repository;
 pub mod pdf_generator;
 pub mod pdf_storage;
+pub mod search_repository;
 pub mod settings_repository;
 pub mod tax_repository;
 pub mod template_repository;
@@ -47,6 +48,7 @@ pub use invoice_repository::{
 pub use payment_repository::{ListPaymentsQuery, PaymentRepository};
 pub use pdf_generator::{PdfError, PdfGenerator, PdfRenderInput};
 pub use pdf_storage::PdfStorage;
+pub use search_repository::{SearchEntityKind, SearchHit, SearchRepository};
 pub use bookmark_repository::BookmarkRepository;
 pub use catalog_item_repository::CatalogItemRepository;
 pub use settings_repository::SettingsRepository;

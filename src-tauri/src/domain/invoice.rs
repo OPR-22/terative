@@ -40,14 +40,9 @@ impl std::fmt::Display for InvoiceId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct InvoiceNumber(pub u64);
 
-/// Width invoice numbers are zero-padded to when displayed (PDF, UI,
-/// filenames). `1` renders as `0000001`. Numbers wider than this are shown
-/// in full rather than truncated.
-pub const INVOICE_NUMBER_DISPLAY_WIDTH: usize = 7;
-
 impl std::fmt::Display for InvoiceNumber {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:0width$}", self.0, width = INVOICE_NUMBER_DISPLAY_WIDTH)
+        write!(f, "{}", self.0)
     }
 }
 
@@ -600,12 +595,10 @@ mod tests {
     }
 
     #[test]
-    fn invoice_number_displays_zero_padded_to_seven_digits() {
-        assert_eq!(InvoiceNumber(1).to_string(), "0000001");
-        assert_eq!(InvoiceNumber(42).to_string(), "0000042");
+    fn invoice_number_displays_as_a_plain_integer() {
+        assert_eq!(InvoiceNumber(1).to_string(), "1");
+        assert_eq!(InvoiceNumber(42).to_string(), "42");
         assert_eq!(InvoiceNumber(1_234_567).to_string(), "1234567");
-        // Numbers wider than the pad width are shown in full, never truncated.
-        assert_eq!(InvoiceNumber(12_345_678).to_string(), "12345678");
     }
 
     #[test]

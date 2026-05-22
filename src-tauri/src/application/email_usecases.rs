@@ -15,6 +15,7 @@ use crate::domain::email_template::EmailTemplateType;
 use crate::domain::events::invoice_events::InvoiceSent;
 use crate::domain::invoice::{Invoice, InvoiceId, InvoiceStatus};
 use crate::domain::settings::{CurrencyConfig, SellerProfile};
+use crate::kernel::text::slugify;
 
 pub struct UpdateEmailConfig {
     repo: Arc<dyn SettingsRepository>,
@@ -175,13 +176,21 @@ impl SendInvoice {
             .get_smtp_password()?
             .ok_or_else(|| AppError::failed_precondition(ErrorCode::SmtpPasswordMissing))?;
 
-        let file_name = format!(
-            "invoice-{}.pdf",
-            invoice
-                .number
-                .map(|n| n.0.to_string())
-                .unwrap_or_else(|| invoice.id.to_string())
-        );
+        // The attachment name the client sees: `<number>-<seller-slug>.pdf`.
+        // The seller (organisation) name is the useful discriminator for the
+        // recipient — they receive invoices from many vendors — and avoids a
+        // language-specific word like "invoice". Falls back to just the
+        // number when the seller profile has no name set.
+        let number = invoice
+            .number
+            .map(|n| n.0.to_string())
+            .unwrap_or_else(|| invoice.id.to_string());
+        let seller_slug = slugify(&seller.name);
+        let file_name = if seller_slug.is_empty() {
+            format!("{number}.pdf")
+        } else {
+            format!("{number}-{seller_slug}.pdf")
+        };
 
         self.email.send(OutboundEmail {
             smtp_host: &cfg.smtp_host,
@@ -806,7 +815,7 @@ mod tests {
         assert!(e.body.contains("Acme Corp"));
         assert!(e.body.contains("Acme Freelance"));
         assert!(e.body.contains("1210.00 EUR"));
-        assert_eq!(e.attachment_name.as_deref(), Some("invoice-1001.pdf"));
+        assert_eq!(e.attachment_name.as_deref(), Some("1001-acme-freelance.pdf"));
         assert_eq!(e.attachment_bytes.as_deref(), Some(b"%PDF-1.4 fake" as &[u8]));
 
         // Invoice persisted in Sent state.
@@ -819,6 +828,44 @@ mod tests {
         assert_eq!(logged[0].invoice_id, Some(invoice.id));
         assert_eq!(logged[0].to_address, "billing@acme.example");
         assert_eq!(logged[0].subject, "Invoice 1001 for Acme Corp");
+    }
+
+    #[test]
+    fn send_invoice_attachment_falls_back_to_number_when_seller_has_no_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pdf_path = tmp.path().join("stored.pdf");
+        std::fs::write(&pdf_path, b"%PDF-1.4 fake").unwrap();
+
+        let invoices = Arc::new(InMemoryInvoiceRepo::default());
+        let clients = Arc::new(InMemoryClientRepo::default());
+        let settings = Arc::new(InMemorySettingsRepo::default());
+        // Seller profile with no name — the attachment can't be slugged.
+        settings.set_seller_profile(&SellerProfile::default()).unwrap();
+        let creds = Arc::new(InMemoryCredentialStore::default());
+        creds.set_smtp_password("pw").unwrap();
+        let sender = Arc::new(CapturingEmailSender::default());
+
+        let client = seed_client_with_email(&clients, Some("billing@acme.example"));
+        let invoice = make_finalized_invoice_with_pdf(
+            client.id,
+            Some(pdf_path.to_string_lossy().to_string()),
+        );
+        invoices.insert(&invoice).unwrap();
+
+        SendInvoice::new(
+            invoices,
+            clients,
+            settings,
+            creds,
+            sender.clone(),
+            seed_default_email_templates(),
+            Arc::new(InMemoryEmailLogRepo::default()),
+        )
+        .execute(invoice.id)
+        .unwrap();
+
+        let stored = sender.sent.lock();
+        assert_eq!(stored[0].attachment_name.as_deref(), Some("1001.pdf"));
     }
 
     #[test]

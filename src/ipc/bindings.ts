@@ -140,6 +140,12 @@ export const commands = {
 	accountingClientBalances: () => typedError<ClientBalanceDto[], AppError>(__TAURI_INVOKE("accounting_client_balances")),
 	accountingAgingReport: () => typedError<AgingRowDto[], AppError>(__TAURI_INVOKE("accounting_aging_report")),
 	accountingDashboardSummary: () => typedError<DashboardSummaryDto, AppError>(__TAURI_INVOKE("accounting_dashboard_summary")),
+	/**
+	 *  Global full-text search across clients, invoices and catalog items
+	 *  (T1.07). Backs the ⌘K search palette. A blank or punctuation-only
+	 *  `query` yields an empty list.
+	 */
+	globalSearch: (query: string) => typedError<SearchHitDto[], AppError>(__TAURI_INVOKE("global_search", { query })),
 	dataExport: (destination: string) => typedError<string, AppError>(__TAURI_INVOKE("data_export", { destination })),
 	dataBackup: () => typedError<string, AppError>(__TAURI_INVOKE("data_backup")),
 	/**
@@ -257,10 +263,8 @@ export type AgingBucketDto = "Current" | "Days1To30" | "Days31To60" | "Days61To9
 
 export type AgingRowDto = {
 	invoice_id: string,
-	/**
-	 *  Display number, zero-padded via `InvoiceNumber`'s `Display`; `None` for drafts.
-	 */
-	number: string | null,
+	// Invoice number; `None` for drafts.
+	number: number | null,
 	client_id: string,
 	client_name: string,
 	total: MoneyDto,
@@ -557,8 +561,8 @@ export type FontChoiceDto = "Serif" | "SansSerif" | "Mono";
 
 export type InvoiceDto = {
 	id: string,
-	// The invoice's display number, already zero-padded to 7 digits (e.g.`"0000042"`) 
-	number: string | null,
+	// The invoice's sequential number; `None` while the invoice is a draft.
+	number: number | null,
 	client_id: string,
 	client_name: string | null,
 	template_id: string | null,
@@ -594,11 +598,8 @@ export type InvoicePaymentFilterDto = "Paid" | "Unpaid" | "Late";
 
 export type InvoicePaymentRowDto = {
 	invoice_id: string,
-	/**
-	 *  Display number, zero-padded via `InvoiceNumber`'s `Display`; `None`
-	 *  for drafts.
-	 */
-	number: string | null,
+	// Invoice number; `None` for drafts.
+	number: number | null,
 	client_id: string,
 	client_name: string,
 	date: string,
@@ -899,6 +900,19 @@ export type RevenueGroupingDto = "Day" | "Month" | "Year";
 export type SaveClientNotebookDto = {
 	client_id: string,
 	entries: NotebookEntryDto[],
+};
+
+export type SearchEntityKindDto = "Client" | "Invoice" | "CatalogItem";
+
+/**
+ *  One global-search result on the wire. `kind` tells the frontend which
+ *  route to navigate to; `entity_id` is the row to open.
+ */
+export type SearchHitDto = {
+	kind: SearchEntityKindDto,
+	entity_id: string,
+	title: string,
+	snippet: string,
 };
 
 // All counts optional from the frontend; defaults applied in `From`.

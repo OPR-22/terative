@@ -22,6 +22,7 @@ pub mod email_template;
 pub mod invoice;
 pub mod notebook;
 pub mod payment;
+pub mod search;
 #[cfg(debug_assertions)]
 pub mod seed;
 pub mod settings;
@@ -56,6 +57,7 @@ pub use payment::{
     ListPaymentsQueryDto, NewPaymentAllocationDto, NewPaymentDto, PaymentAllocationDto,
     PaymentDto, PaymentMethodDto, UpdatePaymentDto,
 };
+pub use search::{SearchEntityKindDto, SearchHitDto};
 #[cfg(debug_assertions)]
 pub use seed::{SeedCountsDto, SeedReportDto};
 pub use bookmark::{BookmarkDto, NewBookmarkDto, UpdateBookmarkDto};

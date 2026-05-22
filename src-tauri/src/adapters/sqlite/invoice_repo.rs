@@ -357,12 +357,10 @@ impl InvoiceRepository for SqliteInvoiceRepository {
         // Compose the label in SQL: `"#<number>"` for finalized invoices,
         // `"#-"` for drafts (no number yet) — the dash signals "draft" while
         // keeping the visual `"#"` prefix consistent with finalized labels.
-        // The number is zero-padded to 7 digits to match `InvoiceNumber`'s
-        // `Display` (see `INVOICE_NUMBER_DISPLAY_WIDTH`).
         let sql = format!(
             "SELECT id, \
                     CASE WHEN number IS NOT NULL \
-                         THEN printf('#%07d', number) ELSE '#-' END AS label \
+                         THEN '#' || number ELSE '#-' END AS label \
              FROM invoices \
              WHERE id IN ({})",
             placeholders.join(", ")
@@ -721,7 +719,7 @@ mod tests {
     }
 
     #[test]
-    fn labels_for_zero_pads_finalized_numbers_and_marks_drafts() {
+    fn labels_for_prefixes_finalized_numbers_and_marks_drafts() {
         let db = open_memory();
         let client_id = seed_client(&db);
         let repo = SqliteInvoiceRepository::new(db.clone());
@@ -750,7 +748,7 @@ mod tests {
         repo.insert(&draft).unwrap();
 
         let labels = repo.labels_for(&[finalized.id, draft.id]).unwrap();
-        assert_eq!(labels.get(&finalized.id).map(String::as_str), Some("#0000042"));
+        assert_eq!(labels.get(&finalized.id).map(String::as_str), Some("#42"));
         assert_eq!(labels.get(&draft.id).map(String::as_str), Some("#-"));
     }
 }
