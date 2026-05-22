@@ -5,7 +5,7 @@ import { Button } from "../common/Button";
 import { Input } from "../common/Input";
 import { useCurrencyCatalogStore } from "../../stores/currencyCatalogStore";
 import { useSettingsStore } from "../../stores/settingsStore";
-import type { LanguageDto } from "../../ipc";
+import { ipc, type LanguageDto } from "../../ipc";
 
 const languageToI18n = (lang: LanguageDto): string =>
   lang === "Fr" ? "fr" : "en";
@@ -29,6 +29,8 @@ export function Onboarding() {
   const [email, setEmail] = useState("");
   const [currencyCode, setCurrencyCode] = useState("EUR");
   const [language, setLanguage] = useState<LanguageDto>("Fr");
+  const [startNumber, setStartNumber] = useState(1);
+  const [canEditNumber, setCanEditNumber] = useState(true);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -49,6 +51,16 @@ export function Onboarding() {
       setCurrencyCode(snapshot.currency.code);
       setLanguage(snapshot.preferences.language);
       setVisible(true);
+      // The invoice-number sequence lives in its own table, not the settings
+      // snapshot — load it directly. Non-critical: on failure the user can
+      // still set it later in Settings.
+      void ipc
+        .invoiceNumberingGet()
+        .then((n) => {
+          setStartNumber(n.next_number);
+          setCanEditNumber(n.can_edit);
+        })
+        .catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshot?.seller.name === ""]);
@@ -71,6 +83,9 @@ export function Onboarding() {
       if (language !== snapshot.preferences.language) {
         await savePreferences({ ...snapshot.preferences, language });
         await i18n.changeLanguage(languageToI18n(language));
+      }
+      if (canEditNumber) {
+        await ipc.invoiceNumberingSetStart(startNumber);
       }
       setStep("done");
       setTimeout(close, 900);
@@ -169,6 +184,16 @@ export function Onboarding() {
                 <option value="En">English</option>
               </select>
             </label>
+            <Input
+              label={t("settings.next_invoice_number") ?? ""}
+              type="number"
+              min="1"
+              value={startNumber}
+              disabled={!canEditNumber}
+              onChange={(e) =>
+                setStartNumber(Math.max(1, parseInt(e.target.value, 10) || 1))
+              }
+            />
             <div className="flex justify-between">
               <Button variant="secondary" onClick={() => setStep("seller")}>
                 {t("onboarding.back")}

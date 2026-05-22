@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import {
@@ -39,6 +39,93 @@ function routeFor(hit: SearchHitDto): string {
   }
 }
 
+/**
+ * Folds one character for accent- and case-insensitive matching: strips
+ * diacritics and lower-cases it, staying a single unit so a match index
+ * still maps back onto the original string.
+ */
+function foldChar(c: string): string {
+  return c.normalize("NFD")[0]?.toLowerCase() ?? c;
+}
+
+/** The query split into folded search terms, on the same word boundaries
+ *  the backend tokenises on. */
+function queryTerms(query: string): string[] {
+  return [
+    ...new Set(
+      query
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter(Boolean)
+        .map((term) => [...term].map(foldChar).join("")),
+    ),
+  ];
+}
+
+/** True when `ch` is a letter or digit — anything else (space, +, -, @, …)
+ *  counts as a separator. */
+function isContentChar(ch: string): boolean {
+  return /[\p{L}\p{N}]/u.test(ch);
+}
+
+/**
+ * Renders `text` with every run that matches a query `term` wrapped in a
+ * bold `<strong>`. Matching is accent- and case-insensitive (so "cafe"
+ * bolds "Café") and separator-transparent: a query "4022" highlights a
+ * phone shown as "40 22" — the same separator-blind way the backend
+ * matched its digits.
+ */
+function Highlight({ text, terms }: { text: string; terms: string[] }) {
+  if (terms.length === 0 || text === "") return <>{text}</>;
+  const chars = [...text];
+  const folded = chars.map(foldChar);
+  const isSep = chars.map((c) => !isContentChar(c));
+  const matched = new Array<boolean>(chars.length).fill(false);
+
+  // For each term, scan every start position, matching the term's chars
+  // against the text's content chars while skipping over separators. A
+  // full match marks the whole run — interior separators included.
+  for (const term of terms) {
+    for (let start = 0; start < chars.length; start++) {
+      if (isSep[start]) continue;
+      let ti = 0;
+      let i = start;
+      while (ti < term.length && i < chars.length) {
+        if (isSep[i]) {
+          i += 1;
+        } else if (folded[i] === term[ti]) {
+          ti += 1;
+          i += 1;
+        } else {
+          break;
+        }
+      }
+      if (ti === term.length) {
+        for (let k = start; k < i; k++) matched[k] = true;
+      }
+    }
+  }
+
+  const segments: { text: string; match: boolean }[] = [];
+  chars.forEach((ch, i) => {
+    const last = segments[segments.length - 1];
+    if (last && last.match === matched[i]) last.text += ch;
+    else segments.push({ text: ch, match: matched[i] });
+  });
+  return (
+    <>
+      {segments.map((seg, i) =>
+        seg.match ? (
+          <strong key={i} className="font-bold text-ink">
+            {seg.text}
+          </strong>
+        ) : (
+          <span key={i}>{seg.text}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 interface SearchPaletteProps {
   onClose: () => void;
 }
@@ -56,9 +143,9 @@ export function SearchPalette({ onClose }: SearchPaletteProps) {
   const [loading, setLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const terms = useMemo(() => queryTerms(query), [query]);
 
-  // Debounced search. Each keystroke cancels the pending timer and discards
-  // any in-flight response, so only the latest query's results land.
+  // Debounced search
   useEffect(() => {
     const q = query.trim();
     if (!q) {
@@ -198,11 +285,11 @@ export function SearchPalette({ onClose }: SearchPaletteProps) {
                       />
                       <div className="min-w-0 flex-1">
                         <div className="text-[13px] text-ink truncate">
-                          {hit.title}
+                          <Highlight text={hit.title} terms={terms} />
                         </div>
                         {hit.snippet ? (
                           <div className="text-[11px] text-ink-3 truncate">
-                            {hit.snippet}
+                            <Highlight text={hit.snippet} terms={terms} />
                           </div>
                         ) : null}
                       </div>

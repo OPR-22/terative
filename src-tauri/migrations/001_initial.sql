@@ -322,7 +322,7 @@ CREATE INDEX idx_email_logs_client  ON email_logs(client_id);
 CREATE INDEX idx_email_logs_invoice ON email_logs(invoice_id);
 CREATE INDEX idx_email_logs_sent_at ON email_logs(sent_at);
 
--- T1.04 — Audit log. Append-only projection of domain events, written by
+-- Audit log. Append-only projection of domain events, written by
 -- the AuditProjector handlers and read back by the dashboard feed, the
 -- per-client tab and the per-invoice strip.
 --
@@ -443,8 +443,7 @@ LEFT JOIN (
 WHERE i.status IN ('Finalized', 'Sent')
   AND i.total - COALESCE(alloc.allocated, 0) > 0;
 
--- === GLOBAL SEARCH (T1.07) ===
---
+
 -- A single FTS5 full-text index spanning the three entity types a user
 -- searches across: clients, catalog items and invoices. One standalone
 -- (non external-content) FTS5 table keeps the design simple — ordinary
@@ -452,7 +451,14 @@ WHERE i.status IN ('Finalized', 'Sent')
 --
 -- `entity_type` / `entity_id` are UNINDEXED: they are stored and returned
 -- but never tokenised. `title` is the primary display string; `body` holds
--- the secondary searchable text (contact names, tax IDs, references).
+-- the secondary searchable text — for a client, its contact name, tax ID
+-- and registration number.
+--
+-- Emails and phone numbers are deliberately NOT indexed here: their
+-- punctuation does not survive word tokenisation, so they are searched
+-- with substring matching instead (see the SearchRepository port). That
+-- keeps this index sourced purely from each row's own table, so every
+-- trigger below is a plain one-row INSERT.
 --
 -- The `unicode61 remove_diacritics 2` tokenizer folds accents, so a search
 -- for "cafe" matches "café" — important for the FR-first user base.

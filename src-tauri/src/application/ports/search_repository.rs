@@ -31,12 +31,12 @@ impl SearchEntityKind {
     }
 }
 
-/// A single full-text search result.
+/// A single search result.
 ///
 /// `title` is the primary display string (client name, catalog item name,
 /// invoice number). `snippet` is a short excerpt of the matched secondary
-/// text (contact name, reference…) — empty when the entity has no secondary
-/// text to show.
+/// text (contact name, reference…) or, for an email/phone match, the
+/// matching value — empty when there is nothing secondary to show.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SearchHit {
     pub kind: SearchEntityKind,
@@ -45,13 +45,15 @@ pub struct SearchHit {
     pub snippet: String,
 }
 
-/// Read-only port for the cross-entity full-text search backed by the
-/// `search_index` FTS5 table (migration 002).
+/// Read-only port for global search across clients, invoices and catalog
+/// items.
 pub trait SearchRepository: Send + Sync {
-    /// Runs an FTS5 `MATCH` query, best matches first.
+    /// Searches everything for `query` — raw text as the user typed it —
+    /// and returns the best matches, at most `limit`.
     ///
-    /// `fts_query` must already be valid FTS5 query syntax — the
-    /// `GlobalSearch` use case is responsible for turning raw user input
-    /// into a safe query string. `limit` caps the number of rows returned.
-    fn search(&self, fts_query: &str, limit: u32) -> Result<Vec<SearchHit>, RepoError>;
+    /// *How* it searches is the implementation's business: the SQLite
+    /// adapter runs a full-text match for names, references and invoice
+    /// numbers, plus substring matches for client emails and phone
+    /// numbers, then merges them into one de-duplicated list.
+    fn search(&self, query: &str, limit: u32) -> Result<Vec<SearchHit>, RepoError>;
 }

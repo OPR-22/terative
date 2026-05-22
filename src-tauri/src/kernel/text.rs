@@ -29,6 +29,13 @@ pub fn slugify(input: &str) -> String {
     slug
 }
 
+/// Reduces `input` to just its ASCII digits — used to normalise phone
+/// numbers so they can be compared regardless of how either side was
+/// punctuated: `"+32 470 12 34 56"` becomes `"32470123456"`.
+pub fn digits_only(input: &str) -> String {
+    input.chars().filter(char::is_ascii_digit).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -47,5 +54,14 @@ mod tests {
     fn slugify_caps_length_at_sixty_chars() {
         let long = "a".repeat(100);
         assert_eq!(slugify(&long).chars().count(), 60);
+    }
+
+    #[test]
+    fn digits_only_keeps_just_the_digits() {
+        assert_eq!(digits_only("+32 470 12 34 56"), "32470123456");
+        assert_eq!(digits_only("(0470) 12-34-56"), "0470123456");
+        assert_eq!(digits_only("ext. 7"), "7");
+        assert_eq!(digits_only("no digits"), "");
+        assert_eq!(digits_only(""), "");
     }
 }
