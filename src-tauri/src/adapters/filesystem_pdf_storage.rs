@@ -33,8 +33,13 @@ impl FilesystemPdfStorage {
 impl PdfStorage for FilesystemPdfStorage {
     fn store(&self, file_name: &str, bytes: &[u8]) -> Result<String, RepoError> {
         let dir = self.resolve_dir()?;
-        fs::create_dir_all(&dir).map_err(|e| RepoError::Storage(e.to_string()))?;
+        // `file_name` may carry `<year>/<month>/` subdirectories (see
+        // `invoice_pdf_relative_path`), so create the full parent chain
+        // rather than just the configured root.
         let path = dir.join(file_name);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| RepoError::Storage(e.to_string()))?;
+        }
         fs::write(&path, bytes).map_err(|e| RepoError::Storage(e.to_string()))?;
         Ok(path.to_string_lossy().to_string())
     }
@@ -109,6 +114,29 @@ mod tests {
         let storage = FilesystemPdfStorage::new(settings, tmp.path().to_path_buf());
         let path = storage.store("deep.pdf", b"x").unwrap();
         assert!(PathBuf::from(&path).exists());
+    }
+
+    #[test]
+    fn store_creates_year_month_subdirectories() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("invoices");
+        let settings = settings_repo();
+        settings
+            .set_app_preferences(&AppPreferences {
+                pdf_output_dir: root.to_string_lossy().to_string(),
+                ..Default::default()
+            })
+            .unwrap();
+        let storage = FilesystemPdfStorage::new(settings, tmp.path().to_path_buf());
+
+        let path = storage
+            .store("2026/05/0000007-acme.pdf", b"pdf-bytes")
+            .unwrap();
+
+        let expected = root.join("2026").join("05").join("0000007-acme.pdf");
+        assert_eq!(PathBuf::from(&path), expected);
+        assert!(expected.exists());
+        assert_eq!(fs::read(&expected).unwrap(), b"pdf-bytes");
     }
 
     #[test]

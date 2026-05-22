@@ -357,9 +357,12 @@ impl InvoiceRepository for SqliteInvoiceRepository {
         // Compose the label in SQL: `"#<number>"` for finalized invoices,
         // `"#-"` for drafts (no number yet) — the dash signals "draft" while
         // keeping the visual `"#"` prefix consistent with finalized labels.
+        // The number is zero-padded to 7 digits to match `InvoiceNumber`'s
+        // `Display` (see `INVOICE_NUMBER_DISPLAY_WIDTH`).
         let sql = format!(
             "SELECT id, \
-                    CASE WHEN number IS NOT NULL THEN '#' || number ELSE '#-' END AS label \
+                    CASE WHEN number IS NOT NULL \
+                         THEN printf('#%07d', number) ELSE '#-' END AS label \
              FROM invoices \
              WHERE id IN ({})",
             placeholders.join(", ")
@@ -384,6 +387,18 @@ impl InvoiceRepository for SqliteInvoiceRepository {
             }
         }
         Ok(out)
+    }
+
+    fn has_numbered_invoices(&self) -> Result<bool, RepoError> {
+        let conn = self.db.lock();
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM invoices WHERE number IS NOT NULL)",
+                [],
+                |r| r.get(0),
+            )
+            .map_err(map_err)?;
+        Ok(exists)
     }
 }
 
@@ -703,5 +718,39 @@ mod tests {
             })
             .unwrap();
         assert_eq!(list.data.len(), 1);
+    }
+
+    #[test]
+    fn labels_for_zero_pads_finalized_numbers_and_marks_drafts() {
+        let db = open_memory();
+        let client_id = seed_client(&db);
+        let repo = SqliteInvoiceRepository::new(db.clone());
+        let new = |desc: &str| NewInvoice {
+            client_id,
+            template_id: None,
+            date: NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
+            due_date: None,
+            line_items: vec![NewLineItem {
+                id: None,
+                catalog_item_id: None,
+                description: desc.into(),
+                quantity: dec!(1),
+                unit_price: Money::new(100, eur()),
+            }],
+            tax_ids: vec![],
+            notes: None,
+            currency: eur(),
+        };
+        let mut finalized = Invoice::create_draft(new("A"), &[], Utc::now()).unwrap();
+        repo.insert(&finalized).unwrap();
+        finalized.finalize(InvoiceNumber(42), Utc::now()).unwrap();
+        repo.update(&finalized).unwrap();
+
+        let draft = Invoice::create_draft(new("B"), &[], Utc::now()).unwrap();
+        repo.insert(&draft).unwrap();
+
+        let labels = repo.labels_for(&[finalized.id, draft.id]).unwrap();
+        assert_eq!(labels.get(&finalized.id).map(String::as_str), Some("#0000042"));
+        assert_eq!(labels.get(&draft.id).map(String::as_str), Some("#-"));
     }
 }

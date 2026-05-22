@@ -59,7 +59,8 @@ use crate::application::email_usecases::{
 };
 use crate::application::invoice_usecases::{
     CancelInvoice, CreateDraftInvoice, DuplicateInvoice, FinalizeInvoice, GetInvoice,
-    GetInvoicePdf, ListInvoices, OpenInvoiceExternally, PrintInvoice, UpdateDraftInvoice,
+    GetInvoiceNumbering, GetInvoicePdf, ListInvoices, OpenInvoiceExternally, PrintInvoice,
+    SetStartingInvoiceNumber, UpdateDraftInvoice,
 };
 use crate::application::notebook_usecases::{
     CountSectionEntries, CreateJournalEntry, CreateNotebookSection, DeleteJournalEntry,
@@ -144,6 +145,8 @@ pub struct OrgServices {
     pub get_invoice_pdf: GetInvoicePdf,
     pub print_invoice: PrintInvoice,
     pub open_invoice_externally: OpenInvoiceExternally,
+    pub get_invoice_numbering: GetInvoiceNumbering,
+    pub set_starting_invoice_number: SetStartingInvoiceNumber,
 
     pub update_email_config: UpdateEmailConfig,
     pub update_email_password: UpdateEmailPassword,
@@ -356,7 +359,7 @@ impl OrgServices {
                 .with_events(events.clone()),
             finalize_invoice: FinalizeInvoice::new(
                 invoice_repo.clone(),
-                number_gen,
+                number_gen.clone(),
                 template_repo.clone(),
                 settings_repo.clone(),
                 client_repo.clone(),
@@ -390,6 +393,14 @@ impl OrgServices {
             get_invoice_pdf: GetInvoicePdf::new(invoice_repo.clone(), pdf_storage),
             print_invoice: PrintInvoice::new(invoice_repo.clone()),
             open_invoice_externally: OpenInvoiceExternally::new(invoice_repo.clone()),
+            get_invoice_numbering: GetInvoiceNumbering::new(
+                number_gen.clone(),
+                invoice_repo.clone(),
+            ),
+            set_starting_invoice_number: SetStartingInvoiceNumber::new(
+                number_gen,
+                invoice_repo.clone(),
+            ),
 
             update_email_config: UpdateEmailConfig::new(settings_repo.clone()),
             update_email_password: UpdateEmailPassword::new(credentials.clone()),

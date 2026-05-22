@@ -6,7 +6,7 @@ use uuid::Uuid;
 use super::DtoConvertError;
 use super::accounting::DerivedPaymentStatusDto;
 use super::common::MoneyDto;
-use crate::application::invoice_usecases::UpdateDraftInvoiceInput;
+use crate::application::invoice_usecases::{InvoiceNumbering, UpdateDraftInvoiceInput};
 use crate::application::ports::{InvoicePaymentFilter, ListInvoicesQuery};
 use crate::domain::client::ClientId;
 use crate::application::dto::email_template::EmailTemplateTypeDto;
@@ -172,7 +172,8 @@ impl From<&EmailLog> for EmailSendDto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub struct InvoiceDto {
     pub id: Uuid,
-    pub number: Option<u64>,
+    /// The invoice's display number, already zero-padded to 7 digits (e.g.`"0000042"`) 
+    pub number: Option<String>,
     pub client_id: Uuid,
     pub client_name: Option<String>,
     pub template_id: Option<Uuid>,
@@ -237,7 +238,7 @@ impl InvoiceDto {
     ) -> Self {
         Self {
             id: i.id.0,
-            number: i.number.map(|n| n.0),
+            number: i.number.map(|n| n.to_string()),
             client_id: i.client_id.0,
             client_name,
             template_id: i.template_id.map(|t| t.0),
@@ -257,6 +258,26 @@ impl InvoiceDto {
             email_sends: email_logs.iter().map(Into::into).collect(),
             created_at: i.created_at,
             updated_at: i.updated_at,
+        }
+    }
+}
+
+// ---- InvoiceNumberingDto ----
+
+/// Wire shape for the invoice-number sequence configuration shown in
+/// Settings. `next_number` is the number the next finalized invoice will
+/// receive; `can_edit` is false once any invoice has already been numbered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct InvoiceNumberingDto {
+    pub next_number: u64,
+    pub can_edit: bool,
+}
+
+impl From<InvoiceNumbering> for InvoiceNumberingDto {
+    fn from(n: InvoiceNumbering) -> Self {
+        Self {
+            next_number: n.next_number,
+            can_edit: n.can_edit,
         }
     }
 }
@@ -447,7 +468,8 @@ mod tests {
         let domain = sample_invoice();
         let dto = InvoiceDto::from_invoice_basic(&domain);
         assert_eq!(dto.id, domain.id.0);
-        assert_eq!(dto.number, Some(42));
+        // Number crosses the wire pre-formatted via `InvoiceNumber`'s Display.
+        assert_eq!(dto.number.as_deref(), Some("0000042"));
         assert_eq!(dto.line_items.len(), 1);
         assert_eq!(dto.line_items[0].total.amount, 2000);
         assert_eq!(dto.taxes_applied.len(), 1);

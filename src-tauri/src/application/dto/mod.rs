@@ -44,8 +44,8 @@ pub use email_template::{
     EmailTemplateDto, EmailTemplateTypeDto, NewEmailTemplateDto, UpdateEmailTemplateDto,
 };
 pub use invoice::{
-    AppliedTaxDto, EmailSendDto, InvoiceDto, InvoiceStatusDto, LineItemDto, ListInvoicesQueryDto,
-    NewInvoiceDto, NewLineItemDto, UpdateDraftInvoiceDto,
+    AppliedTaxDto, EmailSendDto, InvoiceDto, InvoiceNumberingDto, InvoiceStatusDto, LineItemDto,
+    ListInvoicesQueryDto, NewInvoiceDto, NewLineItemDto, UpdateDraftInvoiceDto,
 };
 pub use notebook::{
     ClientJournalEntryDto, ClientNotebookSectionDto, ClientNotebookViewDto,

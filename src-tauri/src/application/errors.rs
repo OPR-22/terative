@@ -96,6 +96,8 @@ pub enum ErrorCode {
     InvoiceAllocationCurrencyMismatch,
     InvoiceNotAllocatable,
     InvoiceMissingPdf,
+    InvoiceNumberingLocked,
+    InvoiceNumberingInvalidStart,
 
     // ── Journal entry ──
     JournalEntryEmptyContent,

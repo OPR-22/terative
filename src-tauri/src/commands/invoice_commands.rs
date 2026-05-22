@@ -3,7 +3,8 @@ use tauri::State;
 use uuid::Uuid;
 
 use crate::application::dto::{
-    InvoiceDto, ListInvoicesQueryDto, NewInvoiceDto, PageDto, UpdateDraftInvoiceDto,
+    InvoiceDto, InvoiceNumberingDto, ListInvoicesQueryDto, NewInvoiceDto, PageDto,
+    UpdateDraftInvoiceDto,
 };
 use crate::application::AppError;
 use crate::domain::invoice::InvoiceId;
@@ -126,6 +127,33 @@ pub fn invoice_print(state: State<'_, AppState>, id: Uuid) -> Result<(), AppErro
     state.org()?
         .print_invoice
         .execute(InvoiceId(id))
+}
+
+/// Reports the invoice-number sequence state: the next number to be
+/// assigned and whether the starting point can still be reconfigured.
+#[tauri::command]
+#[specta::specta]
+pub fn invoice_numbering_get(
+    state: State<'_, AppState>,
+) -> Result<InvoiceNumberingDto, AppError> {
+    state.org()?
+        .get_invoice_numbering
+        .execute()
+        .map(Into::into)
+}
+
+/// Sets the number the next finalized invoice will receive. Only permitted
+/// before the first invoice is finalized — afterwards the sequence is locked.
+#[tauri::command]
+#[specta::specta]
+pub fn invoice_numbering_set_start(
+    state: State<'_, AppState>,
+    start: u64,
+) -> Result<InvoiceNumberingDto, AppError> {
+    state.org()?
+        .set_starting_invoice_number
+        .execute(start)
+        .map(Into::into)
 }
 
 /// Opens the invoice PDF in the OS default application. Unlike

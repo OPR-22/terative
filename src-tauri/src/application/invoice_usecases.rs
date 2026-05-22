@@ -7,11 +7,11 @@ use crate::application::ports::{
     InvoiceRepository, ListInvoicesQuery, NoopEventBus, Page, PaymentRepository, PdfGenerator,
     PdfRenderInput, PdfStorage, SettingsRepository, TaxRepository, TemplateRepository,
 };
-use crate::application::{AppError, RepoError};
-#[cfg(test)] use crate::application::ErrorCode;
+use crate::application::{AppError, ErrorCode, RepoError};
 use crate::domain::aggregate_root::AggregateRoot;
 use crate::domain::events::invoice_events::InvoiceDuplicated;
-use crate::domain::invoice::{Invoice, InvoiceId, InvoiceStatus, NewInvoice};
+use crate::domain::invoice::{Invoice, InvoiceId, InvoiceNumber, InvoiceStatus, NewInvoice};
+use crate::kernel::text::slugify;
 use crate::domain::money::{Currency, Money};
 use crate::domain::line_item::NewLineItem;
 use crate::domain::tax::{TaxDefinition, TaxId};
@@ -61,6 +61,29 @@ fn cancelled_watermark(lang: crate::domain::settings::Language) -> &'static str 
     match lang {
         crate::domain::settings::Language::Fr => "ANNULÉ",
         crate::domain::settings::Language::En => "CANCELLED",
+    }
+}
+
+/// Storage-relative path for an invoice's rendered PDF:
+/// `<year>/<month>/<number>-<client-slug>.pdf`. Year and month come from the
+/// invoice's own document date, so an invoice dated December files under that
+/// December even if it is finalized in January. The number is zero-padded by
+/// [`InvoiceNumber`](crate::domain::invoice::InvoiceNumber)'s `Display`; an
+/// invoice with no number yet (not expected on the finalize/cancel paths)
+/// falls back to its UUID. The client slug is omitted when it reduces to
+/// nothing.
+fn invoice_pdf_relative_path(invoice: &Invoice, client_name: &str) -> String {
+    let year = invoice.date.format("%Y");
+    let month = invoice.date.format("%m");
+    let number = invoice
+        .number
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| invoice.id.to_string());
+    let slug = slugify(client_name);
+    if slug.is_empty() {
+        format!("{year}/{month}/{number}.pdf")
+    } else {
+        format!("{year}/{month}/{number}-{slug}.pdf")
     }
 }
 
@@ -210,7 +233,7 @@ impl FinalizeInvoice {
             is_preview: false,
             watermark: None,
         })?;
-        let file_name = format!("invoice-{}.pdf", number.0);
+        let file_name = invoice_pdf_relative_path(&invoice, &client.name);
         let path = self.storage.store(&file_name, &pdf_bytes)?;
         invoice.set_pdf_path(path);
         self.invoices.update(&invoice)?;
@@ -336,13 +359,7 @@ impl CancelInvoice {
                 is_preview: false,
                 watermark: Some(watermark),
             })?;
-            let file_name = format!(
-                "invoice-{}.pdf",
-                invoice
-                    .number
-                    .map(|n| n.0.to_string())
-                    .unwrap_or_else(|| invoice.id.to_string())
-            );
+            let file_name = invoice_pdf_relative_path(&invoice, &client.name);
             let path = self.storage.store(&file_name, &bytes)?;
             invoice.set_pdf_path(path);
         }
@@ -350,6 +367,81 @@ impl CancelInvoice {
         self.invoices.update(&invoice)?;
         invoice.commit(self.events.as_ref());
         Ok(invoice)
+    }
+}
+
+/// Read model for the invoice-number sequence's configuration, surfaced in
+/// Settings so the user can pick where numbering starts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvoiceNumbering {
+    /// The number the next finalized invoice will receive.
+    pub next_number: u64,
+    /// Whether the starting point can still be changed. False once any
+    /// invoice has been finalized (and thus assigned a number).
+    pub can_edit: bool,
+}
+
+/// Reports the current invoice-number sequence state for the settings UI.
+#[derive(Clone)]
+pub struct GetInvoiceNumbering {
+    numbers: Arc<dyn InvoiceNumberGenerator>,
+    invoices: Arc<dyn InvoiceRepository>,
+}
+
+impl GetInvoiceNumbering {
+    pub fn new(
+        numbers: Arc<dyn InvoiceNumberGenerator>,
+        invoices: Arc<dyn InvoiceRepository>,
+    ) -> Self {
+        Self { numbers, invoices }
+    }
+
+    pub fn execute(&self) -> Result<InvoiceNumbering, AppError> {
+        let next_number = self.numbers.peek()?.0;
+        let can_edit = !self.invoices.has_numbered_invoices()?;
+        Ok(InvoiceNumbering {
+            next_number,
+            can_edit,
+        })
+    }
+}
+
+/// Sets the number the next finalized invoice will receive. Lets the user
+/// configure where numbering begins (e.g. continuing a sequence from a
+/// previous tool) before the first invoice is finalized.
+#[derive(Clone)]
+pub struct SetStartingInvoiceNumber {
+    numbers: Arc<dyn InvoiceNumberGenerator>,
+    invoices: Arc<dyn InvoiceRepository>,
+}
+
+impl SetStartingInvoiceNumber {
+    pub fn new(
+        numbers: Arc<dyn InvoiceNumberGenerator>,
+        invoices: Arc<dyn InvoiceRepository>,
+    ) -> Self {
+        Self { numbers, invoices }
+    }
+
+    /// Rejected once any invoice has already been numbered — moving the start
+    /// then could collide with an assigned number (the `invoices.number`
+    /// column is UNIQUE).
+    pub fn execute(&self, start: u64) -> Result<InvoiceNumbering, AppError> {
+        if start < 1 {
+            return Err(AppError::invalid_argument(
+                ErrorCode::InvoiceNumberingInvalidStart,
+            ));
+        }
+        if self.invoices.has_numbered_invoices()? {
+            return Err(AppError::failed_precondition(
+                ErrorCode::InvoiceNumberingLocked,
+            ));
+        }
+        self.numbers.set_next(InvoiceNumber(start))?;
+        Ok(InvoiceNumbering {
+            next_number: start,
+            can_edit: true,
+        })
     }
 }
 
@@ -676,6 +768,9 @@ mod tests {
                 .filter_map(|id| g.get(id).map(|i| (*id, label_for(i))))
                 .collect())
         }
+        fn has_numbered_invoices(&self) -> Result<bool, RepoError> {
+            Ok(self.inner.lock().values().any(|i| i.number.is_some()))
+        }
     }
 
     fn label_for(i: &Invoice) -> String {
@@ -839,6 +934,23 @@ mod tests {
             notes: None,
             currency: eur(),
         }
+    }
+
+    #[test]
+    fn invoice_pdf_relative_path_uses_year_month_padded_number_and_slug() {
+        let (_inv_repo, _tax_repo, tax) = setup();
+        let mut inv =
+            Invoice::create_draft(new_invoice_input(ClientId::new(), tax.id), &[], Utc::now())
+                .unwrap();
+        inv.finalize(crate::domain::invoice::InvoiceNumber(7), Utc::now())
+            .unwrap();
+        // new_invoice_input dates the invoice 2026-04-14.
+        assert_eq!(
+            invoice_pdf_relative_path(&inv, "Acme Corp."),
+            "2026/04/0000007-acme-corp.pdf",
+        );
+        // A client name with no usable characters drops the slug entirely.
+        assert_eq!(invoice_pdf_relative_path(&inv, "***"), "2026/04/0000007.pdf");
     }
 
     #[test]
@@ -1025,7 +1137,7 @@ mod tests {
         );
         let calls = storage.calls.lock();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].0, "invoice-1001.pdf");
+        assert_eq!(calls[0].0, "2026/04/0001001-acme.pdf");
 
         let reloaded = inv_repo.inner.lock().get(&invoice.id).cloned().unwrap();
         assert_eq!(reloaded.status, InvoiceStatus::Cancelled);
@@ -1171,6 +1283,13 @@ mod tests {
             let n = *g;
             *g += 1;
             Ok(InvoiceNumber(n))
+        }
+        fn peek(&self) -> Result<InvoiceNumber, RepoError> {
+            Ok(InvoiceNumber(*self.0.lock()))
+        }
+        fn set_next(&self, next: InvoiceNumber) -> Result<(), RepoError> {
+            *self.0.lock() = next.0;
+            Ok(())
         }
     }
 
@@ -1398,11 +1517,16 @@ mod tests {
 
         assert_eq!(finalized.status, InvoiceStatus::Finalized);
         assert_eq!(finalized.number, Some(InvoiceNumber(1001)));
-        assert_eq!(finalized.pdf_path.as_deref(), Some("/tmp/invoice-1001.pdf"));
+        // PDF lands under `<year>/<month>/<padded-number>-<client-slug>.pdf`,
+        // year/month taken from the invoice's 2026-04-14 date.
+        assert_eq!(
+            finalized.pdf_path.as_deref(),
+            Some("/tmp/2026/04/0001001-acme.pdf")
+        );
         assert_eq!(*pdf.0.lock(), 1, "pdf render must be called exactly once");
         let calls = storage.calls.lock();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].0, "invoice-1001.pdf");
+        assert_eq!(calls[0].0, "2026/04/0001001-acme.pdf");
         assert_eq!(calls[0].1, b"%PDF-fake");
 
         // Persisted state reflects the finalize.
@@ -1410,7 +1534,7 @@ mod tests {
         assert_eq!(reloaded.status, InvoiceStatus::Finalized);
         assert_eq!(
             reloaded.pdf_path.as_deref(),
-            Some("/tmp/invoice-1001.pdf")
+            Some("/tmp/2026/04/0001001-acme.pdf")
         );
     }
 
@@ -1465,6 +1589,74 @@ mod tests {
         );
         let err = finalize.execute(InvoiceId::new()).unwrap_err();
         assert!(err.is(ErrorCode::ResourceNotFound));
+    }
+
+    // === Invoice numbering configuration ===
+
+    /// Finalizes an invoice straight in the repo so `has_numbered_invoices`
+    /// flips to true without running the full finalize pipeline.
+    fn seed_numbered_invoice(inv_repo: &Arc<InMemoryInvoiceRepo>, tax_repo: Arc<InMemoryTaxRepo>, tax_id: TaxId) {
+        let created = CreateDraftInvoice::new(inv_repo.clone(), tax_repo)
+            .execute(new_invoice_input(ClientId::new(), tax_id))
+            .unwrap();
+        let mut g = inv_repo.inner.lock();
+        g.get_mut(&created.id)
+            .unwrap()
+            .finalize(InvoiceNumber(5), Utc::now())
+            .unwrap();
+    }
+
+    #[test]
+    fn get_invoice_numbering_reports_next_and_editable_when_no_invoices() {
+        let (inv_repo, _, _) = setup();
+        let numbers = Arc::new(FakeNumberGenerator(Mutex::new(1)));
+        let n = GetInvoiceNumbering::new(numbers, inv_repo).execute().unwrap();
+        assert_eq!(n.next_number, 1);
+        assert!(n.can_edit);
+    }
+
+    #[test]
+    fn get_invoice_numbering_locks_once_an_invoice_is_numbered() {
+        let (inv_repo, tax_repo, tax) = setup();
+        seed_numbered_invoice(&inv_repo, tax_repo, tax.id);
+        let numbers = Arc::new(FakeNumberGenerator(Mutex::new(6)));
+        let n = GetInvoiceNumbering::new(numbers, inv_repo).execute().unwrap();
+        assert_eq!(n.next_number, 6);
+        assert!(!n.can_edit);
+    }
+
+    #[test]
+    fn set_starting_invoice_number_updates_sequence_when_no_invoices() {
+        let (inv_repo, _, _) = setup();
+        let numbers = Arc::new(FakeNumberGenerator(Mutex::new(1)));
+        let result = SetStartingInvoiceNumber::new(numbers.clone(), inv_repo)
+            .execute(1000)
+            .unwrap();
+        assert_eq!(result.next_number, 1000);
+        assert!(result.can_edit);
+        // The sequence actually moved: the next handed-out number is 1000.
+        assert_eq!(numbers.next().unwrap(), InvoiceNumber(1000));
+    }
+
+    #[test]
+    fn set_starting_invoice_number_rejects_zero() {
+        let (inv_repo, _, _) = setup();
+        let numbers = Arc::new(FakeNumberGenerator(Mutex::new(1)));
+        let err = SetStartingInvoiceNumber::new(numbers, inv_repo)
+            .execute(0)
+            .unwrap_err();
+        assert!(err.is(ErrorCode::InvoiceNumberingInvalidStart));
+    }
+
+    #[test]
+    fn set_starting_invoice_number_rejected_once_an_invoice_is_numbered() {
+        let (inv_repo, tax_repo, tax) = setup();
+        seed_numbered_invoice(&inv_repo, tax_repo, tax.id);
+        let numbers = Arc::new(FakeNumberGenerator(Mutex::new(6)));
+        let err = SetStartingInvoiceNumber::new(numbers, inv_repo)
+            .execute(100)
+            .unwrap_err();
+        assert!(err.is(ErrorCode::InvoiceNumberingLocked));
     }
 
     // === Domain event emission ===

@@ -14,17 +14,17 @@ appends without reshuffling other tiers.
 - [x] T1.02 Multi-currency — domain `Money`, per-invoice currency, FX, accounting roll-ups.
 - [x] T1.03 Database encryption / password — SQLCipher via `rusqlite`, key derivation, unlock on org selection, backup/restore impact.
 - [x] T1.04 Activity history / audit log — `events` table written by use cases, covers invoices/clients/payments/backups.
-- [ ] T1.05 Invoice file storage — `year/month/<name>.pdf` layout, numbering reset to `000001`, client name in filename, migrate existing files.
+- [x] T1.05 Invoice file storage — PDFs filed under `<year>/<month>/<NNNNNNN>-<client-slug>.pdf` (year/month from invoice date); invoice numbers zero-padded to 7 digits everywhere (PDF, UI, filenames, audit labels); configurable starting number in Settings, editable until the first invoice is finalized.
 - [ ] T1.07 Global search — FTS5 index across clients, invoices, catalog items.
 - [ ] T1.08 App updates (like discord ? Like freetube ? apple/microsoft dev account required ?) 
 - [ ] T1.09 (optional) Families (parent is the client and child is under that parent) - think of a way or something.
 - [ ] T1.10 Tax groups (grouping up multiple taxes so it shows up as a single checkbox in UI + default group applied to invoice) 
-- [ ] T1.11 Cleanup/refactor of code, split command/queries, move ipc commands to interface, cleanup domains and imports...
+- [ ] T1.11 Cleanup/refactor of code, split command/queries, move ipc commands to interface, cleanup domains and imports (std::), centralized tests (repo impl for each use case, try to group them up maybe ?)...
 
 
 ## Tier 2 — New domains / significant features
 
-- [ ] T2.00 replace invoice status, have status=draft+finalized+cancelled AND sending_status='unsent,sent'. not grouped. + filters.
+- [ ] T2.00 replace invoice status, have status=draft+finalized+cancelled AND sending_status='unsent,sent'. not grouped as single one for frontend. + update filters for sent+finalized status.
 - [ ] T2.01 Projects + time tracking — new aggregate, link to invoice/client, tray-running app, dashboard timer.
 - [!] T2.02 Expenses + receipt OCR — blocked: mobile-upload scope conflicts with local-first. Decide flow (QR upload, desktop drop, local OCR vs API).
 - [ ] T2.03 PO numbers on invoices — schema + UI + PDF.

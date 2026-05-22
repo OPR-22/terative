@@ -327,6 +327,9 @@ mod tests {
                 .filter_map(|id| g.get(id).map(|l| (*id, l.clone())))
                 .collect())
         }
+        fn has_numbered_invoices(&self) -> Result<bool, RepoError> {
+            unimplemented!()
+        }
     }
 
     #[derive(Default)]

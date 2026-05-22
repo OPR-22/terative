@@ -25,6 +25,7 @@ import {
   type BackupScopeDto,
   type CurrencyConfigDto,
   type EmailConfigDto,
+  type InvoiceNumberingDto,
   type LanguageDto,
   type SellerProfileDto,
   type ThemeDto,
@@ -76,6 +77,7 @@ export function Settings() {
       <div className="max-w-3xl space-y-10">
       <SellerSection seller={snapshot.seller} onSave={saveSeller} />
       <CurrencySection currency={snapshot.currency} onSave={saveCurrency} />
+      <InvoiceNumberingSection />
       <EmailSection
         config={snapshot.email}
         hasPassword={snapshot.has_email_password}
@@ -621,6 +623,89 @@ function CurrencySection({ currency, onSave }: CurrencyProps) {
 interface PreferencesProps {
   prefs: AppPreferencesDto;
   onSave: (p: AppPreferencesDto) => Promise<void>;
+}
+
+// Invoice-number sequence configuration. Self-contained: loads its own
+// state from `invoice_numbering_get` rather than going through the settings
+// snapshot, since the sequence lives in its own table. The starting number
+// is editable only until the first invoice is finalized.
+function InvoiceNumberingSection() {
+  const { t } = useTranslation();
+  const [numbering, setNumbering] = useState<InvoiceNumberingDto | null>(null);
+  const [value, setValue] = useState(1);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void ipc
+      .invoiceNumberingGet()
+      .then((n) => {
+        setNumbering(n);
+        setValue(n.next_number);
+      })
+      .catch((e) => toast.error(translateError(e)));
+  }, []);
+
+  if (!numbering) return null;
+
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-semibold text-fg">
+        {t("settings.invoice_numbering")}
+      </h2>
+      <p className="mb-3 text-[13px] text-ink-3">
+        {t("settings.invoice_numbering_help")}
+      </p>
+      <form
+        className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!numbering.can_edit) return;
+          setBusy(true);
+          try {
+            const updated = await ipc.invoiceNumberingSetStart(value);
+            setNumbering(updated);
+            setValue(updated.next_number);
+            setSaved(true);
+            setTimeout(() => setSaved(false), 1500);
+          } catch (err) {
+            toast.error(translateError(err));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <Input
+          label={t("settings.next_invoice_number") ?? ""}
+          type="number"
+          min="1"
+          value={value}
+          disabled={!numbering.can_edit}
+          onChange={(e) =>
+            setValue(Math.max(1, parseInt(e.target.value, 10) || 1))
+          }
+        />
+        <div className="sm:col-span-2 flex items-center gap-3">
+          {numbering.can_edit ? (
+            <>
+              <Button type="submit" disabled={busy}>
+                {t("common.save")}
+              </Button>
+              {saved ? (
+                <span className="text-sm text-success">
+                  {t("settings.saved")}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <span className="text-[13px] text-ink-3">
+              {t("settings.invoice_numbering_locked")}
+            </span>
+          )}
+        </div>
+      </form>
+    </section>
+  );
 }
 
 function PreferencesSection({ prefs, onSave }: PreferencesProps) {

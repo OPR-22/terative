@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 use super::common::MoneyDto;
 use super::invoice::InvoiceStatusDto;
+use crate::domain::invoice::InvoiceNumber;
 use crate::application::accounting_usecases::{RevenueByClientInput, RevenueByPeriodInput};
 use crate::application::ports::{
     AgingBucket, AgingRow, ClientBalance, DashboardOutstandingRow, DashboardRevenueRow,
@@ -93,7 +94,8 @@ impl From<AgingBucket> for AgingBucketDto {
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct InvoicePaymentRowDto {
     pub invoice_id: Uuid,
-    pub number: Option<u64>,
+    /// Display number, zero-padded via `InvoiceNumber`'s `Display`; `None` for drafts.
+    pub number: Option<String>,
     pub client_id: Uuid,
     pub client_name: String,
     pub date: NaiveDate,
@@ -109,7 +111,7 @@ impl From<&InvoicePaymentRow> for InvoicePaymentRowDto {
     fn from(r: &InvoicePaymentRow) -> Self {
         Self {
             invoice_id: r.invoice_id.0,
-            number: r.number,
+            number: r.number.map(|n| InvoiceNumber(n).to_string()),
             client_id: r.client_id.0,
             client_name: r.client_name.clone(),
             date: r.date,
@@ -191,7 +193,9 @@ impl From<&ClientBalance> for ClientBalanceDto {
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct AgingRowDto {
     pub invoice_id: Uuid,
-    pub number: Option<u64>,
+    /// Display number, zero-padded via `InvoiceNumber`'s `Display`; `None`
+    /// for drafts.
+    pub number: Option<String>,
     pub client_id: Uuid,
     pub client_name: String,
     pub total: MoneyDto,
@@ -204,7 +208,7 @@ impl From<&AgingRow> for AgingRowDto {
     fn from(r: &AgingRow) -> Self {
         Self {
             invoice_id: r.invoice_id.0,
-            number: r.number,
+            number: r.number.map(|n| InvoiceNumber(n).to_string()),
             client_id: r.client_id.0,
             client_name: r.client_name.clone(),
             total: (&r.total).into(),

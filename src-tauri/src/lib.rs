@@ -2,6 +2,7 @@ pub mod adapters;
 pub mod application;
 pub mod commands;
 pub mod domain;
+pub mod kernel;
 
 use std::fs;
 use std::path::PathBuf;
@@ -41,8 +42,8 @@ use commands::{
     },
     invoice_commands::{
         invoice_cancel, invoice_create_draft, invoice_duplicate, invoice_finalize, invoice_get,
-        invoice_list, invoice_open_external, invoice_pdf_bytes, invoice_print,
-        invoice_update_draft,
+        invoice_list, invoice_numbering_get, invoice_numbering_set_start, invoice_open_external,
+        invoice_pdf_bytes, invoice_print, invoice_update_draft,
     },
     org_commands::{
         org_close, org_create, org_delete, org_get_active, org_list, org_open,
@@ -202,6 +203,8 @@ fn build_specta() -> Builder<tauri::Wry> {
                 invoice_pdf_bytes,
                 invoice_print,
                 invoice_open_external,
+                invoice_numbering_get,
+                invoice_numbering_set_start,
                 settings_update_email_config,
                 settings_update_email_password,
                 email_test_connection,

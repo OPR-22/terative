@@ -78,6 +78,16 @@ export const commands = {
 	 *  target app to the foreground on macOS.
 	 */
 	invoiceOpenExternal: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("invoice_open_external", { id })),
+	/**
+	 *  Reports the invoice-number sequence state: the next number to be
+	 *  assigned and whether the starting point can still be reconfigured.
+	 */
+	invoiceNumberingGet: () => typedError<InvoiceNumberingDto, AppError>(__TAURI_INVOKE("invoice_numbering_get")),
+	/**
+	 *  Sets the number the next finalized invoice will receive. Only permitted
+	 *  before the first invoice is finalized — afterwards the sequence is locked.
+	 */
+	invoiceNumberingSetStart: (start: number) => typedError<InvoiceNumberingDto, AppError>(__TAURI_INVOKE("invoice_numbering_set_start", { start })),
 	settingsUpdateEmailConfig: (config: EmailConfigDto) => typedError<EmailConfigDto, AppError>(__TAURI_INVOKE("settings_update_email_config", { config })),
 	settingsUpdateEmailPassword: (password: string) => typedError<null, AppError>(__TAURI_INVOKE("settings_update_email_password", { password })),
 	emailTestConnection: () => typedError<null, AppError>(__TAURI_INVOKE("email_test_connection")),
@@ -247,7 +257,10 @@ export type AgingBucketDto = "Current" | "Days1To30" | "Days31To60" | "Days61To9
 
 export type AgingRowDto = {
 	invoice_id: string,
-	number: number | null,
+	/**
+	 *  Display number, zero-padded via `InvoiceNumber`'s `Display`; `None` for drafts.
+	 */
+	number: string | null,
 	client_id: string,
 	client_name: string,
 	total: MoneyDto,
@@ -538,13 +551,14 @@ export type EmailTemplateTypeDto = "InitialContact" | "FollowUp";
  *  `AlreadyExists` / `FailedPrecondition`. They are the i18n keys used by
  *  the frontend's `errorCatalog`.
  */
-export type ErrorCode = "resource_not_found" | "no_active_org" | "org_not_found" | "org_code_already_exists" | "invalid_org_code" | "org_password_required" | "org_wrong_password" | "restore_wrong_password" | "bookmark_empty_label" | "bookmark_empty_url" | "bookmark_invalid_url" | "bookmark_unsupported_scheme" | "catalog_item_empty_name" | "catalog_item_negative_price" | "catalog_item_duplicate_currency" | "client_empty_name" | "client_empty_contact_value" | "client_empty_address_street" | "client_empty_address_city" | "client_empty_address_postal_code" | "client_empty_address_country" | "client_duplicate_billing_address" | "client_duplicate_shipping_address" | "client_self_referral" | "client_future_date_of_birth" | "client_has_invoices" | "currency_unsupported" | "dto_convert" | "email_config_empty_host" | "email_config_invalid_port" | "email_config_empty_sender" | "email_config_invalid_sender" | "email_log_empty_recipient" | "email_log_empty_subject" | "email_template_empty_name" | "email_template_empty_subject" | "email_template_empty_body" | "email_template_no_default" | "email_template_is_default" | "invoice_no_line_items" | "invoice_not_draft" | "invoice_cannot_cancel_draft" | "invoice_already_cancelled" | "invoice_not_finalized" | "invoice_not_sendable" | "invoice_over_allocated" | "invoice_allocation_currency_mismatch" | "invoice_not_allocatable" | "invoice_missing_pdf" | "journal_entry_empty_content" | "line_item_empty_description" | "line_item_non_positive_quantity" | "line_item_negative_unit_price" | "money_unsupported_currency" | "money_currency_mismatch" | "money_overflow" | "notebook_duplicate_section" | "notebook_section_empty_name" | "payment_non_positive_amount" | "payment_non_positive_allocation" | "payment_allocations_exceed_payment" | "payment_currency_mismatch" | "payment_invoice_currency_mismatch" | "payment_duplicate_allocation" | "smtp_password_missing" | "tax_empty_name" | "tax_negative_percentage" | "template_empty_name" | "template_invalid_accent_color" | "template_in_use";
+export type ErrorCode = "resource_not_found" | "no_active_org" | "org_not_found" | "org_code_already_exists" | "invalid_org_code" | "org_password_required" | "org_wrong_password" | "restore_wrong_password" | "bookmark_empty_label" | "bookmark_empty_url" | "bookmark_invalid_url" | "bookmark_unsupported_scheme" | "catalog_item_empty_name" | "catalog_item_negative_price" | "catalog_item_duplicate_currency" | "client_empty_name" | "client_empty_contact_value" | "client_empty_address_street" | "client_empty_address_city" | "client_empty_address_postal_code" | "client_empty_address_country" | "client_duplicate_billing_address" | "client_duplicate_shipping_address" | "client_self_referral" | "client_future_date_of_birth" | "client_has_invoices" | "currency_unsupported" | "dto_convert" | "email_config_empty_host" | "email_config_invalid_port" | "email_config_empty_sender" | "email_config_invalid_sender" | "email_log_empty_recipient" | "email_log_empty_subject" | "email_template_empty_name" | "email_template_empty_subject" | "email_template_empty_body" | "email_template_no_default" | "email_template_is_default" | "invoice_no_line_items" | "invoice_not_draft" | "invoice_cannot_cancel_draft" | "invoice_already_cancelled" | "invoice_not_finalized" | "invoice_not_sendable" | "invoice_over_allocated" | "invoice_allocation_currency_mismatch" | "invoice_not_allocatable" | "invoice_missing_pdf" | "invoice_numbering_locked" | "invoice_numbering_invalid_start" | "journal_entry_empty_content" | "line_item_empty_description" | "line_item_non_positive_quantity" | "line_item_negative_unit_price" | "money_unsupported_currency" | "money_currency_mismatch" | "money_overflow" | "notebook_duplicate_section" | "notebook_section_empty_name" | "payment_non_positive_amount" | "payment_non_positive_allocation" | "payment_allocations_exceed_payment" | "payment_currency_mismatch" | "payment_invoice_currency_mismatch" | "payment_duplicate_allocation" | "smtp_password_missing" | "tax_empty_name" | "tax_negative_percentage" | "template_empty_name" | "template_invalid_accent_color" | "template_in_use";
 
 export type FontChoiceDto = "Serif" | "SansSerif" | "Mono";
 
 export type InvoiceDto = {
 	id: string,
-	number: number | null,
+	// The invoice's display number, already zero-padded to 7 digits (e.g.`"0000042"`) 
+	number: string | null,
 	client_id: string,
 	client_name: string | null,
 	template_id: string | null,
@@ -566,11 +580,25 @@ export type InvoiceDto = {
 	updated_at: string,
 };
 
+/**
+ *  Wire shape for the invoice-number sequence configuration shown in
+ *  Settings. `next_number` is the number the next finalized invoice will
+ *  receive; `can_edit` is false once any invoice has already been numbered.
+ */
+export type InvoiceNumberingDto = {
+	next_number: number,
+	can_edit: boolean,
+};
+
 export type InvoicePaymentFilterDto = "Paid" | "Unpaid" | "Late";
 
 export type InvoicePaymentRowDto = {
 	invoice_id: string,
-	number: number | null,
+	/**
+	 *  Display number, zero-padded via `InvoiceNumber`'s `Display`; `None`
+	 *  for drafts.
+	 */
+	number: string | null,
 	client_id: string,
 	client_name: string,
 	date: string,

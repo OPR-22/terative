@@ -436,6 +436,9 @@ mod tests {
                 })
                 .collect())
         }
+        fn has_numbered_invoices(&self) -> Result<bool, RepoError> {
+            Ok(self.invoices.lock().values().any(|i| i.number.is_some()))
+        }
     }
 
     fn eur() -> Currency {

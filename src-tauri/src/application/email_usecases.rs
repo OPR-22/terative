@@ -335,6 +335,9 @@ mod tests {
                 })
                 .collect())
         }
+        fn has_numbered_invoices(&self) -> Result<bool, RepoError> {
+            Ok(self.0.lock().values().any(|i| i.number.is_some()))
+        }
     }
 
     #[derive(Default)]

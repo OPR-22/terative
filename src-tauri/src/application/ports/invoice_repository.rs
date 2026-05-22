@@ -21,6 +21,12 @@ pub trait InvoiceRepository: Send + Sync {
         &self,
         ids: &[InvoiceId],
     ) -> Result<HashMap<InvoiceId, String>, RepoError>;
+
+    /// True when at least one invoice has been assigned a number (i.e. has
+    /// been finalized). Used to decide whether the invoice-number sequence's
+    /// starting point can still be reconfigured — once a number has been
+    /// handed out, changing the start would risk colliding with it.
+    fn has_numbered_invoices(&self) -> Result<bool, RepoError>;
 }
 
 /// User-facing groupings over the underlying `DerivedPaymentStatus` —
