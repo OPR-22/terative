@@ -1,0 +1,62 @@
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+
+export interface Crumb {
+  label: ReactNode;
+  to?: string;
+}
+
+export type CrumbInput = ReactNode | Crumb;
+
+interface PageMetaState {
+  crumbs: Crumb[];
+  setCrumbs: (crumbs: Crumb[]) => void;
+}
+
+const PageMetaContext = createContext<PageMetaState | null>(null);
+
+function isCrumb(value: CrumbInput): value is Crumb {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "label" in (value as Crumb)
+  );
+}
+
+function normalize(crumbs: CrumbInput[]): Crumb[] {
+  return crumbs.map((c) => (isCrumb(c) ? c : { label: c }));
+}
+
+export function PageMetaProvider({ children }: { children: ReactNode }) {
+  const [crumbs, setCrumbs] = useState<Crumb[]>([]);
+  const value = useMemo(() => ({ crumbs, setCrumbs }), [crumbs]);
+  return <PageMetaContext.Provider value={value}>{children}</PageMetaContext.Provider>;
+}
+
+export function usePageMeta(): PageMetaState {
+  const ctx = useContext(PageMetaContext);
+  if (!ctx) throw new Error("usePageMeta must be used inside <PageMetaProvider>");
+  return ctx;
+}
+
+/** Set breadcrumbs for the active page. Cleared when the page unmounts. */
+export function usePageCrumbs(crumbs: CrumbInput[]): void {
+  const { setCrumbs } = usePageMeta();
+  const normalized = normalize(crumbs);
+  // Use a primitive key so a new array reference each render doesn't loop.
+  const key = normalized
+    .map((c) => `${typeof c.label === "string" ? c.label : ""}|${c.to ?? ""}`)
+    .join(" ");
+  useEffect(() => {
+    setCrumbs(normalized);
+    return () => setCrumbs([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+}

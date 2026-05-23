@@ -1,0 +1,239 @@
+@import "tailwindcss";
+
+/*
+  ─────────────────────────────────────────────────────────────────
+  Terative — design tokens (single source of truth)
+  ─────────────────────────────────────────────────────────────────
+  Direction: Sobre · Lato · Papier froid · Terracotta.
+
+  Tailwind v4 reads `@theme` and auto-generates utility classes
+  from every token below:
+
+    --color-paper        → bg-paper, text-paper, border-paper, ring-paper
+    --color-paper-2      → bg-paper-2, …
+    --color-ink-3        → text-ink-3, …
+    --color-accent-soft  → bg-accent-soft, …
+    --radius-card        → rounded-card
+    --font-sans          → font-sans
+
+  Components consume these semantic tokens, never raw colors.
+*/
+
+@theme {
+  /* PAPER — backgrounds (cool white, slight blue undertone). */
+  --color-paper: oklch(0.985 0.004 240);
+  --color-paper-2: oklch(0.97 0.0048 240);
+  --color-paper-3: oklch(0.945 0.006 240);
+
+  /* LINES — borders, dividers. */
+  --color-line: oklch(0.88 0.008 240);
+  --color-line-soft: oklch(0.93 0.0064 240);
+
+  /* INK — text. */
+  --color-ink: oklch(0.22 0.015 60);
+  --color-ink-2: oklch(0.38 0.015 60);
+  --color-ink-3: oklch(0.55 0.015 60);
+  --color-ink-4: oklch(0.72 0.012 65);
+
+  /* ACCENT — terracotta. */
+  --color-accent: oklch(0.62 0.13 40);
+  --color-accent-soft: oklch(0.94 0.052 40);
+  --color-accent-ink: oklch(0.42 0.1235 40);
+
+  /* SEMANTIC — status pills / dots. */
+  --color-ok: oklch(0.58 0.11 155);
+  --color-ok-soft: oklch(0.94 0.05 155);
+  --color-ok-ink: oklch(0.42 0.1 155);
+  --color-warn: oklch(0.68 0.14 70);
+  --color-warn-soft: oklch(0.95 0.06 75);
+  --color-warn-ink: oklch(0.45 0.13 60);
+  --color-danger: oklch(0.55 0.17 25);
+  --color-danger-soft: oklch(0.94 0.05 25);
+  --color-danger-ink: oklch(0.45 0.15 25);
+  --color-info: oklch(0.55 0.1 240);
+  --color-info-soft: oklch(0.94 0.04 240);
+  --color-info-ink: oklch(0.42 0.1 240);
+
+  /* Filled-button surface. Decoupled from `ink` because the two diverge
+     in dark mode: body text wants high lightness for legibility, but a
+     primary button at the same lightness reads as a glaring white slab.
+     Light mode keeps the historical "ink button on paper" pairing; dark
+     mode drops the bg to a calm mid-tone (~0.34) that's clearly clickable
+     without burning the user's retina. Used only by Button's primary
+     variant — not for body text. */
+  --color-fill: oklch(0.22 0.015 60);
+  --color-fill-fg: oklch(0.985 0.004 240);
+  --color-fill-hover: oklch(0.32 0.015 60);
+
+  /* Geometry — Sobre uses tight 2–3 px corners, no shadows. */
+  --radius-sm: 2px;       /* buttons, inputs, pills, badges */
+  --radius-card: 3px;     /* cards, KPIs */
+  --radius-pill: 9999px;
+
+  /* Subtle elevations (rarely used — Sobre relies on borders). */
+  --shadow-sm: 0 1px 0 oklch(0.2 0 0 / 0.04);
+  --shadow-card: 0 1px 2px oklch(0.2 0 0 / 0.04), 0 4px 12px oklch(0.2 0 0 / 0.04);
+
+  /* Typography. */
+  --font-sans: "Lato", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Motion. */
+  --duration-instant: 80ms;
+  --duration-fast: 150ms;
+  --duration-medium: 250ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /*
+    Backwards-compat aliases — keep older pages compiling against the new
+    palette while the redesign migration is in progress. Each one maps an
+    old semantic name onto the new token. The single source of truth is
+    still this file; pages can use either name.
+  */
+  --color-surface: var(--color-paper);
+  --color-surface-muted: var(--color-paper-2);
+  --color-surface-sunken: var(--color-paper-2);
+  --color-fg: var(--color-ink);
+  --color-fg-muted: var(--color-ink-2);
+  --color-fg-subtle: var(--color-ink-3);
+  --color-fg-inverse: var(--color-paper);
+  --color-brand: var(--color-accent);
+  --color-brand-fg: #ffffff;
+  --color-brand-hover: var(--color-accent-ink);
+  --color-border: var(--color-line);
+  --color-border-strong: var(--color-line);
+  --color-success: var(--color-ok);
+  --color-warning: var(--color-warn);
+  --color-danger-hover: var(--color-danger-ink);
+  --color-danger-fg: #ffffff;
+  --color-overlay: oklch(0.22 0.015 60 / 0.35);
+  --color-status-draft-bg: var(--color-paper-3);
+  --color-status-draft-fg: var(--color-ink-3);
+  --color-status-finalized-bg: var(--color-info-soft);
+  --color-status-finalized-fg: var(--color-info-ink);
+  --color-status-sent-bg: var(--color-ok-soft);
+  --color-status-sent-fg: var(--color-ok-ink);
+  --color-status-cancelled-bg: var(--color-danger-soft);
+  --color-status-cancelled-fg: var(--color-danger);
+  --radius-field: 2px;
+  --radius-pill: 9999px;
+  --shadow-card: 0 1px 2px oklch(0.2 0 0 / 0.04), 0 4px 12px oklch(0.2 0 0 / 0.04);
+  --font-serif: var(--font-sans);
+}
+
+/* Dark theme — same variable names, different values. */
+[data-theme="dark"] {
+  --color-paper: oklch(0.18 0.008 240);
+  --color-paper-2: oklch(0.22 0.008 240);
+  --color-paper-3: oklch(0.26 0.008 240);
+  --color-line: oklch(0.32 0.01 240);
+  --color-line-soft: oklch(0.27 0.01 240);
+  /* Body text was 0.95 (near-white) on a 0.18 background — that's a
+     16:1 contrast ratio that reads as harsh / glaring. 0.88 keeps WCAG
+     AAA (~12:1) but feels notably calmer, and it also softens every
+     `bg-ink` primary button which inherits this token. */
+  --color-ink: oklch(0.82 0.005 75);
+  --color-ink-2: oklch(0.7 0.008 75);
+  --color-ink-3: oklch(0.6 0.01 70);
+  --color-ink-4: oklch(0.46 0.01 70);
+  --color-accent: oklch(0.55 0.09 40);
+  --color-accent-soft: oklch(0.32 0.08 40);
+  --color-accent-ink: oklch(0.85 0.08 40);
+
+  /* Filled-button override — see the light-mode comment. We stay in the
+     "light slab on dark page" register that mirrors the light theme's
+     "dark slab on light page", but pull the lightness down from the old
+     ~0.95 (eye-burning bright white) to ~0.80 (calm off-white). Foreground
+     uses paper so the contrast still passes WCAG AAA, hover brightens
+     slightly toward the original white. */
+  --color-fill: oklch(0.8 0.005 75);
+  --color-fill-fg: var(--color-paper);
+  --color-fill-hover: oklch(0.88 0.005 75);
+
+  /* Semantic pills (status badges, alerts) need their own dark-mode
+     palette — the light-mode `*-soft` tints (~0.94 lightness) read as
+     bright tinted islands on a dark page. We invert the relationship:
+     low-lightness, low-chroma background + medium-lightness coloured
+     ink for the label, both still tinted by the source hue so the
+     status reads at a glance. The bare variants are nudged up so dot
+     indicators (`bg-ok`, `bg-danger`, etc.) stay legible. */
+  --color-ok: oklch(0.7 0.13 155);
+  --color-ok-soft: oklch(0.3 0.04 155);
+  --color-ok-ink: oklch(0.78 0.1 155);
+  --color-warn: oklch(0.45 0.05 70);
+  --color-warn-soft: oklch(0.32 0.05 70);
+  --color-warn-ink: oklch(0.82 0.12 75);
+  --color-danger: oklch(0.66 0.18 25);
+  --color-danger-soft: oklch(0.3 0.05 25);
+  --color-danger-ink: oklch(0.78 0.13 25);
+  --color-info: oklch(0.68 0.12 240);
+  --color-info-soft: oklch(0.3 0.05 240);
+  --color-info-ink: oklch(0.78 0.1 240);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
+}
+
+/* Tailwind v4 preflight applies `appearance: button` to <button> elements,
+   which on macOS WKWebView triggers native button chrome that paints over
+   our background/border-radius utilities. Reset it here so custom-styled
+   buttons render the same on every platform. */
+button,
+input[type="button"],
+input[type="reset"],
+input[type="submit"] {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+/* Tabular numerals on every cell containing numbers. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/*
+  Toast progress-bar countdown. Width animates from 100% → 0% over the
+  toast's duration (set via inline `animation-duration`). The fill stays
+  at 0 once the animation completes (`forwards`) so the bar ends empty
+  rather than snapping back. Pausing is driven by inline
+  `animation-play-state`, kept in sync with the JS dismiss timer when
+  the user hovers or focuses the toast.
+*/
+@keyframes toast-progress {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+.toast-progress {
+  animation-name: toast-progress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}

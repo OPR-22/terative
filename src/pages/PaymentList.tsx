@@ -1,0 +1,171 @@
+import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
+import { Calendar, Edit, Plus, Search, Trash2 } from "lucide-react";
+
+import { Page } from "../components/layout/Page";
+import { Avatar } from "../components/ui/Avatar";
+import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
+import { Card } from "../components/ui/Card";
+import { EmptyState } from "../components/ui/EmptyState";
+import { Input } from "../components/ui/Input";
+import { Table, Td, Th, THead, Tr } from "../components/ui/Table";
+import { useMoneyFormat } from "../lib/money";
+import { usePaymentStore } from "../stores/paymentStore";
+import type { PaymentMethodDto } from "../ipc";
+
+function paymentMethodLabel(method: PaymentMethodDto, t: (k: string) => string): string {
+  switch (method.kind) {
+    case "BankTransfer":
+      return t("payments.method_banktransfer");
+    case "Cash":
+      return t("payments.method_cash");
+    case "Check":
+      return t("payments.method_check");
+    case "Card":
+      return t("payments.method_card");
+    case "Other":
+      return method.detail || t("payments.method_other");
+  }
+}
+
+export function PaymentList() {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { payments, loading, error, refresh, remove } = usePaymentStore();
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const { formatAmount } = useMoneyFormat();
+
+  return (
+    <Page
+      crumbs={[t("payments.title")]}
+      title={t("payments.title")}
+      subtitle={t("payments.summary_count", { count: payments.length })}
+      actions={
+        <Button
+          variant="primary"
+          leadingIcon={<Plus size={13} strokeWidth={1.5} />}
+          onClick={() => navigate("/payments/create")}
+        >
+          {t("payments.new")}
+        </Button>
+      }
+    >
+      <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
+        <div className="relative max-w-md flex-1">
+          <Search
+            size={13}
+            strokeWidth={1.5}
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-3"
+          />
+          <Input
+            className="pl-8"
+            placeholder={t("payments.search_placeholder") ?? ""}
+          />
+        </div>
+        <Button leadingIcon={<Calendar size={13} strokeWidth={1.5} />}>
+          {t("common.period")}
+        </Button>
+      </div>
+
+      {error ? <p className="mb-3 text-[13px] text-danger">{error}</p> : null}
+
+      <Card className="overflow-hidden">
+        {loading ? (
+          <EmptyState description={t("common.loading")} />
+        ) : payments.length === 0 ? (
+          <EmptyState description={t("payments.none")} />
+        ) : (
+          <Table>
+            <THead>
+              <Tr>
+                <Th>{t("common.date")}</Th>
+                <Th>{t("payments.client")}</Th>
+                <Th>{t("payments.method")}</Th>
+                <Th>{t("payments.reference")}</Th>
+                <Th>{t("accounting.currency")}</Th>
+                <Th numeric>{t("payments.amount")}</Th>
+                <Th numeric>{t("payments.allocated")}</Th>
+                <Th numeric>{t("payments.unallocated")}</Th>
+                <Th />
+              </Tr>
+            </THead>
+            <tbody>
+              {payments.map((p) => {
+                const allocated = p.allocations.reduce(
+                  (sum, a) => sum + a.amount.amount,
+                  0,
+                );
+                const rest = p.amount.amount - allocated;
+                const name = p.client_name ?? "—";
+                return (
+                  <Tr key={p.id}>
+                    <Td muted mono>
+                      {p.date}
+                    </Td>
+                    <Td>
+                      <div className="flex items-center gap-2">
+                        <Avatar name={name} size={22} />
+                        <span>{name}</span>
+                      </div>
+                    </Td>
+                    <Td>
+                      <Badge kind="outline">{paymentMethodLabel(p.method, t)}</Badge>
+                    </Td>
+                    <Td muted mono>
+                      {p.reference ?? "—"}
+                    </Td>
+                    <Td muted mono>
+                      {p.amount.currency.code}
+                    </Td>
+                    <Td numeric>{formatAmount(p.amount)}</Td>
+                    <Td numeric>{formatAmount({ ...p.amount, amount: allocated })}</Td>
+                    <Td numeric>
+                      {rest > 0 ? (
+                        <span className="text-warn">
+                          {formatAmount({ ...p.amount, amount: rest })}
+                        </span>
+                      ) : (
+                        <span className="text-ink-4">—</span>
+                      )}
+                    </Td>
+                    <Td className="text-right whitespace-nowrap">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          size="sm"
+                          iconOnly
+                          aria-label={t("common.edit")}
+                          onClick={() => navigate(`/payments/${p.id}/edit`)}
+                        >
+                          <Edit size={11} strokeWidth={1.5} />
+                        </Button>
+                        <Button
+                          size="sm"
+                          iconOnly
+                          variant="danger"
+                          aria-label={t("common.delete")}
+                          onClick={() => {
+                            if (confirm(t("common.confirm_delete"))) {
+                              void remove(p.id);
+                            }
+                          }}
+                        >
+                          <Trash2 size={11} strokeWidth={1.5} />
+                        </Button>
+                      </div>
+                    </Td>
+                  </Tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        )}
+      </Card>
+    </Page>
+  );
+}

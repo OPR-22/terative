@@ -1,0 +1,25 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for our app's webviews. `main` is the React app shell; `bookmark-toolbar` is the navigation toolbar that sits above each bookmark webview. Bookmark webviews themselves (label `bookmark:<id>`, loading external URLs like google.com) are deliberately NOT listed — they have zero IPC access.",
+  "windows": ["main"],
+  "webviews": ["main", "bookmark-toolbar"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        { "path": "$APPDATA/**" },
+        { "path": "$APPLOCALDATA/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$HOME/**" }
+      ]
+    },
+    "dialog:default",
+    "updater:default",
+    "process:default"
+  ]
+}

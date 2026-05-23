@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Terative — UI Redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&family=Instrument+Serif&family=JetBrains+Mono:wght@400;500&family=Lato:wght@400;500;700&family=Manrope:wght@400;500;600&family=Geist:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=DM+Sans:wght@400;500;600&family=Outfit:wght@400;500;600&family=Public+Sans:wght@400;500;600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="notion.css">
+<link rel="stylesheet" href="explorations.css">
+<style>
+  html, body, #root { height: 100%; margin: 0; }
+  body { background: oklch(0.95 0.008 75); }
+  .canvas-host { width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="shell.jsx"></script>
+<script type="text/babel" src="page-dashboard.jsx"></script>
+<script type="text/babel" src="page-invoices.jsx"></script>
+<script type="text/babel" src="page-clients-payments.jsx"></script>
+<script type="text/babel" src="page-data.jsx"></script>
+<script type="text/babel" src="page-templates-settings.jsx"></script>
+<script type="text/babel" src="page-notion-dashboard.jsx"></script>
+<script type="text/babel" src="page-dashboard-explorations.jsx"></script>
+
+<script type="text/babel">
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accentHue": 40,
+  "accentChroma": 0.13,
+  "theme": "light",
+  "font": "Lato",
+  "bgL": 0.985,
+  "bgC": 0.004,
+  "bgH": 240,
+  "style": "sober"
+}/*EDITMODE-END*/;
+
+const FONTS = [
+  {v:"Inter Tight",      stack:'"Inter Tight", sans-serif'},
+  {v:"Lato",             stack:'"Lato", sans-serif'},
+  {v:"Manrope",          stack:'"Manrope", sans-serif'},
+  {v:"Geist",            stack:'"Geist", sans-serif'},
+  {v:"Plus Jakarta Sans",stack:'"Plus Jakarta Sans", sans-serif'},
+  {v:"IBM Plex Sans",    stack:'"IBM Plex Sans", sans-serif'},
+  {v:"DM Sans",          stack:'"DM Sans", sans-serif'},
+  {v:"Outfit",           stack:'"Outfit", sans-serif'},
+  {v:"Public Sans",      stack:'"Public Sans", sans-serif'},
+  {v:"Work Sans",        stack:'"Work Sans", sans-serif'},
+];
+
+const App = () => {
+  const [tw, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+  React.useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute("data-theme", tw.theme);
+    root.setAttribute("data-style", tw.style || "default");
+    const c = tw.accentChroma, h = tw.accentHue;
+    root.style.setProperty("--accent", `oklch(0.62 ${c} ${h})`);
+    root.style.setProperty("--accent-soft", `oklch(${tw.theme==="dark"?0.32:0.94} ${c*0.4} ${h})`);
+    root.style.setProperty("--accent-ink", `oklch(0.42 ${c*0.95} ${h})`);
+
+    // Font
+    const f = FONTS.find(x=>x.v===tw.font) || FONTS[0];
+    root.style.setProperty("--font-sans", f.stack + ', ui-sans-serif, system-ui, sans-serif');
+
+    // Derive backgrounds from a single primary L/C/H
+    const L = tw.bgL, C = tw.bgC, H = tw.bgH;
+    if (tw.theme === "dark") {
+      // For dark, treat bgL as base lightness clamped low; ladder up
+      const base = Math.min(L, 0.28);
+      root.style.setProperty("--paper",   `oklch(${base} ${C} ${H})`);
+      root.style.setProperty("--paper-2", `oklch(${base+0.04} ${C} ${H})`);
+      root.style.setProperty("--paper-3", `oklch(${base+0.08} ${C} ${H})`);
+      root.style.setProperty("--line",      `oklch(${base+0.14} ${C*1.4} ${H})`);
+      root.style.setProperty("--line-soft", `oklch(${base+0.09} ${C*1.2} ${H})`);
+    } else {
+      root.style.setProperty("--paper",   `oklch(${L} ${C} ${H})`);
+      root.style.setProperty("--paper-2", `oklch(${Math.max(0, L-0.015)} ${C*1.2} ${H})`);
+      root.style.setProperty("--paper-3", `oklch(${Math.max(0, L-0.04)} ${C*1.5} ${H})`);
+      root.style.setProperty("--line",      `oklch(${Math.max(0, L-0.105)} ${C*2} ${H})`);
+      root.style.setProperty("--line-soft", `oklch(${Math.max(0, L-0.055)} ${C*1.6} ${H})`);
+    }
+  }, [tw]);
+
+  const FRAME_W = 1240, FRAME_H = 820;
+
+  const accentSwatches = [
+    {h:40,  l:"Terracotta"},
+    {h:25,  l:"Brique"},
+    {h:140, l:"Olive"},
+    {h:200, l:"Pétrole"},
+    {h:260, l:"Iris"},
+    {h:320, l:"Prune"},
+  ];
+
+  return (
+    <div className="canvas-host">
+      {tw.style === "notion" ? (
+        <DesignCanvas
+          title="Terative — Explorations dashboard"
+          subtitle="Cinq directions radicalement différentes pour la même page (tableau de bord)"
+        >
+          <DCSection id="exp-doc" title="Document-feel">
+            <DCArtboard id="notion-dashboard" label="Notion · doc + base de données" width={FRAME_W} height={FRAME_H+200}>
+              <Frame title="Cabinet Lemaire — Notion" h={FRAME_H+200}><NotionDashboardPage/></Frame>
+            </DCArtboard>
+            <DCArtboard id="iaw-dashboard" label="iA Writer / Craft · éditorial" width={FRAME_W} height={FRAME_H}>
+              <Frame title="Cabinet Lemaire — Writer"><WriterDashboardPage/></Frame>
+            </DCArtboard>
+          </DCSection>
+          <DCSection id="exp-power" title="Power-user / dense">
+            <DCArtboard id="obsidian-dashboard" label="Obsidian · arborescence + backlinks" width={FRAME_W} height={FRAME_H}>
+              <Frame title="cabinet-lemaire — Obsidian"><ObsidianDashboardPage/></Frame>
+            </DCArtboard>
+            <DCArtboard id="linear-dashboard" label="Linear · liste + clavier" width={FRAME_W} height={FRAME_H}>
+              <Frame title="Cabinet Lemaire — Linear"><LinearDashboardPage/></Frame>
+            </DCArtboard>
+          </DCSection>
+          <DCSection id="exp-pro" title="Métier / pro-grade">
+            <DCArtboard id="sage-dashboard" label="Sage / EBP · application bureau" width={FRAME_W} height={FRAME_H+80}>
+              <Frame title="Terative Compta — Cabinet Lemaire" h={FRAME_H+80}><SageDashboardPage/></Frame>
+            </DCArtboard>
+          </DCSection>
+        </DesignCanvas>
+      ) : (
+      <DesignCanvas
+        title="Terative — UI Redesign"
+        subtitle="Warm professional · 11 surfaces · système typographique mixte (Instrument Serif + Inter Tight + JetBrains Mono)"
+      >
+        <DCSection id="overview" title="1 · Vue d'ensemble">
+          <DCArtboard id="dashboard" label="Tableau de bord" width={FRAME_W} height={FRAME_H}>
+            <Frame title="Terative — Tableau de bord"><DashboardPage/></Frame>
+          </DCArtboard>
+        </DCSection>
+        <DCSection id="invoicing" title="2 · Facturation">
+          <DCArtboard id="invoices" label="Factures · liste" width={FRAME_W} height={FRAME_H}>
+            <Frame title="Terative — Factures"><InvoicesPage/></Frame>
+          </DCArtboard>
+          <DCArtboard id="invoice-editor" label="Facture · édition" width={FRAME_W} height={FRAME_H}>
+            <Frame title="Terative — Facture #16"><InvoiceEditorPage/></Frame>
+          </DCArtboard>
+        </DCSection>
+        <DCSection id="money-in" title="3 · Encaissements">
+          <DCArtboard id="payments" label="Paiements" width={FRAME_W} height={FRAME_H+80}>
+            <Frame title="Terative — Paiements" h={FRAME_H+80}><PaymentsPage/></Frame>
+          </DCArtboard>
+        </DCSection>
+        <DCSection id="directory" title="4 · Clients">
+          <DCArtboard id="clients" label="Clients · liste" width={FRAME_W} height={FRAME_H}>
+            <Frame title="Terative — Clients"><ClientsPage/></Frame>
+          </DCArtboard>
+          <DCArtboard id="client-detail" label="Client · fiche" width={FRAME_W} height={FRAME_H+40}>
+            <Frame title="Terative — Alban Lemaire" h={FRAME_H+40}><ClientDetailPage/></Frame>
+          </DCArtboard>
+        </DCSection>
+        <DCSection id="library" title="5 · Données de référence">
+          <DCArtboard id="catalog" label="Catalogue" width={FRAME_W} height={FRAME_H+40}>
+            <Frame title="Terative — Catalogue" h={FRAME_H+40}><CatalogPage/></Frame>
+          </DCArtboard>
+          <DCArtboard id="taxes" label="Taxes" width={FRAME_W} height={FRAME_H}>
+            <Frame title="Terative — Taxes"><TaxesPage/></Frame>
+          </DCArtboard>
+        </DCSection>
+        <DCSection id="reporting" title="6 · Comptabilité">
+          <DCArtboard id="accounting" label="Comptabilité" width={FRAME_W} height={FRAME_H+80}>
+            <Frame title="Terative — Comptabilité" h={FRAME_H+80}><AccountingPage/></Frame>
+          </DCArtboard>
+        </DCSection>
+        <DCSection id="branding" title="7 · Modèles">
+          <DCArtboard id="templates" label="Modèles de facture" width={FRAME_W} height={FRAME_H+200}>
+            <Frame title="Terative — Modèles" h={FRAME_H+200}><TemplatesPage/></Frame>
+          </DCArtboard>
+          <DCArtboard id="emails" label="Modèles d'e-mail" width={FRAME_W} height={FRAME_H+260}>
+            <Frame title="Terative — E-mails" h={FRAME_H+260}><EmailsPage/></Frame>
+          </DCArtboard>
+        </DCSection>
+        <DCSection id="system" title="8 · Système">
+          <DCArtboard id="bookmark" label="Favori (webview)" width={FRAME_W} height={FRAME_H}>
+            <Frame title="Terative — Wikipedia"><BookmarkPage/></Frame>
+          </DCArtboard>
+          <DCArtboard id="settings" label="Paramètres" width={FRAME_W} height={FRAME_H+800}>
+            <Frame title="Terative — Paramètres" h={FRAME_H+800}><SettingsPage/></Frame>
+          </DCArtboard>
+        </DCSection>
+      </DesignCanvas>
+      )}
+      <TweaksPanel title="Tweaks">
+        <TweakSection title="Couleur d'accent">
+          <div style={{display:"grid", gridTemplateColumns:"repeat(6, 1fr)", gap:6, marginBottom:8}}>
+            {accentSwatches.map(s => (
+              <div key={s.h} onClick={() => setTweak("accentHue", s.h)}
+                style={{height:32, background:`oklch(0.62 ${tw.accentChroma} ${s.h})`, cursor:"pointer", border: tw.accentHue===s.h ? "2px solid var(--ink)" : "2px solid transparent", outline: tw.accentHue===s.h ? "1px solid var(--paper)" : "none", outlineOffset:-3}}
+                title={s.l}/>
+            ))}
+          </div>
+          <TweakSlider label="Teinte" min={0} max={360} step={1} value={tw.accentHue} onChange={(v)=>setTweak("accentHue", v)}/>
+          <TweakSlider label="Saturation" min={0} max={0.25} step={0.01} value={tw.accentChroma} onChange={(v)=>setTweak("accentChroma", v)}/>
+        </TweakSection>
+        <TweakSection title="Apparence">
+          <TweakRadio
+            label="Thème"
+            value={tw.theme}
+            options={[{value:"light", label:"Clair"},{value:"dark", label:"Sombre"}]}
+            onChange={(v)=>setTweak("theme", v)}
+          />
+          <TweakRadio
+            label="Style"
+            value={tw.style || "default"}
+            options={[{value:"default", label:"Éditorial"},{value:"sober", label:"Sobre"},{value:"obsidian", label:"Obsidian"},{value:"notion", label:"Explorations"}]}
+            onChange={(v)=>setTweak("style", v)}
+          />
+        </TweakSection>
+        <TweakSection title="Typographie">
+          <div style={{display:"flex", flexDirection:"column", gap:4}}>
+            {FONTS.map(f => (
+              <div key={f.v} onClick={()=>setTweak("font", f.v)}
+                style={{
+                  padding:"8px 10px",
+                  border: tw.font===f.v ? "1px solid var(--ink)" : "1px solid var(--line)",
+                  background: tw.font===f.v ? "var(--paper-2)" : "var(--paper)",
+                  cursor:"pointer",
+                  fontFamily: f.stack,
+                  display:"flex", justifyContent:"space-between", alignItems:"baseline",
+                  borderRadius:4
+                }}>
+                <span style={{fontWeight:500, fontSize:13}}>{f.v}</span>
+                <span style={{fontSize:11, color:"var(--ink-3)"}}>Aa Bb · 1 524,00 €</span>
+              </div>
+            ))}
+          </div>
+        </TweakSection>
+        <TweakSection title="Fond — couleur primaire">
+          <div style={{display:"grid", gridTemplateColumns:"repeat(6, 1fr)", gap:6, marginBottom:8}}>
+            {[
+              {L:0.985, C:0.006, H:75,  l:"Papier chaud"},
+              {L:0.985, C:0.004, H:240, l:"Papier froid"},
+              {L:0.99,  C:0,     H:0,   l:"Blanc pur"},
+              {L:0.96,  C:0.008, H:90,  l:"Crème"},
+              {L:0.95,  C:0.005, H:200, l:"Brume"},
+              {L:0.93,  C:0.012, H:50,  l:"Sable"},
+            ].map(s => {
+              const sel = tw.bgL===s.L && tw.bgC===s.C && tw.bgH===s.H;
+              return <div key={s.l} onClick={()=>{setTweak({bgL:s.L, bgC:s.C, bgH:s.H});}}
+                title={s.l}
+                style={{height:32, background:`oklch(${s.L} ${s.C} ${s.H})`, cursor:"pointer", border:"1px solid var(--line)", outline: sel ? "2px solid var(--ink)" : "none", outlineOffset:1}}/>;
+            })}
+          </div>
+          <TweakSlider label="Luminosité" min={0.85} max={1} step={0.005} value={tw.bgL} onChange={(v)=>setTweak("bgL", v)}/>
+          <TweakSlider label="Chroma" min={0} max={0.04} step={0.002} value={tw.bgC} onChange={(v)=>setTweak("bgC", v)}/>
+          <TweakSlider label="Teinte" min={0} max={360} step={1} value={tw.bgH} onChange={(v)=>setTweak("bgH", v)}/>
+          <div style={{display:"flex", gap:4, marginTop:10, height:24, border:"1px solid var(--line)"}}>
+            <div style={{flex:1, background:"var(--paper)"}}/>
+            <div style={{flex:1, background:"var(--paper-2)"}}/>
+            <div style={{flex:1, background:"var(--paper-3)"}}/>
+            <div style={{flex:1, background:"var(--line-soft)"}}/>
+            <div style={{flex:1, background:"var(--line)"}}/>
+          </div>
+          <div style={{fontSize:10, color:"var(--ink-3)", marginTop:4, fontFamily:"var(--font-mono)"}}>paper · paper-2 · paper-3 · line-soft · line</div>
+        </TweakSection>
+      </TweaksPanel>
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

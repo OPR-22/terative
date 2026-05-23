@@ -1,54 +1,50 @@
 {
-	"bundle": {
-		"active": true,
-		"targets": "all",
-		"windows": {
-			"certificateThumbprint": null,
-			"digestAlgorithm": "sha256",
-			"timestampUrl": ""
-		},
-		"icon": [
-			"icons/32x32.png",
-			"icons/128x128.png",
-			"icons/128x128@2x.png",
-			"icons/icon.icns",
-			"icons/icon.ico"
-		],
-		"resources": [],
-		"externalBin": [],
-		"copyright": "",
-		"category": "DeveloperTool",
-		"shortDescription": "",
-		"longDescription": "",
-		"macOS": {},
-		"linux": {
-			"deb": {}
-		}
-	},
-	"build": {
-		"beforeBuildCommand": "pnpm generate",
-		"frontendDist": "../dist",
-		"beforeDevCommand": "pnpm dev",
-		"devUrl": "http://localhost:3000"
-	},
-	"productName": "Terative",
-	"version": "1.0.0",
-	"identifier": "com.intradeus.terative",
-	"plugins": {},
-	"app": {
-		"windows": [
-			{
-				"title": "Terative",
-				"width": 1366,
-				"height": 768,
-				"minWidth": 375,
-				"minHeight": 812,
-				"resizable": true,
-				"fullscreen": false
-			}
-		],
-		"security": {
-			"csp": null
-		}
-	}
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Terative",
+  "version": "0.1.0",
+  "identifier": "com.terative.app",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Terative",
+        "width": 1500,
+        "height": 900
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "signingIdentity": "-"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI5OTYwQTZGQTc5MjdEMzcKUldRM2ZaS25id3FXdWZBYzNDTGUvYkViNUpPVUN2cmRIeHBIb0ZVWGU5eStVc2k0STg2Sy9iMzQK",
+      "endpoints": [
+        "https://github.com/OPR-22/terative/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
 }

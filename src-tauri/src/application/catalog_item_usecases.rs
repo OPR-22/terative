@@ -1,0 +1,484 @@
+use std::sync::Arc;
+
+use crate::application::ports::{
+    CatalogItemRepository, CommitEvents, EventBus, NoopEventBus,
+};
+use crate::application::AppError;
+#[cfg(test)] use crate::application::ErrorCode;
+use crate::domain::aggregate_root::AggregateRoot;
+use crate::domain::catalog_item::{
+    CatalogItem, CatalogItemError, CatalogItemId, CatalogItemKind, NewCatalogItem,
+};
+use crate::domain::events::catalog_item_events::CatalogItemUpdated;
+use crate::domain::money::Money;
+
+#[derive(Clone)]
+pub struct CreateCatalogItem {
+    repo: Arc<dyn CatalogItemRepository>,
+    events: Arc<dyn EventBus>,
+}
+
+impl CreateCatalogItem {
+    pub fn new(repo: Arc<dyn CatalogItemRepository>) -> Self {
+        Self {
+            repo,
+            events: Arc::new(NoopEventBus),
+        }
+    }
+
+    /// Inject the real event bus. Production wiring (`OrgServices::new`) calls
+    /// this; tests that don't assert on events keep the no-op default.
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
+    }
+
+    pub fn execute(&self, input: NewCatalogItem) -> Result<CatalogItem, AppError> {
+        let mut item = CatalogItem::create(input)?;
+        self.repo.insert(&item)?;
+        item.commit(self.events.as_ref());
+        Ok(item)
+    }
+}
+
+pub struct UpdateCatalogItem {
+    repo: Arc<dyn CatalogItemRepository>,
+    events: Arc<dyn EventBus>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateCatalogItemInput {
+    pub id: CatalogItemId,
+    pub name: String,
+    pub kind: CatalogItemKind,
+    pub prices: Vec<Money>,
+    pub unit: Option<String>,
+    pub reference: Option<String>,
+}
+
+impl UpdateCatalogItem {
+    pub fn new(repo: Arc<dyn CatalogItemRepository>) -> Self {
+        Self {
+            repo,
+            events: Arc::new(NoopEventBus),
+        }
+    }
+
+    pub fn with_events(mut self, events: Arc<dyn EventBus>) -> Self {
+        self.events = events;
+        self
+    }
+
+    pub fn execute(&self, input: UpdateCatalogItemInput) -> Result<CatalogItem, AppError> {
+        let mut item = self.repo.get(input.id)?.ok_or(AppError::resource_not_found())?;
+        let name = input.name.trim().to_string();
+        if name.is_empty() {
+            return Err(CatalogItemError::EmptyName.into());
+        }
+        // Snapshot prior state for the audit diff. Cheap clone (Vec<Money>
+        // is small).
+        let before = item.clone();
+        item.name = name;
+        item.kind = input.kind;
+        item.replace_prices(input.prices)?;
+        item.unit = input.unit.and_then(normalize);
+        item.reference = input.reference.and_then(normalize);
+        self.repo.update(&item)?;
+        // No domain `update` method — the use case records the event itself.
+        let changes = item.diff_against(&before);
+        item.apply(CatalogItemUpdated {
+            id: item.id,
+            changes,
+            at: chrono::Utc::now(),
+        });
+        item.commit(self.events.as_ref());
+        Ok(item)
+    }
+}
+
+pub struct ArchiveCatalogItem {
+    repo: Arc<dyn CatalogItemRepository>,
+}
+
+impl ArchiveCatalogItem {
+    pub fn new(repo: Arc<dyn CatalogItemRepository>) -> Self {
+        Self { repo }
+    }
+
+    pub fn execute(&self, id: CatalogItemId) -> Result<(), AppError> {
+        let mut item = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
+        item.archive(chrono::Utc::now());
+        self.repo.update(&item)?;
+        Ok(())
+    }
+}
+
+pub struct UnarchiveCatalogItem {
+    repo: Arc<dyn CatalogItemRepository>,
+}
+
+impl UnarchiveCatalogItem {
+    pub fn new(repo: Arc<dyn CatalogItemRepository>) -> Self {
+        Self { repo }
+    }
+
+    pub fn execute(&self, id: CatalogItemId) -> Result<(), AppError> {
+        let mut item = self.repo.get(id)?.ok_or(AppError::resource_not_found())?;
+        item.unarchive();
+        self.repo.update(&item)?;
+        Ok(())
+    }
+}
+
+pub struct ListCatalogItems {
+    repo: Arc<dyn CatalogItemRepository>,
+}
+
+impl ListCatalogItems {
+    pub fn new(repo: Arc<dyn CatalogItemRepository>) -> Self {
+        Self { repo }
+    }
+
+    pub fn execute(&self, include_archived: bool) -> Result<Vec<CatalogItem>, AppError> {
+        Ok(self.repo.list(include_archived)?)
+    }
+}
+
+fn normalize(s: String) -> Option<String> {
+    let t = s.trim().to_string();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::RepoError;
+    use crate::domain::money::Currency;
+    use parking_lot::Mutex;
+    use std::collections::HashMap;
+
+    #[derive(Default)]
+    struct InMemoryRepo {
+        inner: Mutex<HashMap<CatalogItemId, CatalogItem>>,
+    }
+
+    impl CatalogItemRepository for InMemoryRepo {
+        fn insert(&self, s: &CatalogItem) -> Result<(), RepoError> {
+            self.inner.lock().insert(s.id, s.clone());
+            Ok(())
+        }
+        fn update(&self, s: &CatalogItem) -> Result<(), RepoError> {
+            let mut g = self.inner.lock();
+            if !g.contains_key(&s.id) {
+                return Err(RepoError::NotFound);
+            }
+            g.insert(s.id, s.clone());
+            Ok(())
+        }
+        fn get(&self, id: CatalogItemId) -> Result<Option<CatalogItem>, RepoError> {
+            Ok(self.inner.lock().get(&id).cloned())
+        }
+        fn list(&self, include_archived: bool) -> Result<Vec<CatalogItem>, RepoError> {
+            let g = self.inner.lock();
+            let mut v: Vec<CatalogItem> = g
+                .values()
+                .filter(|s| include_archived || !s.is_archived())
+                .cloned()
+                .collect();
+            v.sort_by(|a, b| a.name.cmp(&b.name));
+            Ok(v)
+        }
+        fn delete(&self, id: CatalogItemId) -> Result<(), RepoError> {
+            self.inner.lock().remove(&id);
+            Ok(())
+        }
+        fn labels_for(
+            &self,
+            ids: &[CatalogItemId],
+        ) -> Result<HashMap<CatalogItemId, String>, RepoError> {
+            let g = self.inner.lock();
+            Ok(ids
+                .iter()
+                .filter_map(|id| g.get(id).map(|i| (*id, i.name.clone())))
+                .collect())
+        }
+    }
+
+    fn eur() -> Currency {
+        Currency::new("EUR").unwrap()
+    }
+
+    fn usd() -> Currency {
+        Currency::new("USD").unwrap()
+    }
+
+    fn new_service(name: &str, cents: i64) -> NewCatalogItem {
+        NewCatalogItem {
+            name: name.into(),
+            kind: CatalogItemKind::Service,
+            prices: vec![Money::new(cents, eur())],
+            unit: Some("hour".into()),
+            reference: None,
+        }
+    }
+
+    #[test]
+    fn create_persists_entity_with_all_fields() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let s = CreateCatalogItem::new(repo.clone())
+            .execute(NewCatalogItem {
+                name: "Consulting".into(),
+                kind: CatalogItemKind::Service,
+                prices: vec![Money::new(10000, eur())],
+                unit: Some("hour".into()),
+                reference: Some("CONS-01".into()),
+            })
+            .unwrap();
+        assert_eq!(s.name, "Consulting");
+        assert_eq!(s.kind, CatalogItemKind::Service);
+        assert_eq!(s.unit.as_deref(), Some("hour"));
+        assert_eq!(s.reference.as_deref(), Some("CONS-01"));
+        assert!(!s.is_archived());
+        assert_eq!(repo.inner.lock().len(), 1);
+
+        let stored = repo.inner.lock().get(&s.id).cloned().unwrap();
+        assert_eq!(stored, s);
+    }
+
+    #[test]
+    fn create_product_kind_persists() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let p = CreateCatalogItem::new(repo.clone())
+            .execute(NewCatalogItem {
+                name: "Book".into(),
+                kind: CatalogItemKind::Product,
+                prices: vec![Money::new(2500, eur())],
+                unit: Some("piece".into()),
+                reference: Some("SKU-042".into()),
+            })
+            .unwrap();
+        assert_eq!(p.kind, CatalogItemKind::Product);
+        let stored = repo.inner.lock().get(&p.id).cloned().unwrap();
+        assert_eq!(stored.kind, CatalogItemKind::Product);
+        assert_eq!(stored.reference.as_deref(), Some("SKU-042"));
+    }
+
+    #[test]
+    fn update_changes_all_fields() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let s = CreateCatalogItem::new(repo.clone())
+            .execute(new_service("Consulting", 10000))
+            .unwrap();
+        let updated = UpdateCatalogItem::new(repo.clone())
+            .execute(UpdateCatalogItemInput {
+                id: s.id,
+                name: "Consulting (senior)".into(),
+                kind: CatalogItemKind::Service,
+                prices: vec![Money::new(20000, eur())],
+                unit: Some("day".into()),
+                reference: Some("SR-001".into()),
+            })
+            .unwrap();
+        assert_eq!(updated.price_for(eur()).unwrap().minor_units(), 20000);
+        assert_eq!(updated.name, "Consulting (senior)");
+        assert_eq!(updated.unit.as_deref(), Some("day"));
+        assert_eq!(updated.reference.as_deref(), Some("SR-001"));
+    }
+
+    #[test]
+    fn update_can_add_a_second_currency_price() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let s = CreateCatalogItem::new(repo.clone())
+            .execute(new_service("Consulting", 10000))
+            .unwrap();
+        let updated = UpdateCatalogItem::new(repo)
+            .execute(UpdateCatalogItemInput {
+                id: s.id,
+                name: "Consulting".into(),
+                kind: CatalogItemKind::Service,
+                prices: vec![
+                    Money::new(10000, eur()),
+                    Money::new(11000, usd()),
+                ],
+                unit: Some("hour".into()),
+                reference: None,
+            })
+            .unwrap();
+        assert_eq!(updated.prices.len(), 2);
+        assert_eq!(updated.price_for(usd()).unwrap().minor_units(), 11000);
+    }
+
+    #[test]
+    fn update_rejects_missing() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let err = UpdateCatalogItem::new(repo)
+            .execute(UpdateCatalogItemInput {
+                id: CatalogItemId::new(),
+                name: "X".into(),
+                kind: CatalogItemKind::Service,
+                prices: vec![],
+                unit: None,
+                reference: None,
+            })
+            .unwrap_err();
+        assert!(err.is(ErrorCode::ResourceNotFound));
+    }
+
+    #[test]
+    fn update_can_change_kind_from_service_to_product() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let s = CreateCatalogItem::new(repo.clone())
+            .execute(new_service("Online course", 5000))
+            .unwrap();
+        assert_eq!(s.kind, CatalogItemKind::Service);
+        let updated = UpdateCatalogItem::new(repo.clone())
+            .execute(UpdateCatalogItemInput {
+                id: s.id,
+                name: "Online course".into(),
+                kind: CatalogItemKind::Product,
+                prices: s.prices.clone(),
+                unit: Some("license".into()),
+                reference: Some("COURSE-01".into()),
+            })
+            .unwrap();
+        assert_eq!(updated.kind, CatalogItemKind::Product);
+        assert_eq!(updated.unit.as_deref(), Some("license"));
+    }
+
+    #[test]
+    fn update_can_clear_optional_fields() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let s = CreateCatalogItem::new(repo.clone())
+            .execute(NewCatalogItem {
+                name: "Consulting".into(),
+                kind: CatalogItemKind::Service,
+                prices: vec![Money::new(15000, eur())],
+                unit: Some("hour".into()),
+                reference: Some("CONS-01".into()),
+            })
+            .unwrap();
+        let updated = UpdateCatalogItem::new(repo)
+            .execute(UpdateCatalogItemInput {
+                id: s.id,
+                name: "Consulting".into(),
+                kind: CatalogItemKind::Service,
+                prices: vec![Money::new(15000, eur())],
+                unit: None,
+                reference: None,
+            })
+            .unwrap();
+        assert_eq!(updated.unit, None);
+        assert_eq!(updated.reference, None);
+    }
+
+    #[test]
+    fn update_trims_blank_optional_fields_to_none() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let s = CreateCatalogItem::new(repo.clone())
+            .execute(new_service("Consulting", 10000))
+            .unwrap();
+        let updated = UpdateCatalogItem::new(repo)
+            .execute(UpdateCatalogItemInput {
+                id: s.id,
+                name: "Consulting".into(),
+                kind: CatalogItemKind::Service,
+                prices: vec![Money::new(10000, eur())],
+                unit: Some("   ".into()),
+                reference: Some("".into()),
+            })
+            .unwrap();
+        assert_eq!(updated.unit, None);
+        assert_eq!(updated.reference, None);
+    }
+
+    #[test]
+    fn update_rejects_negative_price() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let s = CreateCatalogItem::new(repo.clone())
+            .execute(new_service("Consulting", 10000))
+            .unwrap();
+        let err = UpdateCatalogItem::new(repo)
+            .execute(UpdateCatalogItemInput {
+                id: s.id,
+                name: "Consulting".into(),
+                kind: CatalogItemKind::Service,
+                prices: vec![Money::new(-1, eur())],
+                unit: None,
+                reference: None,
+            })
+            .unwrap_err();
+        assert!(err.is(ErrorCode::CatalogItemNegativePrice));
+    }
+
+    #[test]
+    fn update_rejects_duplicate_currency() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let s = CreateCatalogItem::new(repo.clone())
+            .execute(new_service("Consulting", 10000))
+            .unwrap();
+        let err = UpdateCatalogItem::new(repo)
+            .execute(UpdateCatalogItemInput {
+                id: s.id,
+                name: "Consulting".into(),
+                kind: CatalogItemKind::Service,
+                prices: vec![
+                    Money::new(10000, eur()),
+                    Money::new(20000, eur()),
+                ],
+                unit: None,
+                reference: None,
+            })
+            .unwrap_err();
+        assert!(err.is(ErrorCode::CatalogItemDuplicateCurrency));
+    }
+
+    #[test]
+    fn archive_deactivates_entity() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let s = CreateCatalogItem::new(repo.clone())
+            .execute(new_service("Consulting", 0))
+            .unwrap();
+        ArchiveCatalogItem::new(repo.clone()).execute(s.id).unwrap();
+        let stored = repo.inner.lock().get(&s.id).cloned().unwrap();
+        assert!(stored.is_archived());
+        assert_eq!(
+            ListCatalogItems::new(repo.clone()).execute(false).unwrap().len(),
+            0
+        );
+        assert_eq!(
+            ListCatalogItems::new(repo).execute(true).unwrap().len(),
+            1
+        );
+    }
+
+    #[test]
+    fn unarchive_reactivates_entity() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let s = CreateCatalogItem::new(repo.clone())
+            .execute(new_service("Consulting", 0))
+            .unwrap();
+        ArchiveCatalogItem::new(repo.clone()).execute(s.id).unwrap();
+        UnarchiveCatalogItem::new(repo.clone()).execute(s.id).unwrap();
+        let stored = repo.inner.lock().get(&s.id).cloned().unwrap();
+        assert!(!stored.is_archived());
+        assert_eq!(
+            ListCatalogItems::new(repo).execute(false).unwrap().len(),
+            1
+        );
+    }
+
+    #[test]
+    fn list_sorted_by_name() {
+        let repo = Arc::new(InMemoryRepo::default());
+        let create = CreateCatalogItem::new(repo.clone());
+        create.execute(new_service("Zeta", 0)).unwrap();
+        create.execute(new_service("Alpha", 0)).unwrap();
+        let list = ListCatalogItems::new(repo).execute(false).unwrap();
+        assert_eq!(list[0].name, "Alpha");
+        assert_eq!(list[1].name, "Zeta");
+    }
+}

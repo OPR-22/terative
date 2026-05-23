@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2048 768" width="2048" height="768">
+  <g transform="translate(57.087999999999994 185.2235294117647) scale(0.6211764705882353)"><g stroke="#B8693F" stroke-width="44" stroke-linecap="round" fill="none">
+    <path d="M 158.5,278.5 A 210,210 0 1 1 488,471"></path>
+    <path d="M 488,471 L 396.4,383.5"></path>
+  </g></g>
+  <text x="571.648" y="384" font-family="Lato, sans-serif" font-weight="900" font-size="322.56" fill="#FFFFFF" dominant-baseline="central" letter-spacing="-9.6768">terative</text>
+</svg>
