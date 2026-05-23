@@ -24,12 +24,27 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "-"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI5OTYwQTZGQTc5MjdEMzcKUldRM2ZaS25id3FXdWZBYzNDTGUvYkViNUpPVUN2cmRIeHBIb0ZVWGU5eStVc2k0STg2Sy9iMzQK",
+      "endpoints": [
+        "https://github.com/OPR-22/terative/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

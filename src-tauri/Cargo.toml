@@ -16,6 +16,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["unstable"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl", "chrono"] }
@@ -49,3 +51,12 @@ gtk = "0.18"
 
 [dev-dependencies]
 tempfile = "3"
+
+# Release profile: smaller, faster binaries for distributed builds. `tauri-action`
+# always compiles `--release`; these knobs further trim size and improve runtime
+# at the cost of longer compile times — fine for CI, irrelevant for `tauri dev`.
+[profile.release]
+opt-level = "s"      # size-optimized; desktop app, not hot-loop heavy
+lto = true
+codegen-units = 1
+strip = true

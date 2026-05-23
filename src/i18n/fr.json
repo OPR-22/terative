@@ -420,7 +420,19 @@
     "move_up": "Monter",
     "move_down": "Descendre",
     "notebook_delete_warning": "Supprimer la section « {{name}} » ?",
-    "notebook_delete_warning_with_count": "Supprimer la section « {{name}} » ? Cela retirera définitivement les notes de {{count}} client(s)."
+    "notebook_delete_warning_with_count": "Supprimer la section « {{name}} » ? Cela retirera définitivement les notes de {{count}} client(s).",
+    "about": "À propos",
+    "about_version": "Version {{version}}",
+    "about_check_for_updates": "Vérifier les mises à jour",
+    "about_checking": "Vérification…"
+  },
+  "updates": {
+    "available": "Mise à jour disponible",
+    "up_to_date": "Vous êtes à jour",
+    "downloading": "Téléchargement de la mise à jour…",
+    "install_and_restart": "Installer et redémarrer",
+    "check_failed": "Impossible de vérifier les mises à jour",
+    "install_failed": "Échec de l'installation de la mise à jour"
   },
   "dashboard": {
     "title": "Tableau de bord",

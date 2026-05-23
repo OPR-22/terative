@@ -12,6 +12,20 @@ dist
 dist-ssr
 *.local
 
+# Husky generates its internal hook shim directory at install time; never
+# commit it (the tracked hook files live in `.husky/<hook-name>` directly).
+.husky/_/
+
+# Defense-in-depth against accidentally committing a Tauri updater signing
+# key. The real key lives at ~/.tauri/ outside the repo, but this catches
+# anyone who runs `tauri signer generate -w ./<something>.key` from here.
+*.key
+*.key.pub
+
+# Created by the release workflow as scratch input for `gh release create`;
+# also created locally if you run `git-cliff` by hand.
+.release-notes.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

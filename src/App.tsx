@@ -5,6 +5,7 @@ import { Shell } from "./components/layout/Shell";
 import { ToastContainer } from "./components/ui/Toast";
 import { useBookmarksLayoutBootstrap } from "./hooks/useBookmarksLayoutBootstrap";
 import { setNoActiveOrgHandler } from "./ipc";
+import { checkForUpdates } from "./lib/updater";
 import { Accounting } from "./pages/Accounting";
 import { BookmarkToolbar } from "./pages/BookmarkToolbar";
 import { BookmarkView } from "./pages/BookmarkView";
@@ -37,6 +38,18 @@ function App() {
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
+
+  // One-shot silent update check on app start. Deferred a few seconds so it
+  // doesn't compete with first paint or the initial org bootstrap, and so a
+  // momentary offline state at launch doesn't trigger a noisy error toast.
+  // Failures are swallowed in silent mode — the user can always retry from
+  // Settings → About → "Check for updates".
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      void checkForUpdates({ silent: true });
+    }, 3000);
+    return () => window.clearTimeout(handle);
+  }, []);
 
   // Wire IPC's NoActiveOrg redirect: if any command bubbles NoActiveOrg,
   // clear the store and navigate to picker.

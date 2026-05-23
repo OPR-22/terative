@@ -1,0 +1,227 @@
+name: release
+
+# Manually triggered. Bumps the version, tags it, builds installers for the
+# three desktop platforms, uploads them to a draft GitHub release, and
+# publishes that release — all in a single workflow run.
+#
+# One human gate: clicking "Run workflow" on this page. From there the
+# workflow runs end-to-end. The draft state during the run is internal — by
+# the time the workflow finishes (or fails), the release is either fully
+# published or there is no public release at all. No half-shipped state.
+#
+# Pipeline:
+#
+#   prepare  ──► compute next version from Conventional Commits (git-cliff)
+#                update src-tauri/Cargo.toml, src-tauri/tauri.conf.json,
+#                package.json
+#                regenerate CHANGELOG.md
+#                commit "chore: release vX.Y.Z [skip ci]" to main, tag,
+#                push tag + commit
+#                create the draft GitHub release with auto-generated notes
+#                │
+#   build (matrix: macOS / Linux / Windows)
+#            ──► tauri-action checks out the new tag, builds + signs
+#                installers + updater artifacts, uploads them to the draft
+#                release (also generates `latest.json` from all signatures)
+#                │
+#   publish  ──► flip the draft to published. Installed clients now see the
+#                update on their next startup check.
+#
+# Required secrets:
+#   TAURI_SIGNING_PRIVATE_KEY            output of `tauri signer generate`
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD   password chosen at key generation
+#
+# Optional secrets — when set, paid-path OS code signing kicks in (see the
+# macOS block on the tauri-action step).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One release at a time. If you somehow click Run workflow twice, the second
+# run queues behind the first instead of racing.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          # git-cliff needs the full history to read prior tags and commits.
+          fetch-depth: 0
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: Compute next version from Conventional Commits
+        id: bump
+        run: |
+          set -euo pipefail
+          NEW_VERSION="$(git-cliff --bumped-version)"
+          NEW_VERSION="${NEW_VERSION#v}"
+          NEW_TAG="v${NEW_VERSION}"
+          echo "Next release: ${NEW_TAG}"
+          echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${NEW_TAG}"         >> "$GITHUB_OUTPUT"
+
+      - name: Update version in manifest files
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          set -euo pipefail
+          jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > tmp.json
+          mv tmp.json src-tauri/tauri.conf.json
+          jq --arg v "$VERSION" '.version = $v' package.json > tmp.json
+          mv tmp.json package.json
+          # Target only the FIRST `version = "..."` line (the [package] one),
+          # leaving any unrelated `version = ...` lines (e.g. inside deps)
+          # untouched.
+          sed -i '0,/^version = ".*"$/s//version = "'"$VERSION"'"/' src-tauri/Cargo.toml
+
+      - name: Regenerate CHANGELOG.md
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: git-cliff --tag "$TAG" -o CHANGELOG.md
+
+      - name: Generate release notes for this version
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          # Just the entries for this tag, no header/footer — used as the
+          # GitHub release body.
+          git-cliff --unreleased --tag "$TAG" --strip all > .release-notes.md
+          echo "--- release notes ---"
+          cat .release-notes.md
+
+      - name: Commit bump + push tag
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md src-tauri/Cargo.toml src-tauri/tauri.conf.json package.json
+          # `[skip ci]` prevents ci.yml from firing on this bot commit — the
+          # actual code didn't change.
+          git commit -m "chore: release $TAG [skip ci]"
+          git tag "$TAG"
+          git push origin main
+          git push origin "$TAG"
+
+      - name: Create draft GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            --draft \
+            --title "$TAG" \
+            --notes-file .release-notes.md
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: "--target universal-apple-darwin"
+          - os: ubuntu-22.04
+            args: ""
+          - os: windows-latest
+            args: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Check out the tag prepare just pushed — not main — so each matrix
+          # job builds exactly the released SHA.
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Universal macOS builds need both arch slices in the toolchain.
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Install Linux system deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build + upload to draft release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # ── macOS code signing + notarization (PAID PATH) ─────────────────
+          # Uncomment-by-supplying these secrets on the repo. tauri-action
+          # picks them up automatically — no config change needed here.
+          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Also swap `bundle.macOS.signingIdentity` in tauri.conf.json from
+          # "-" to the Developer ID identity when you enable this.
+          # ─────────────────────────────────────────────────────────────────
+        with:
+          # prepare already created the draft release at this tag. Every matrix
+          # job uploads its platform's bundles + .sig files to that same draft.
+          # tauri-action also generates and uploads `latest.json` from the
+          # collected signatures — that's the file `tauri.conf.json`'s endpoint
+          # points at.
+          tagName: ${{ needs.prepare.outputs.tag }}
+          releaseName: ${{ needs.prepare.outputs.tag }}
+          releaseDraft: true
+          prerelease: false
+          # Prefer the NSIS installer over MSI in `latest.json` — NSIS is what
+          # the Tauri updater consumes cleanly on Windows.
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }}
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Promote draft to published
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        # This is the moment users see the new version. Drafts are invisible
+        # to non-collaborators; published releases are world-visible and the
+        # Tauri updater endpoint resolves `/latest/` against them.
+        run: gh release edit "$TAG" --draft=false

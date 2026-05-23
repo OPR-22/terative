@@ -304,6 +304,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // Auto-update. `check()` from the JS side hits the endpoint configured
+        // in tauri.conf.json → plugins.updater. The plugin verifies the
+        // minisign signature on every downloaded bundle and rejects mismatches,
+        // independent of OS-level code signing.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // `process:restart` is what `relaunch()` from `@tauri-apps/plugin-process`
+        // calls after an update is installed.
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             let data_dir = resolve_app_data_dir(app.handle());

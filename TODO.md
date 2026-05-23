@@ -19,7 +19,7 @@ appends without reshuffling other tiers.
 - [ ] T1.08 App updates (like discord ? Like freetube ? apple/microsoft dev account required ?)
 - [ ] T1.09 (optional) Families (parent is the client and child is under that parent) - think of a way or something.
 - [ ] T1.10 Tax groups (grouping up multiple taxes so it shows up as a single checkbox in UI + default group applied to invoice) 
-- [ ] T1.11 Cleanup/refactor of code, split command/queries, move ipc commands to interface, cleanup domains and imports (std::), centralized tests (repo impl for each use case, try to group them up maybe ?)...
+- [ ] T1.11 Cleanup/refactor of code, split command/queries, move ipc commands to interface, cleanup domains and imports (std::), centralized tests (repo impl for each use case, try to group them up maybe ?)... make sure ALL datas can be seeded etc. move seed to org level maybe ?
 
 
 ## Tier 2 — New domains / significant features

@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "../stores/toastStore";
 
+import { getVersion } from "@tauri-apps/api/app";
 import { open } from "@tauri-apps/plugin-dialog";
+
+import { checkForUpdates } from "../lib/updater";
 
 import { OrgPasswordSection } from "../components/org/OrgPasswordSection";
 import { Page } from "../components/layout/Page";
@@ -96,6 +99,7 @@ export function Settings() {
       />
       <OrgPasswordSection />
       <DataSection />
+      <AboutSection />
       {import.meta.env.DEV ? <DeveloperSection /> : null}
       </div>
     </Page>
@@ -1435,6 +1439,57 @@ function DeveloperSection() {
       {status.kind === "err" ? (
         <p className="mt-3 text-sm text-danger break-all">{status.message}</p>
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * About / Updates panel. Shows the running app version (read via
+ * `@tauri-apps/api/app`'s `getVersion()` — no custom Tauri command needed,
+ * the value comes from `tauri.conf.json → version`) and exposes a manual
+ * "Check for updates" button. The background check on startup lives in
+ * `App.tsx`; this is the user-initiated entry point.
+ */
+function AboutSection() {
+  const { t } = useTranslation();
+  const [version, setVersion] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getVersion()
+      .then((v) => {
+        if (!cancelled) setVersion(v);
+      })
+      .catch(() => {
+        // Non-fatal: version display is cosmetic.
+        if (!cancelled) setVersion(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onCheck = async () => {
+    setChecking(true);
+    try {
+      await checkForUpdates({ silent: false });
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-semibold text-fg">{t("settings.about")}</h2>
+      <p className="mb-3 text-sm text-fg-muted">
+        {t("settings.about_version", { version: version ?? "…" })}
+      </p>
+      <Button onClick={onCheck} disabled={checking}>
+        {checking
+          ? t("settings.about_checking")
+          : t("settings.about_check_for_updates")}
+      </Button>
     </section>
   );
 }

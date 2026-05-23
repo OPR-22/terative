@@ -423,7 +423,19 @@
     "move_up": "Move up",
     "move_down": "Move down",
     "notebook_delete_warning": "Delete section \"{{name}}\"?",
-    "notebook_delete_warning_with_count": "Delete section \"{{name}}\"? This will permanently remove notes from {{count}} client(s)."
+    "notebook_delete_warning_with_count": "Delete section \"{{name}}\"? This will permanently remove notes from {{count}} client(s).",
+    "about": "About",
+    "about_version": "Version {{version}}",
+    "about_check_for_updates": "Check for updates",
+    "about_checking": "Checking…"
+  },
+  "updates": {
+    "available": "Update available",
+    "up_to_date": "You're up to date",
+    "downloading": "Downloading update…",
+    "install_and_restart": "Install & restart",
+    "check_failed": "Could not check for updates",
+    "install_failed": "Update install failed"
   },
   "dashboard": {
     "title": "Dashboard",
