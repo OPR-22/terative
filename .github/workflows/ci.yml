@@ -1,12 +1,9 @@
 name: ci
 
-# Split by what each job does:
-#   build  — does the whole app compile? (frontend bundle + full Rust release)
-#   test   — do the tests pass?           (cargo test, frontend tests, drift check)
-#
-# Both run on every PR and every push to main. Neither produces installers —
-# that's release.yml's job. Skipping the bundling step keeps CI fast and
-# means no signing key is needed in regular CI runs.
+# Split by language, not by purpose. Each language compiles exactly once and
+# runs its own tests right after — no duplicate Rust compile, no cache
+# contention. Frontend job finishes in ~30 s, so wall clock is just the
+# Rust job.
 
 on:
   pull_request:
@@ -23,58 +20,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    # Builds the whole Tauri app end-to-end EXCEPT installer packaging:
-    #   1. pnpm install                                       (deps)
-    #   2. pnpm build         (via tauri.conf.json's          (frontend bundle)
-    #      beforeBuildCommand, invoked by `tauri build`)
-    #   3. cargo build --release on the Rust backend          (release codegen)
-    #   4. SKIPPED: bundling into .dmg/.AppImage/.exe/.msi     (release.yml does this)
-    #   5. SKIPPED: code signing + updater .sig generation     (no key in CI)
-    #
-    # This catches everything `cargo check` misses (link errors, build-script
-    # failures, bundle config typos) without paying for installer packaging
-    # on every PR.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.13.1
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
-
-      - name: Install Linux system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf
-
-      # --ignore-scripts skips husky's `prepare` hook setup. CI doesn't commit,
-      # so git hooks aren't useful here.
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-
-      # The actual build. `--no-bundle` is the speed lever: everything compiles
-      # but no .app/.dmg/.AppImage/.deb/.exe/.msi is produced and no signing
-      # runs. If this fails, the app does not build — bisect from here.
-      - name: Build (no installer bundling)
-        run: pnpm tauri build --no-bundle
-
-  test:
+  rust:
+    # Compiles the Rust backend in debug mode and runs the cargo test suite.
+    # Debug mode is enough to catch link errors, validate build.rs, and exercise
+    # tauri-build. Release-mode-only bugs (LTO failures, optimizer-tickled UB)
+    # are caught by release.yml when actually shipping — they would fail there
+    # before the draft is ever published, so nothing reaches users unverified.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -106,10 +57,19 @@ jobs:
 
       - run: pnpm install --frozen-lockfile --ignore-scripts
 
-      # Rust unit/integration tests. Includes the specta bindings export test
-      # in src-tauri/src/lib.rs which rewrites src/ipc/bindings.ts. The drift
-      # check below catches PRs that changed the IPC contract without
-      # committing the regenerated bindings.
+      # tauri-build (the build script that runs during `cargo build`) expects
+      # the frontend's dist/ to exist. Bundle it first.
+      - name: Build frontend bundle
+        run: pnpm build
+
+      - name: cargo build
+        working-directory: src-tauri
+        run: cargo build --locked
+
+      # Reuses the build artifacts from the previous step — incremental, fast.
+      # Includes the specta-bindings export test which rewrites
+      # src/ipc/bindings.ts. The drift check below catches PRs that changed the
+      # IPC contract without committing the regenerated bindings.
       - name: cargo test
         working-directory: src-tauri
         run: cargo test --locked
@@ -117,7 +77,34 @@ jobs:
       - name: Confirm specta TS bindings are checked in and current
         run: git diff --exit-code -- src/ipc/bindings.ts
 
-      # Frontend tests — vitest, configured via vitest.config.ts. Picks up
-      # every `src/**/*.{test,spec}.{ts,tsx}` file automatically.
-      - name: pnpm test
-        run: pnpm test
+      # Type-checks the release profile so `#[cfg(not(debug_assertions))]`
+      # branches (e.g. the production command list at lib.rs:285) actually
+      # get compiled. Catches syntax/type errors the debug build above is
+      # blind to. Skips codegen + linking — those would only catch LTO /
+      # optimizer issues, which are rare and would also fail in release.yml.
+      # Adds ~1–2 min vs the full release build's ~5–8 min.
+      - name: cargo check (release)
+        working-directory: src-tauri
+        run: cargo check --release --locked
+
+  frontend:
+    # Builds the frontend bundle (tsc + Vite) and runs the Vitest suite. Pure
+    # JS work, no Rust, runs in parallel with the rust job above. Total ~30 s.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - run: pnpm build
+
+      - run: pnpm test

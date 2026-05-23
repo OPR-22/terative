@@ -1,0 +1,64 @@
+name: audit
+
+# Weekly dependency vulnerability scan.
+#   - cargo audit checks the Rust dep tree against the RustSec advisory DB
+#     (https://rustsec.org).
+#   - pnpm audit checks production npm deps against the npm advisory DB.
+#
+# Failures fire a workflow-failure notification through your normal GitHub
+# channel (email + web). Open the run logs to see which advisory hit.
+#
+# As a useful side effect, each run restores the GitHub Actions cache,
+# resetting its 7-day TTL — keeps CI fast even during stretches without pushes.
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"   # Mondays 07:00 UTC
+  # Manual trigger so you can re-run right after a known fix.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      # Pre-built binary, ~5 s vs ~3 min for `cargo install cargo-audit`.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: cargo audit
+        working-directory: src-tauri
+        run: cargo audit
+
+  npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # --prod scopes to runtime deps (dev-only vulns don't ship to users).
+      # --audit-level moderate filters out info / low-severity noise that
+      # would just create alert fatigue without an actionable fix.
+      - name: pnpm audit
+        run: pnpm audit --prod --audit-level moderate
