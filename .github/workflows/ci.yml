@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  rust:
+  backend:
     # Compiles the Rust backend in debug mode and runs the cargo test suite.
     # Debug mode is enough to catch link errors, validate build.rs, and exercise
     # tauri-build. Release-mode-only bugs (LTO failures, optimizer-tickled UB)
