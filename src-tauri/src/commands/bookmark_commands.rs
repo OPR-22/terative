@@ -4,6 +4,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use parking_lot::Mutex;
 use tauri::webview::{NewWindowResponse, WebviewBuilder, WebviewWindowBuilder};
 use tauri::{LogicalPosition, LogicalSize, Manager, Url, WebviewUrl};
+#[cfg(not(target_os = "linux"))]
+use tauri::Rect;
 use uuid::Uuid;
 
 use crate::application::AppError;

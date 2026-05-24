@@ -1,31 +1,45 @@
 name: release
 
-# Manually triggered. Bumps the version, tags it, builds installers for the
-# three desktop platforms, uploads them to a draft GitHub release, and
-# publishes that release — all in a single workflow run.
+# Manually triggered. Computes the next version, builds installers for the
+# three desktop platforms, and only after every build succeeds does it touch
+# main: commit the bump, push the tag, flip the draft release to published.
+#
+# Failure semantics:
+#
+#   - prepare fails  → main untouched, no draft created, no artifacts.
+#   - build fails    → main untouched, no tag pushed. The `cleanup` job
+#                      deletes the orphan draft so the next run starts
+#                      clean. CHANGELOG never lands.
+#   - publish fails before the atomic push → same as build fails:
+#                      `cleanup` deletes the orphan draft.
+#   - publish fails after the atomic push (rare — only between push and
+#                      `gh release edit --draft=false`): tag + bump commit
+#                      land on main, draft still exists. `cleanup` detects
+#                      the tag on remote and refuses to delete; finish
+#                      manually with `gh release edit vX.Y.Z --draft=false`.
 #
 # One human gate: clicking "Run workflow" on this page. From there the
-# workflow runs end-to-end. The draft state during the run is internal — by
-# the time the workflow finishes (or fails), the release is either fully
-# published or there is no public release at all. No half-shipped state.
+# workflow runs end-to-end.
 #
 # Pipeline:
 #
 #   prepare  ──► compute next version from Conventional Commits (git-cliff)
-#                update src-tauri/Cargo.toml, src-tauri/tauri.conf.json,
-#                package.json
-#                regenerate CHANGELOG.md
-#                commit "chore: release vX.Y.Z [skip ci]" to main, tag,
-#                push tag + commit
-#                create the draft GitHub release with auto-generated notes
+#                update Cargo.toml, tauri.conf.json, package.json
+#                regenerate CHANGELOG.md + release notes
+#                upload them as the `release-patch` workflow artifact
+#                create the draft GitHub release at the future tag name
 #                │
 #   build (matrix: macOS / Linux / Windows)
-#            ──► tauri-action checks out the new tag, builds + signs
-#                installers + updater artifacts, uploads them to the draft
-#                release (also generates `latest.json` from all signatures)
+#            ──► checks out the SHA prepare captured, applies the patch
+#                (so bundle filenames/metadata carry the new version),
+#                builds + signs installers, uploads them to the draft
+#                release. tauri-action also synthesizes `latest.json`
+#                from each platform's signatures.
 #                │
-#   publish  ──► flip the draft to published. Installed clients now see the
-#                update on their next startup check.
+#   publish  ──► re-applies the patch on a fresh main checkout, verifies
+#                main hasn't drifted since prepare, commits the bump,
+#                atomically pushes commit + tag, flips the draft to
+#                published. This is the only job that mutates main.
 #
 # Required secrets:
 #   TAURI_SIGNING_PRIVATE_KEY            output of `tauri signer generate`
@@ -52,6 +66,7 @@ jobs:
     outputs:
       tag: ${{ steps.bump.outputs.tag }}
       version: ${{ steps.bump.outputs.version }}
+      sha: ${{ steps.bump.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -63,16 +78,21 @@ jobs:
         with:
           tool: git-cliff
 
-      - name: Compute next version from Conventional Commits
+      - name: Compute next version + capture base SHA
         id: bump
         run: |
           set -euo pipefail
           NEW_VERSION="$(git-cliff --bumped-version)"
           NEW_VERSION="${NEW_VERSION#v}"
           NEW_TAG="v${NEW_VERSION}"
-          echo "Next release: ${NEW_TAG}"
+          # Pin every downstream job to this SHA so the matrix and the publish
+          # step all see the same code, even if someone merges to main during
+          # the build window.
+          BASE_SHA="$(git rev-parse HEAD)"
+          echo "Next release: ${NEW_TAG} (from ${BASE_SHA})"
           echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${NEW_TAG}"         >> "$GITHUB_OUTPUT"
+          echo "sha=${BASE_SHA}"        >> "$GITHUB_OUTPUT"
 
       - name: Update version in manifest files
         env:
@@ -99,34 +119,40 @@ jobs:
         run: |
           # Just the entries for this tag, no header/footer — used as the
           # GitHub release body.
-          git-cliff --unreleased --tag "$TAG" --strip all > .release-notes.md
+          git-cliff --unreleased --tag "$TAG" --strip all > release-notes.md
           echo "--- release notes ---"
-          cat .release-notes.md
+          cat release-notes.md
 
-      - name: Commit bump + push tag
-        env:
-          TAG: ${{ steps.bump.outputs.tag }}
-        run: |
-          set -euo pipefail
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md src-tauri/Cargo.toml src-tauri/tauri.conf.json package.json
-          # `[skip ci]` prevents ci.yml from firing on this bot commit — the
-          # actual code didn't change.
-          git commit -m "chore: release $TAG [skip ci]"
-          git tag "$TAG"
-          git push origin main
-          git push origin "$TAG"
+      - name: Upload release patch
+        # Carry the manifest edits + CHANGELOG + release notes to the build
+        # and publish jobs without committing them to main. Each consumer
+        # downloads with `path: .` to restore the original relative layout.
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-patch
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            CHANGELOG.md
+            release-notes.md
+            package.json
+            src-tauri/Cargo.toml
+            src-tauri/tauri.conf.json
 
       - name: Create draft GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.bump.outputs.tag }}
+          BASE_SHA: ${{ steps.bump.outputs.sha }}
         run: |
+          # --target pins the draft to the base SHA. The tag itself doesn't
+          # exist yet; we push it in the publish job. Publishing the draft
+          # then associates it with the real tag.
           gh release create "$TAG" \
             --draft \
+            --target "$BASE_SHA" \
             --title "$TAG" \
-            --notes-file .release-notes.md
+            --notes-file release-notes.md
 
   build:
     needs: prepare
@@ -144,9 +170,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Check out the tag prepare just pushed — not main — so each matrix
-          # job builds exactly the released SHA.
-          ref: ${{ needs.prepare.outputs.tag }}
+          # Pin to the SHA prepare captured. Main may have advanced since
+          # then; we deliberately ignore it so every platform builds the
+          # same code.
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - name: Apply release patch
+        # Overlays the bumped manifests + CHANGELOG onto the working tree
+        # so tauri-build sees the new version in Cargo.toml/tauri.conf.json
+        # and bundle filenames carry it.
+        uses: actions/download-artifact@v4
+        with:
+          name: release-patch
+          path: .
 
       - uses: pnpm/action-setup@v4
         with:
@@ -217,11 +253,82 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Promote draft to published
+        with:
+          ref: main
+          # We need the bump commit's parent to be the same SHA prepare saw,
+          # so check out main and verify it hasn't moved.
+          fetch-depth: 1
+
+      - name: Confirm main hasn't drifted since prepare
+        env:
+          BASE_SHA: ${{ needs.prepare.outputs.sha }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          CURRENT="$(git rev-parse HEAD)"
+          if [[ "$CURRENT" != "$BASE_SHA" ]]; then
+            echo "::error::main drifted during the release window ($BASE_SHA -> $CURRENT)."
+            echo "::error::Bundles were built against $BASE_SHA but main has moved. Delete the draft release ($TAG) and re-run."
+            exit 1
+          fi
+
+      - name: Apply release patch
+        uses: actions/download-artifact@v4
+        with:
+          name: release-patch
+          path: .
+
+      - name: Commit bump, push tag, publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag }}
-        # This is the moment users see the new version. Drafts are invisible
-        # to non-collaborators; published releases are world-visible and the
-        # Tauri updater endpoint resolves `/latest/` against them.
-        run: gh release edit "$TAG" --draft=false
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # release-notes.md was carried in the artifact but isn't tracked.
+          rm -f release-notes.md
+          git add CHANGELOG.md src-tauri/Cargo.toml src-tauri/tauri.conf.json package.json
+          # `[skip ci]` prevents ci.yml from firing on this bot commit — the
+          # actual code didn't change.
+          git commit -m "chore: release $TAG [skip ci]"
+          git tag "$TAG"
+          # Atomic push: main and the tag either both land or neither does,
+          # so a tag-only-pushed state is impossible.
+          git push --atomic origin main "$TAG"
+          # This is the moment users see the new version. Drafts are invisible
+          # to non-collaborators; published releases are world-visible and the
+          # Tauri updater endpoint resolves `/latest/` against them.
+          gh release edit "$TAG" --draft=false
+
+  cleanup:
+    # Tears down a half-finished release so the next attempt starts clean.
+    # Runs whenever prepare succeeded but publish didn't reach success — i.e.
+    # any build failed, the matrix was cancelled, or publish itself errored.
+    # Skipped on a fully-successful release.
+    needs: [prepare, build, publish]
+    if: always() && needs.prepare.result == 'success' && needs.publish.result != 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete orphan draft (only if the tag was never pushed)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # If the tag is on the remote, the atomic push in publish landed
+          # — main now carries the bump commit. Don't delete anything; the
+          # release just needs its draft flag flipped. Bail loud so the run
+          # surfaces as failed and the human knows to finish manually.
+          if gh api "repos/$REPO/git/refs/tags/$TAG" --silent 2>/dev/null; then
+            echo "::error::Tag $TAG is on the remote — bump commit + tag landed but the draft never flipped to published."
+            echo "::error::Finish manually: gh release edit $TAG --draft=false --repo $REPO"
+            exit 1
+          fi
+          # Otherwise nothing landed on main. Delete the draft (and any
+          # stray tag inside the release object) so the next run can reuse
+          # this version number.
+          echo "No tag on remote — deleting orphan draft $TAG"
+          gh release delete "$TAG" --cleanup-tag --yes --repo "$REPO" || \
+            echo "Draft $TAG already gone — nothing to do."
