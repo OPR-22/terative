@@ -1,6 +1,6 @@
 [package]
 name = "terative"
-version = "0.1.0"
+version = "0.1.1"
 description = "Terative — local-first invoicing and accounting"
 authors = ["Terative"]
 edition = "2021"
